@@ -13,16 +13,22 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Deploy to VPS
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.HOST_IP }}
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT }}
           script: |
-            if [ ! -d "mediatracker" ]; then
-              git clone git@github.com:Kinremtus/mediatracker.git
+            mkdir -p ${{ secrets.TARGET_DIR }}
+            cd ${{ secrets.TARGET_DIR }}
+            if [ ! -d ".git" ]; then
+              echo "Сервер чист. Начинаем полное восстановление..."
+              rm -rf ..?* .[!.]* *
+              git clone git@github.com:${{ github.repository }}.git .
+            else
+              echo "Сервер жив. Просто обновляем код..."
+              git pull origin main
             fi
-            cd mediatracker
-            git pull
-            docker compose up --build -d
+            echo "✅ Код обновлён"
+
