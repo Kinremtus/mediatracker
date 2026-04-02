@@ -13,7 +13,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Deploy to VPS
-        uses: appleboy/ssh-action@master
+        uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.HOST_IP }}
           username: ${{ secrets.USERNAME }}
@@ -31,3 +31,5 @@ jobs:
               git pull origin main
             fi
             echo "✅ Код обновлён"
+	          docker compose up --build -d
+	          echo "✅ Контейнеры запущены"
