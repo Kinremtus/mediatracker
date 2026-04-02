@@ -31,4 +31,4 @@ jobs:
               git pull origin main
             fi
             echo "✅ Код обновлён"
-
+          debug: true
