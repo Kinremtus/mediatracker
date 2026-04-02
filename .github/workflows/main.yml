@@ -31,5 +31,5 @@ jobs:
               git pull origin main
             fi
             echo "✅ Код обновлён"
-	          docker compose up --build -d
-	          echo "✅ Контейнеры запущены"
+	        docker compose up --build -d
+	        echo "✅ Контейнеры запущены"
