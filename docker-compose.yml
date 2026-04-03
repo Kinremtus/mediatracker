@@ -27,7 +27,7 @@ services:
   nginx:
     image: nginx:alpine
     ports:
-      - "8444:443"  # 443 занят Xray, 8443 занят Yamtrack — берём 8444
+      - "2053:443"  # 443 занят Xray, 8443 занят Yamtrack — берём 8444
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf
       - /etc/ssl/cloudflare.pem:/etc/ssl/cloudflare.pem:ro
