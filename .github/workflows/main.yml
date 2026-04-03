@@ -33,3 +33,18 @@ jobs:
             echo "✅ Код обновлён"
             docker compose up --build -d
             echo "✅ Контейнеры запущены"
+            
+            echo "⏳ Ждём запуска сервиса..."
+            sleep 15
+
+            echo "🔍 Проверяем healthcheck..."
+            RESPONSE=$(curl -sk https://localhost:2053/health)
+            echo "Ответ сервера: $RESPONSE"
+
+            if echo "$RESPONSE" | grep -q '"status":"ok"'; then
+              echo "✅ Деплой успешен!"
+            else
+              echo "❌ Healthcheck провалился!"
+              docker compose logs --tail=50
+              exit 1
+            fi
