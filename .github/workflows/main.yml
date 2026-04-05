@@ -12,16 +12,26 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       - name: Build frontend
         run: |
           cd frontend
           npm ci
           npm run build
 
-      - name: Copy frontend build to repo
-        run: |
-          git config user.email "ci@github.com"
-          git config user.name "CI"
+      - name: Copy dist to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.HOST_IP }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          source: "frontend/dist/"
+          target: ${{ secrets.TARGET_DIR }}
 
       - name: Deploy to VPS
         uses: appleboy/ssh-action@master
@@ -33,12 +43,6 @@ jobs:
           script: |
             cd ${{ secrets.TARGET_DIR }}
             git pull origin main
-
-            cd frontend
-            npm ci
-            npm run build
-
-            cd ..
             docker compose up --build -d
 
             echo "⏳ Ждём запуска сервиса..."
