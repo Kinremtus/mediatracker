@@ -58,3 +58,7 @@ export async function updateTracking(
 ): Promise<TrackingEntry> {
   return api.put<TrackingEntry>(`/tracking/${id}`, data);
 }
+
+export async function deleteTracking(id: number): Promise<void> {
+  return api.delete(`/tracking/${id}`);
+}

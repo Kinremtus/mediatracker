@@ -134,3 +134,23 @@ def update_tracking(
     db.commit()
     db.refresh(entry)
     return entry
+
+@router.delete("/{entry_id}", status_code=204)
+def delete_tracking(
+    entry_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    entry = (
+        db.query(models.TrackingEntry)
+        .filter(
+            models.TrackingEntry.id == entry_id,
+            models.TrackingEntry.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not entry:
+        raise HTTPException(status_code=404, detail="Запись не найдена")
+
+    db.delete(entry)
+    db.commit()

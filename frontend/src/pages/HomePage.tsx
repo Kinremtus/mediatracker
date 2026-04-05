@@ -3,6 +3,8 @@ import { Button } from "@/components/ui/button";
 import { getTracking, updateTracking, TrackingEntry } from "@/api/tracking";
 import SearchPage from "./SearchPage";
 
+import { getTracking, updateTracking, deleteTracking, TrackingEntry } from "@/api/tracking";
+
 const STATUS_OPTIONS = [
   { value: "planned", label: "Запланировано" },
   { value: "in_progress", label: "Смотрю" },
@@ -20,12 +22,15 @@ const STATUS_COLORS: Record<string, string> = {
 function TrackingCard({
   entry,
   onUpdate,
+  onDelete,
 }: {
   entry: TrackingEntry;
   onUpdate: (id: number, status: string) => void;
+  onDelete: (id: number) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   async function handleStatusChange(status: string) {
     setLoading(true);
@@ -38,11 +43,30 @@ function TrackingCard({
     }
   }
 
+  async function handleDelete() {
+    setDeleting(true);
+    try {
+      await deleteTracking(entry.id);
+      onDelete(entry.id);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   const currentLabel =
     STATUS_OPTIONS.find((s) => s.value === entry.status)?.label || entry.status;
 
   return (
-    <div className="rounded-xl overflow-hidden bg-white/5 border border-white/10 hover:border-white/30 transition-colors flex flex-col">
+    <div className="rounded-xl overflow-hidden bg-white/5 border border-white/10 hover:border-white/30 transition-colors flex flex-col group relative">
+      {/* Кнопка удаления — появляется при наведении */}
+      <button
+        onClick={handleDelete}
+        disabled={deleting}
+        className="absolute top-2 right-2 z-10 w-6 h-6 rounded-full bg-black/60 text-white/70 hover:text-red-400 hover:bg-black/80 transition-all opacity-0 group-hover:opacity-100 text-xs flex items-center justify-center"
+      >
+        ✕
+      </button>
+
       {entry.media.poster_url && (
         <img
           src={entry.media.poster_url}
@@ -55,7 +79,6 @@ function TrackingCard({
           {entry.media.title_russian || entry.media.title}
         </p>
 
-        {/* Выбор статуса */}
         <div className="relative">
           <button
             onClick={() => setOpen(!open)}
@@ -110,6 +133,10 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
     setTracking((prev) =>
       prev.map((e) => (e.id === id ? { ...e, status } : e))
     );
+  }
+
+  function handleDelete(id: number) {
+  setTracking((prev) => prev.filter((e) => e.id !== id));
   }
 
   if (showSearch) {
@@ -167,6 +194,7 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
               key={entry.id}
               entry={entry}
               onUpdate={handleStatusUpdate}
+              onDelete={handleDelete}
             />
           ))}
         </div>
