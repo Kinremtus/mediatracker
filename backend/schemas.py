@@ -69,3 +69,8 @@ class TrackingFromSearch(BaseModel):
     status: TrackingStatus = TrackingStatus.planned
     rating: float | None = None
     progress: int = 0
+    
+class TrackingEntryUpdate(BaseModel):
+    status: str | None = None
+    rating: float | None = None
+    progress: int | None = None
