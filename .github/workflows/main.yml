@@ -47,6 +47,7 @@ jobs:
             cd ${{ secrets.TARGET_DIR }}
             git pull origin main
             docker compose up --build -d
+            docker compose restart nginx
 
             echo "⏳ Ждём запуска сервиса..."
             sleep 15
