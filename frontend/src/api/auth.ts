@@ -14,7 +14,9 @@ export async function login(
   username: string,
   password: string
 ): Promise<TokenResponse> {
-  const BASE_URL = "https://mediatracker.web-socket-test-bench.site:2053";
+  const BASE_URL = import.meta.env.DEV
+  ? "https://mediatracker.web-socket-test-bench.site:2053"
+  : "/api";
   const formData = new URLSearchParams();
   formData.append("username", username);
   formData.append("password", password);

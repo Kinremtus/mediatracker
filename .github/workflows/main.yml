@@ -12,28 +12,35 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+
+      - name: Copy frontend build to repo
+        run: |
+          git config user.email "ci@github.com"
+          git config user.name "CI"
+
       - name: Deploy to VPS
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.HOST_IP }}
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT }}
           script: |
-            mkdir -p ${{ secrets.TARGET_DIR }}
             cd ${{ secrets.TARGET_DIR }}
-            if [ ! -d ".git" ]; then
-              echo "Сервер чист. Начинаем полное восстановление..."
-              rm -rf ..?* .[!.]* *
-              git clone git@github.com:${{ github.repository }}.git .
-            else
-              echo "Сервер жив. Просто обновляем код..."
-              git pull origin main
-            fi
-            echo "✅ Код обновлён"
+            git pull origin main
+
+            cd frontend
+            npm ci
+            npm run build
+
+            cd ..
             docker compose up --build -d
-            echo "✅ Контейнеры запущены"
-            
+
             echo "⏳ Ждём запуска сервиса..."
             sleep 15
 

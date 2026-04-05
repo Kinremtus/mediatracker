@@ -1,5 +1,7 @@
-const BASE_URL = "https://mediatracker.web-socket-test-bench.site:2053";
-
+const BASE_URL = import.meta.env.DEV
+  ? "https://mediatracker.web-socket-test-bench.site:2053"
+  : "/api";
+  
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token =
     localStorage.getItem("token") || sessionStorage.getItem("token");
