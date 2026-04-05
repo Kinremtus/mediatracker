@@ -24,14 +24,17 @@ jobs:
           npm run build
 
       - name: Copy dist to server
-        uses: appleboy/scp-action@v0.1.7
+        uses: appleboy/scp-action@v1
         with:
           host: ${{ secrets.HOST_IP }}
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT }}
-          source: "frontend/dist/"
-          target: ${{ secrets.TARGET_DIR }}
+          source: "frontend/dist/*"
+          target: "${{ secrets.TARGET_DIR }}/frontend/dist"
+          strip_components: 2
+          overwrite: true
+          
 
       - name: Deploy to VPS
         uses: appleboy/ssh-action@master
