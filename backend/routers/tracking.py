@@ -105,3 +105,32 @@ async def add_tracking_from_search(
     db.commit()
     db.refresh(db_entry)
     return db_entry
+
+@router.put("/{entry_id}", response_model=schemas.TrackingEntryResponse)
+def update_tracking(
+    entry_id: int,
+    data: schemas.TrackingEntryUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    entry = (
+        db.query(models.TrackingEntry)
+        .filter(
+            models.TrackingEntry.id == entry_id,
+            models.TrackingEntry.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not entry:
+        raise HTTPException(status_code=404, detail="Запись не найдена")
+
+    if data.status is not None:
+        entry.status = data.status
+    if data.rating is not None:
+        entry.rating = data.rating
+    if data.progress is not None:
+        entry.progress = data.progress
+
+    db.commit()
+    db.refresh(entry)
+    return entry
