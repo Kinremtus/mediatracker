@@ -1,8 +1,12 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { getTracking, updateTracking, deleteTracking, TrackingEntry } from "@/api/tracking";
+import {
+  getTracking,
+  updateTracking,
+  deleteTracking,
+  TrackingEntry,
+} from "@/api/tracking";
 import SearchPage from "./SearchPage";
-
 
 const STATUS_OPTIONS = [
   { value: "planned", label: "Запланировано" },
@@ -17,6 +21,14 @@ const STATUS_COLORS: Record<string, string> = {
   completed: "text-green-400",
   dropped: "text-red-400",
 };
+
+const FILTER_OPTIONS = [
+  { value: null, label: "Все" },
+  { value: "in_progress", label: "Смотрю" },
+  { value: "planned", label: "Запланировано" },
+  { value: "completed", label: "Просмотрено" },
+  { value: "dropped", label: "Дропнул" },
+];
 
 function TrackingCard({
   entry,
@@ -57,7 +69,6 @@ function TrackingCard({
 
   return (
     <div className="rounded-xl overflow-hidden bg-white/5 border border-white/10 hover:border-white/30 transition-colors flex flex-col group relative">
-      {/* Кнопка удаления — появляется при наведении */}
       <button
         onClick={handleDelete}
         disabled={deleting}
@@ -77,7 +88,6 @@ function TrackingCard({
         <p className="text-sm font-medium truncate">
           {entry.media.title_russian || entry.media.title}
         </p>
-
         <div className="relative">
           <button
             onClick={() => setOpen(!open)}
@@ -86,7 +96,6 @@ function TrackingCard({
           >
             {loading ? "..." : currentLabel + " ▾"}
           </button>
-
           {open && (
             <div className="absolute bottom-full left-0 mb-1 bg-gray-800 border border-white/20 rounded-lg overflow-hidden z-10 w-36">
               {STATUS_OPTIONS.map((option) => (
@@ -115,10 +124,11 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showSearch, setShowSearch] = useState(false);
+  const [activeFilter, setActiveFilter] = useState<string | null>(null);
 
-  function loadTracking() {
+  function loadTracking(status?: string | null) {
     setLoading(true);
-    getTracking()
+    getTracking(status ?? undefined)
       .then(setTracking)
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
@@ -128,6 +138,11 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
     loadTracking();
   }, []);
 
+  function handleFilterChange(status: string | null) {
+    setActiveFilter(status);
+    loadTracking(status);
+  }
+
   function handleStatusUpdate(id: number, status: string) {
     setTracking((prev) =>
       prev.map((e) => (e.id === id ? { ...e, status } : e))
@@ -135,7 +150,7 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
   }
 
   function handleDelete(id: number) {
-  setTracking((prev) => prev.filter((e) => e.id !== id));
+    setTracking((prev) => prev.filter((e) => e.id !== id));
   }
 
   if (showSearch) {
@@ -143,7 +158,7 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
       <SearchPage
         onBack={() => {
           setShowSearch(false);
-          loadTracking();
+          loadTracking(activeFilter);
         }}
       />
     );
@@ -170,20 +185,45 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
       </header>
 
       <main className="max-w-5xl mx-auto px-6 py-8">
-        <h2 className="text-2xl font-bold mb-6">Мой список</h2>
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-2xl font-bold">Мой список</h2>
+          {/* Счётчик */}
+          <span className="text-white/40 text-sm">{tracking.length} записей</span>
+        </div>
+
+        {/* Фильтры */}
+        <div className="flex gap-2 flex-wrap mb-6">
+          {FILTER_OPTIONS.map((option) => (
+            <button
+              key={option.value ?? "all"}
+              onClick={() => handleFilterChange(option.value)}
+              className={`px-4 py-1.5 rounded-full text-sm transition-colors ${
+                activeFilter === option.value
+                  ? "bg-white text-gray-950 font-semibold"
+                  : "bg-white/10 text-white/70 hover:bg-white/20"
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
 
         {loading && <p className="text-white/50">Загрузка...</p>}
         {error && <p className="text-red-400">{error}</p>}
 
         {!loading && tracking.length === 0 && (
           <div className="text-center py-20">
-            <p className="text-white/30 text-lg mb-4">Список пуст</p>
-            <Button
-              onClick={() => setShowSearch(true)}
-              className="rounded-full px-6"
-            >
-              Найти аниме
-            </Button>
+            <p className="text-white/30 text-lg mb-4">
+              {activeFilter ? "Ничего не найдено" : "Список пуст"}
+            </p>
+            {!activeFilter && (
+              <Button
+                onClick={() => setShowSearch(true)}
+                className="rounded-full px-6"
+              >
+                Найти аниме
+              </Button>
+            )}
           </div>
         )}
 
