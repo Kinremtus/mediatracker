@@ -51,3 +51,10 @@ export async function addToTracking(
     status,
   });
 }
+
+export async function updateTracking(
+  id: number,
+  data: { status?: string; rating?: number | null; progress?: number }
+): Promise<TrackingEntry> {
+  return api.put<TrackingEntry>(`/tracking/${id}`, data);
+}

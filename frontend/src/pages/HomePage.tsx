@@ -1,10 +1,95 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { getTracking } from "@/api/tracking";
+import { getTracking, updateTracking, TrackingEntry } from "@/api/tracking";
 import SearchPage from "./SearchPage";
 
-export default function HomePage({ onLogout }) {
-  const [tracking, setTracking] = useState([]);
+const STATUS_OPTIONS = [
+  { value: "planned", label: "Запланировано" },
+  { value: "in_progress", label: "Смотрю" },
+  { value: "completed", label: "Просмотрено" },
+  { value: "dropped", label: "Дропнул" },
+];
+
+const STATUS_COLORS: Record<string, string> = {
+  planned: "text-blue-400",
+  in_progress: "text-yellow-400",
+  completed: "text-green-400",
+  dropped: "text-red-400",
+};
+
+function TrackingCard({
+  entry,
+  onUpdate,
+}: {
+  entry: TrackingEntry;
+  onUpdate: (id: number, status: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  async function handleStatusChange(status: string) {
+    setLoading(true);
+    setOpen(false);
+    try {
+      await updateTracking(entry.id, { status });
+      onUpdate(entry.id, status);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const currentLabel =
+    STATUS_OPTIONS.find((s) => s.value === entry.status)?.label || entry.status;
+
+  return (
+    <div className="rounded-xl overflow-hidden bg-white/5 border border-white/10 hover:border-white/30 transition-colors flex flex-col">
+      {entry.media.poster_url && (
+        <img
+          src={entry.media.poster_url}
+          alt={entry.media.title}
+          className="w-full aspect-[2/3] object-cover"
+        />
+      )}
+      <div className="p-3 flex flex-col gap-2">
+        <p className="text-sm font-medium truncate">
+          {entry.media.title_russian || entry.media.title}
+        </p>
+
+        {/* Выбор статуса */}
+        <div className="relative">
+          <button
+            onClick={() => setOpen(!open)}
+            disabled={loading}
+            className={`text-xs ${STATUS_COLORS[entry.status] || "text-white/50"} hover:text-white transition-colors`}
+          >
+            {loading ? "..." : currentLabel + " ▾"}
+          </button>
+
+          {open && (
+            <div className="absolute bottom-full left-0 mb-1 bg-gray-800 border border-white/20 rounded-lg overflow-hidden z-10 w-36">
+              {STATUS_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() => handleStatusChange(option.value)}
+                  className={`w-full text-left px-3 py-2 text-xs hover:bg-white/10 transition-colors ${
+                    option.value === entry.status
+                      ? "text-white font-semibold"
+                      : "text-white/70"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function HomePage({ onLogout }: { onLogout: () => void }) {
+  const [tracking, setTracking] = useState<TrackingEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showSearch, setShowSearch] = useState(false);
@@ -13,7 +98,7 @@ export default function HomePage({ onLogout }) {
     setLoading(true);
     getTracking()
       .then(setTracking)
-      .catch((e) => setError(e.message))
+      .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
   }
 
@@ -21,12 +106,18 @@ export default function HomePage({ onLogout }) {
     loadTracking();
   }, []);
 
+  function handleStatusUpdate(id: number, status: string) {
+    setTracking((prev) =>
+      prev.map((e) => (e.id === id ? { ...e, status } : e))
+    );
+  }
+
   if (showSearch) {
     return (
       <SearchPage
         onBack={() => {
           setShowSearch(false);
-          loadTracking(); // обновляем список после возврата
+          loadTracking();
         }}
       />
     );
@@ -72,24 +163,11 @@ export default function HomePage({ onLogout }) {
 
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
           {tracking.map((entry) => (
-            <div
+            <TrackingCard
               key={entry.id}
-              className="rounded-xl overflow-hidden bg-white/5 border border-white/10 hover:border-white/30 transition-colors"
-            >
-              {entry.media.poster_url && (
-                <img
-                  src={entry.media.poster_url}
-                  alt={entry.media.title}
-                  className="w-full aspect-[2/3] object-cover"
-                />
-              )}
-              <div className="p-3">
-                <p className="text-sm font-medium truncate">
-                  {entry.media.title_russian || entry.media.title}
-                </p>
-                <p className="text-xs text-white/50 mt-1">{entry.status}</p>
-              </div>
-            </div>
+              entry={entry}
+              onUpdate={handleStatusUpdate}
+            />
           ))}
         </div>
       </main>
