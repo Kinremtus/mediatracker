@@ -1,9 +1,8 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { getTracking, updateTracking, TrackingEntry } from "@/api/tracking";
+import { getTracking, updateTracking, deleteTracking, TrackingEntry } from "@/api/tracking";
 import SearchPage from "./SearchPage";
 
-import { getTracking, updateTracking, deleteTracking, TrackingEntry } from "@/api/tracking";
 
 const STATUS_OPTIONS = [
   { value: "planned", label: "Запланировано" },
