@@ -82,6 +82,12 @@ function TrackingCard({
           {entry.media.title_russian || entry.media.title}
         </p>
         
+        {entry.media.episodes && (
+          <p className="text-xs text-muted-foreground">
+            {entry.progress} / {entry.media.episodes} эп.
+          </p>
+        )}
+        
         <div className="relative">
           <button
             onClick={() => setOpen(!open)}
