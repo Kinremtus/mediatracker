@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 from enum import Enum
+from datetime import datetime
 
 class MediaType(str, Enum):
     anime = "anime"
@@ -59,6 +60,7 @@ class TrackingEntryResponse(BaseModel):
     status: str
     rating: float | None
     progress: int
+    created_at: datetime
     media: MediaItemResponse   # вложенный объект — сразу видно что трекаешь
 
     model_config = {"from_attributes": True}

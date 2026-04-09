@@ -1,6 +1,8 @@
 from sqlalchemy import Column, Integer, String, Float, ForeignKey
 from sqlalchemy.orm import relationship
 from database import Base
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime
+from datetime import datetime, timezone
 
 class User(Base):
     __tablename__ = "users"
@@ -33,6 +35,7 @@ class TrackingEntry(Base):
     status = Column(String, nullable=False, default="planned")
     rating = Column(Float, nullable=True)        # оценка 1-10
     progress = Column(Integer, default=0)        # серия/страница/часы
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))  # ← добавить
 
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     media_id = Column(Integer, ForeignKey("media_items.id"), nullable=False)

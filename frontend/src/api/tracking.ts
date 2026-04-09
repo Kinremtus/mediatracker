@@ -16,6 +16,7 @@ export interface TrackingEntry {
   status: string;
   rating: number | null;
   progress: number;
+  created_at: string;
   media: MediaItem;
 }
 

@@ -1,34 +1,29 @@
-import { useState, useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import {
-  getTracking,
-  updateTracking,
-  deleteTracking,
-  TrackingEntry,
-} from "@/api/tracking";
+import { useState, useEffect, useMemo } from "react";
+import { DashboardHeader } from "@/components/dashboard-header";
+import { StatsCards } from "@/components/stats-cards";
+import { FilterTabs } from "@/components/filter-tabs";
+import { AppSidebar, type SidebarView } from "@/components/app-sidebar";
+import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
+import { statusConfig, progressColors, mediaTypeConfig, type MediaStatus, type MediaType } from "@/lib/media-types";
+import { OverviewSection } from "@/components/overview-section";
+import { StatisticsSection } from "@/components/statistics-section";
+import { cn } from "@/lib/utils"; // <-- ЭТОГО СТРОКИ, СКОРЕЕ ВСЕГО, НЕ ХВАТАЕТ
+
+// Импорты твоего API
+import { getTracking, deleteTracking, updateTracking, type TrackingEntry } from "@/api/tracking";
 import SearchPage from "./SearchPage";
 
-const STATUS_OPTIONS = [
-  { value: "planned", label: "Запланировано" },
-  { value: "in_progress", label: "Смотрю" },
-  { value: "completed", label: "Просмотрено" },
-  { value: "dropped", label: "Дропнул" },
-];
-
-const STATUS_COLORS: Record<string, string> = {
-  planned: "text-blue-400",
-  in_progress: "text-yellow-400",
-  completed: "text-green-400",
-  dropped: "text-red-400",
+// === АДАПТЕР: Переводчик с языка Бэкенда на язык UI ===
+// Бэкенд шлет "in_progress", UI ожидает "watching" (для статистики и табов)
+const mapStatusToUI = (backendStatus: string): MediaStatus => {
+  switch (backendStatus) {
+    case "in_progress": return "watching";
+    case "completed": return "completed";
+    case "planned": return "plan-to-watch";
+    case "dropped": return "dropped";
+    default: return "plan-to-watch";
+  }
 };
-
-const FILTER_OPTIONS = [
-  { value: null, label: "Все" },
-  { value: "in_progress", label: "Смотрю" },
-  { value: "planned", label: "Запланировано" },
-  { value: "completed", label: "Просмотрено" },
-  { value: "dropped", label: "Дропнул" },
-];
 
 function TrackingCard({
   entry,
@@ -43,15 +38,18 @@ function TrackingCard({
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  const uiStatus = mapStatusToUI(entry.status);
+  const config = statusConfig[uiStatus];
+  const StatusIcon = config.icon;
+
   async function handleStatusChange(status: string) {
     setLoading(true);
     setOpen(false);
     try {
       await updateTracking(entry.id, { status });
       onUpdate(entry.id, status);
-    } finally {
-      setLoading(false);
-    }
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
   }
 
   async function handleDelete() {
@@ -59,59 +57,56 @@ function TrackingCard({
     try {
       await deleteTracking(entry.id);
       onDelete(entry.id);
-    } finally {
-      setDeleting(false);
-    }
+    } catch (e) { console.error(e); }
+    finally { setDeleting(false); }
   }
 
-  const currentLabel =
-    STATUS_OPTIONS.find((s) => s.value === entry.status)?.label || entry.status;
-
   return (
-    <div className="rounded-xl overflow-hidden bg-white/5 border border-white/10 hover:border-white/30 transition-colors flex flex-col group relative">
+    <div className="group relative flex flex-col overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-muted-foreground/30">
       <button
         onClick={handleDelete}
         disabled={deleting}
-        className="absolute top-2 right-2 z-10 w-6 h-6 rounded-full bg-black/60 text-white/70 hover:text-red-400 hover:bg-black/80 transition-all opacity-0 group-hover:opacity-100 text-xs flex items-center justify-center"
+        className="absolute right-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-xs text-white/70 opacity-0 transition-all hover:bg-black/80 hover:text-red-400 group-hover:opacity-100"
       >
         ✕
       </button>
 
-      {entry.media.poster_url && (
-        <img
-          src={entry.media.poster_url}
-          alt={entry.media.title}
-          className="w-full aspect-[2/3] object-cover"
-        />
-      )}
-      <div className="p-3 flex flex-col gap-2">
-        <p className="text-sm font-medium truncate">
+      <img
+        src={entry.media.poster_url || "/placeholder.jpg"}
+        alt={entry.media.title}
+        className="aspect-[2/3] w-full object-cover"
+      />
+      
+      <div className="flex flex-col gap-2 p-3">
+        <p className="truncate text-sm font-medium text-foreground">
           {entry.media.title_russian || entry.media.title}
         </p>
+        
         <div className="relative">
           <button
             onClick={() => setOpen(!open)}
             disabled={loading}
-            className={`text-xs ${STATUS_COLORS[entry.status] || "text-white/50"} hover:text-white transition-colors`}
+            // Используем color из config (он у нас теперь в Tailwind)
+            className={cn("text-xs transition-opacity hover:opacity-80", config.className.split(" ")[1])}
           >
-            {loading ? "..." : currentLabel + " ▾"}
+            {loading ? "..." : config.label + " ▾"}
           </button>
+          
           {open && (
-            <div className="absolute bottom-full left-0 mb-1 bg-gray-800 border border-white/20 rounded-lg overflow-hidden z-10 w-36">
-              {STATUS_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  onClick={() => handleStatusChange(option.value)}
-                  className={`w-full text-left px-3 py-2 text-xs hover:bg-white/10 transition-colors ${
-                    option.value === entry.status
-                      ? "text-white font-semibold"
-                      : "text-white/70"
-                  }`}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+              <div className="absolute bottom-full left-0 z-50 mb-1 w-36 overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
+                {Object.entries(statusConfig).map(([statusKey, cfg]) => (
+                  <button
+                    key={statusKey}
+                    onClick={() => handleStatusChange(statusKey)}
+                    className="w-full px-3 py-2 text-left text-xs text-foreground transition-colors hover:bg-secondary"
+                  >
+                    {cfg.label}
+                  </button>
+                ))}
+              </div>
+            </>
           )}
         </div>
       </div>
@@ -119,125 +114,255 @@ function TrackingCard({
   );
 }
 
+
+// === ГЛАВНЫЙ КОНТРОЛЛЕР СТРАНИЦЫ ===
 export default function HomePage({ onLogout }: { onLogout: () => void }) {
+  // Состояния из v0 (UI)
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeFilter, setActiveFilter] = useState<MediaStatus | "all">("all");
+  const [activeCategory, setActiveCategory] = useState<MediaType | "all">("all");
+  const[activeView, setActiveView] = useState<SidebarView>("media");
+
+  // Состояния твоего API
   const [tracking, setTracking] = useState<TrackingEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
   const [showSearch, setShowSearch] = useState(false);
-  const [activeFilter, setActiveFilter] = useState<string | null>(null);
 
-  function loadTracking(status?: string | null) {
+  // Загрузка данных
+  const loadTracking = () => {
     setLoading(true);
-    getTracking(status ?? undefined)
+    getTracking()
       .then(setTracking)
-      .catch((e: Error) => setError(e.message))
+      .catch(console.error)
       .finally(() => setLoading(false));
-  }
+  };
 
   useEffect(() => {
     loadTracking();
-  }, []);
+  },[]);
 
-  function handleFilterChange(status: string | null) {
-    setActiveFilter(status);
-    loadTracking(status);
-  }
-
-  function handleStatusUpdate(id: number, status: string) {
+  // Обновление статуса без перезагрузки
+  const handleStatusUpdate = (id: number, status: string) => {
     setTracking((prev) =>
       prev.map((e) => (e.id === id ? { ...e, status } : e))
     );
-  }
+  };
 
-  function handleDelete(id: number) {
+  // Удаление из стейта без перезагрузки
+  const handleDelete = (id: number) => {
     setTracking((prev) => prev.filter((e) => e.id !== id));
-  }
+  };
 
+  const statusCounts = useMemo(() => {
+    const counts: Record<MediaStatus | "all", number> = {
+      all: tracking.length,
+      watching: 0,
+      completed: 0,
+      dropped: 0,
+      "plan-to-watch": 0,
+    };
+
+    tracking.forEach((entry) => {
+      const uiStatus = mapStatusToUI(entry.status);
+      if (counts.hasOwnProperty(uiStatus)) {
+         counts[uiStatus]++;
+      }
+    });
+
+    return counts;
+  },[tracking]);
+
+  // Заглушка для категорий (пока бэк не умеет отдавать тип медиа)
+  const categoryCounts = useMemo(() => ({
+    all: tracking.length,
+    anime: tracking.length, movies: 0, "tv-shows": 0, books: 0, manga: 0, manhwa: 0, manhua: 0, games: 0, dramas: 0, cartoons: 0, "animated-movies": 0, novels: 0,
+  }),[tracking]);
+
+  // Группируем то, что смотрим прямо сейчас, по категориям
+  const inProgressByCategory = useMemo(() => {
+    const grouped: Partial<Record<MediaType, TrackingEntry[]>> = {};
+
+    tracking.forEach((entry) => {
+      // Берем только активные (Смотрю/Читаю)
+      if (entry.status === "in_progress") {
+        // Если твой бэк пока не умеет отдавать тип медиа, фолбечим в anime
+        const type = (entry.media.media_type as MediaType) || "anime";
+        
+        if (!grouped[type]) {
+          grouped[type] = [];
+        }
+        grouped[type]!.push(entry);
+      }
+    });
+
+    return grouped;
+  }, [tracking]);
+
+  // Фильтрация списка на фронте
+  const filteredMedia = useMemo(() => {
+    return tracking.filter((entry) => {
+      const matchesSearch = (entry.media.title_russian || entry.media.title)
+        .toLowerCase()
+        .includes(searchQuery.toLowerCase());
+      const uiStatus = mapStatusToUI(entry.status);
+      const matchesFilter = activeFilter === "all" || uiStatus === activeFilter;
+      return matchesSearch && matchesFilter;
+    });
+  },[tracking, searchQuery, activeFilter]);
+
+  // Роутинг: Если открыт поиск - рендерим его
   if (showSearch) {
     return (
       <SearchPage
         onBack={() => {
           setShowSearch(false);
-          loadTracking(activeFilter);
+          loadTracking();
         }}
       />
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
-      <header className="border-b border-white/10 px-6 py-4 flex items-center justify-between">
-        <h1 className="text-xl font-bold">MediaTracker</h1>
-        <div className="flex items-center gap-4">
-          <Button
-            onClick={() => setShowSearch(true)}
-            className="rounded-full px-5 text-sm"
-          >
-            + Добавить
-          </Button>
-          <button
-            onClick={onLogout}
-            className="text-white/50 hover:text-white text-sm transition-colors"
-          >
-            Выйти
-          </button>
-        </div>
-      </header>
+    <SidebarProvider defaultOpen={true}>
+      <AppSidebar
+        activeCategory={activeCategory}
+        onCategoryChange={setActiveCategory}
+        counts={categoryCounts}
+        activeView={activeView}
+        onViewChange={setActiveView}
+      />
+      <SidebarInset className="bg-background">
+        
+        {/* Хедер */}
+        <DashboardHeader 
+          searchQuery={searchQuery} 
+          onSearchChange={setSearchQuery} 
+          onAddClick={() => setShowSearch(true)}
+          onLogout={onLogout}
+        />
 
-      <main className="max-w-5xl mx-auto px-6 py-8">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-2xl font-bold">Мой список</h2>
-          {/* Счётчик */}
-          <span className="text-white/40 text-sm">{tracking.length} записей</span>
-        </div>
+        <main className="mx-auto max-w-7xl px-4 py-6">
+          
+          {/* Раздел "Главная" (Активные процессы) */}
+          {activeView === "overview" && (
+            <section className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <h1 className="mb-6 text-xl font-semibold text-foreground">Сейчас в процессе</h1>
+              
+              {/* Если активных процессов нет */}
+              {Object.keys(inProgressByCategory).length === 0 ? (
+                <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-12 text-center">
+                  <p className="text-muted-foreground">Вы сейчас ничего не смотрите.</p>
+                  <button onClick={() => setShowSearch(true)} className="mt-2 text-sm text-primary hover:underline">
+                    Найти и добавить
+                  </button>
+                </div>
+              ) : (
+                /* Рендерим категории */
+                <div className="space-y-8">
+                  {Object.entries(inProgressByCategory).map(([type, entries]) => {
+                    const config = mediaTypeConfig[type as MediaType];
+                    const Icon = config?.icon;
+                    
+                    return (
+                      <div key={type}>
+                        {/* Заголовок категории с иконкой */}
+                        <h2 className="mb-4 flex items-center gap-2 text-lg font-medium text-foreground">
+                          {Icon && <Icon className="size-5 text-muted-foreground" />}
+                          {config?.labelRu || type}
+                          <span className="text-sm text-muted-foreground">({entries.length})</span>
+                        </h2>
+                        
+                        {/* Сетка карточек для этой категории */}
+                        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+                          {entries.map((entry) => (
+                            <TrackingCard
+                              key={entry.id}
+                              entry={entry}
+                              onUpdate={handleStatusUpdate}
+                              onDelete={handleDelete}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          )}
 
-        {/* Фильтры */}
-        <div className="flex gap-2 flex-wrap mb-6">
-          {FILTER_OPTIONS.map((option) => (
-            <button
-              key={option.value ?? "all"}
-              onClick={() => handleFilterChange(option.value)}
-              className={`px-4 py-1.5 rounded-full text-sm transition-colors ${
-                activeFilter === option.value
-                  ? "bg-white text-gray-950 font-semibold"
-                  : "bg-white/10 text-white/70 hover:bg-white/20"
-              }`}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
+          {/* Раздел "Статистика" */}
+          {activeView === "statistics" && (
+            <section className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <h1 className="mb-6 text-xl font-semibold text-foreground">Статистика</h1>
+              {/* ВОТ ЗДЕСЬ ОНО ДОЛЖНО БЫТЬ: */}
+              <StatisticsSection tracking={tracking} />
+            </section>
+          )}
 
-        {loading && <p className="text-white/50">Загрузка...</p>}
-        {error && <p className="text-red-400">{error}</p>}
+          {activeView === "media" && (
+            <>
+              {/* Статистика */}
+              <section>с
+                <h2 className="mb-3 text-sm font-medium text-muted-foreground">
+                  Моя статистика
+                </h2>
+                <StatsCards
+                  watching={statusCounts.watching}
+                  completed={statusCounts.completed}
+                  dropped={statusCounts.dropped}
+                  planToWatch={statusCounts["plan-to-watch"]}
+                />
+              </section>
 
-        {!loading && tracking.length === 0 && (
-          <div className="text-center py-20">
-            <p className="text-white/30 text-lg mb-4">
-              {activeFilter ? "Ничего не найдено" : "Список пуст"}
-            </p>
-            {!activeFilter && (
-              <Button
-                onClick={() => setShowSearch(true)}
-                className="rounded-full px-6"
-              >
-                Найти аниме
-              </Button>
-            )}
-          </div>
-        )}
+              {/* Список тайтлов */}
+              <section className="mt-8">
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="text-sm font-medium text-muted-foreground">
+                    Мой список
+                  </h2>
+                  <span className="text-xs text-muted-foreground">
+                    {filteredMedia.length} тайтлов
+                  </span>
+                </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-          {tracking.map((entry) => (
-            <TrackingCard
-              key={entry.id}
-              entry={entry}
-              onUpdate={handleStatusUpdate}
-              onDelete={handleDelete}
-            />
-          ))}
-        </div>
-      </main>
-    </div>
+                {/* Табы фильтрации (Все, Смотрю, Завершено и тд) */}
+                <FilterTabs
+                  activeFilter={activeFilter}
+                  onFilterChange={setActiveFilter}
+                  counts={statusCounts}
+                />
+
+                {/* Сетка карточек */}
+                {loading ? (
+                  <p className="py-10 text-center text-muted-foreground">Загрузка...</p>
+                ) : (
+                  <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+                    {filteredMedia.map((entry) => (
+                      <TrackingCard
+                        key={entry.id}
+                        entry={entry}
+                        onUpdate={handleStatusUpdate}
+                        onDelete={handleDelete}
+                      />
+                    ))}
+                  </div>
+                )}
+
+                {/* Если список пуст */}
+                {!loading && filteredMedia.length === 0 && (
+                  <div className="mt-8 flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-12 text-center">
+                    <p className="text-muted-foreground">Ничего не найдено</p>
+                    <button onClick={() => setShowSearch(true)} className="mt-2 text-sm text-primary hover:underline">
+                      Найти и добавить аниме
+                    </button>
+                  </div>
+                )}
+              </section>
+            </>
+          )}
+        </main>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }
