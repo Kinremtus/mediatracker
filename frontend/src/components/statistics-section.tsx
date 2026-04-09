@@ -29,7 +29,7 @@ const mapStatusToUI = (backendStatus: string): MediaStatus => {
 };
 
 export function StatisticsSection({ tracking }: StatisticsSectionProps) {
-  const safeTracking = tracking ||[];
+  const safeTracking = tracking || [];
 
   const stats = useMemo(() => {
     const statusCounts: Record<MediaStatus, number> = {
@@ -38,7 +38,7 @@ export function StatisticsSection({ tracking }: StatisticsSectionProps) {
       dropped: 0,
       "plan-to-watch": 0,
     };
-    
+
     const typeCounts: Record<string, number> = {};
 
     safeTracking.forEach(entry => {
@@ -52,63 +52,68 @@ export function StatisticsSection({ tracking }: StatisticsSectionProps) {
     });
 
     const mostActiveType = Object.entries(typeCounts)
-      .sort(([,a], [,b]) => b - a)[0];
+      .sort(([, a], [, b]) => b - a)[0];
 
     const totalItems = safeTracking.length;
     const completedItems = statusCounts.completed;
-    const overallProgress = totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
+    const overallProgress =
+      totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
 
     return { statusCounts, overallProgress, totalItems, mostActiveType };
-  },[safeTracking]);
+  }, [safeTracking]);
 
-  // ИСПРАВЛЕНИЕ ОШИБКИ: Удалили "on-hold"
-  const statuses: MediaStatus[] = ["watching", "completed", "dropped", "plan-to-watch"];
+  const activityData = useMemo(() => {
+    const counts: Record<string, number> = {};
+    safeTracking.forEach(entry => {
+      if (entry.created_at) {
+        const day = entry.created_at.split("T")[0];
+        counts[day] = (counts[day] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [safeTracking]);
+
+  const statuses: MediaStatus[] = [
+    "watching",
+    "completed",
+    "dropped",
+    "plan-to-watch",
+  ];
 
   return (
     <div className="space-y-6">
-      const activityData = useMemo(() => {
-        const counts: Record<string, number> = {};
-        safeTracking.forEach(entry => {
-          if (entry.created_at) {
-            const day = entry.created_at.split("T")[0]; // "2026-04-09"
-            counts[day] = (counts[day] || 0) + 1;
-          }
-        });
-        return counts;
-      },[safeTracking]);
+      <ActivityGrid data={activityData} />
 
-      <ActivityGrid data={{}} />
-
-     {/* Header Stats */}
+      {/* Header Stats */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        
-        {/* Карточка 1: Всего тайтлов (Пыльный океан) */}
         <Card className="border-border bg-card">
           <CardContent className="flex items-center gap-4 p-4">
             <div className="flex size-10 items-center justify-center rounded-lg bg-planned/10 text-planned">
               <BarChart3 className="size-5" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-foreground">{stats.totalItems}</p>
+              <p className="text-2xl font-bold text-foreground">
+                {stats.totalItems}
+              </p>
               <p className="text-xs text-muted-foreground">Всего тайтлов</p>
             </div>
           </CardContent>
         </Card>
 
-        {/* Карточка 2: Доля завершенных (Шалфей) */}
         <Card className="border-border bg-card">
           <CardContent className="flex items-center gap-4 p-4">
             <div className="flex size-10 items-center justify-center rounded-lg bg-completed/10 text-completed">
               <Target className="size-5" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-foreground">{stats.overallProgress}%</p>
+              <p className="text-2xl font-bold text-foreground">
+                {stats.overallProgress}%
+              </p>
               <p className="text-xs text-muted-foreground">Доля завершенных</p>
             </div>
           </CardContent>
         </Card>
 
-        {/* Карточка 3: Топ категория (Охристая глина) */}
         <Card className="border-border bg-card">
           <CardContent className="flex items-center gap-4 p-4">
             <div className="flex size-10 items-center justify-center rounded-lg bg-watching/10 text-watching">
@@ -116,14 +121,16 @@ export function StatisticsSection({ tracking }: StatisticsSectionProps) {
             </div>
             <div>
               <p className="truncate text-lg font-bold text-foreground">
-                {stats.mostActiveType ? mediaTypeConfig[stats.mostActiveType[0] as MediaType]?.labelRu || stats.mostActiveType[0] : "—"}
+                {stats.mostActiveType
+                  ? mediaTypeConfig[stats.mostActiveType[0] as MediaType]
+                      ?.labelRu || stats.mostActiveType[0]
+                  : "—"}
               </p>
               <p className="text-xs text-muted-foreground">Топ категория</p>
             </div>
           </CardContent>
         </Card>
 
-        {/* Карточка 4: Время (Графитовый туман) */}
         <Card className="border-border bg-card">
           <CardContent className="flex items-center gap-4 p-4">
             <div className="flex size-10 items-center justify-center rounded-lg bg-dropped/10 text-dropped">
@@ -150,25 +157,29 @@ export function StatisticsSection({ tracking }: StatisticsSectionProps) {
               const config = statusConfig[status];
               const Icon = config.icon;
               const count = stats.statusCounts[status];
-              const percentage = stats.totalItems > 0 ? Math.round((count / stats.totalItems) * 100) : 0;
-              
-              // ХИТРОСТЬ: Вытаскиваем класс цвета текста (например, "text-watching") из конфига
-              const textColorClass = config.className.split(" ").find(c => c.startsWith("text-"));
+              const percentage =
+                stats.totalItems > 0
+                  ? Math.round((count / stats.totalItems) * 100)
+                  : 0;
+              const textColorClass = config.className
+                .split(" ")
+                .find(c => c.startsWith("text-"));
 
               return (
                 <div key={status} className="space-y-2">
                   <div className="flex items-center justify-between text-sm">
                     <div className="flex items-center gap-2">
-                      {/* Применяем цвет к иконке */}
                       <Icon className={cn("size-4", textColorClass)} />
                       <span className="text-foreground">{config.label}</span>
                     </div>
                     <span className="text-muted-foreground">{count}</span>
                   </div>
-                  {/* Передаем цвет в прогресс-бар через bg-current */}
-                  <Progress 
-                    value={percentage} 
-                    className={cn("h-1.5 bg-secondary [&>div]:bg-current", textColorClass)}
+                  <Progress
+                    value={percentage}
+                    className={cn(
+                      "h-1.5 bg-secondary [&>div]:bg-current",
+                      textColorClass,
+                    )}
                   />
                 </div>
               );
