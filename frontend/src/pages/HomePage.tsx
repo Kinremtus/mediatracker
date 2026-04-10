@@ -349,7 +349,7 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
           {activeView === "media" && (
             <>
               {/* Статистика */}
-              <section>с
+              <section>
                 <h2 className="mb-3 text-sm font-medium text-muted-foreground">
                   Моя статистика
                 </h2>
