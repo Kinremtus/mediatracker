@@ -5,7 +5,7 @@ import models
 import schemas
 from database import get_db
 from dependencies import get_current_user
-from services import anilist
+from services import anilist, tmdb
 
 router = APIRouter(prefix="/tracking", tags=["tracking"])
 
