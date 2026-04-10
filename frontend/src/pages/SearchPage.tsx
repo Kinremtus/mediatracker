@@ -1,14 +1,21 @@
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { searchMedia, addToTracking } from "@/api/tracking";
+import { searchMedia, addToTracking, type SearchType } from "@/api/tracking";
 
-type SearchType = "anime" | "movies" | "tv";
-
-const SEARCH_TYPES: { value: SearchType; label: string }[] = [
+const SEARCH_TYPES = [
   { value: "anime", label: "Аниме" },
+  { value: "manga", label: "Манга" },
+  { value: "manhwa", label: "Манхва" },
+  { value: "manhua", label: "Маньхуа" },
+  { value: "novels", label: "Новеллы" },
   { value: "movies", label: "Фильмы" },
   { value: "tv", label: "Сериалы" },
+  { value: "dramas", label: "Дорамы" },
+  { value: "cartoons", label: "Мультсериалы" },
+  { value: "animated-movies", label: "Мультфильмы" },
+  { value: "games", label: "Игры" },
+  { value: "books", label: "Книги" },
 ];
 
 export default function SearchPage({ onBack }: { onBack: () => void }) {
@@ -16,17 +23,17 @@ export default function SearchPage({ onBack }: { onBack: () => void }) {
   const [searchType, setSearchType] = useState<SearchType>("anime");
   const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [adding, setAdding] = useState<number | null>(null);
-  const [added, setAdded] = useState(new Set<number>());
+  const [adding, setAdding] = useState<string | null>(null);
+  const [added, setAdded] = useState(new Set<string>());
   const [error, setError] = useState("");
 
-  async function handleSearch(e: React.FormEvent) {
+  async function handleSearch(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!query.trim()) return;
     setLoading(true);
     setError("");
     try {
-      const data = await searchMedia(query, searchType);
+      const data = await searchMedia(query, searchType as "anime" | "movies" | "tv");
       setResults(data);
     } catch (e) {
       setError((e as Error).message);
@@ -36,11 +43,11 @@ export default function SearchPage({ onBack }: { onBack: () => void }) {
   }
 
   async function handleAdd(item: any) {
-    const id = item.anilist_id ?? item.tmdb_id;
+    const id = item.anilist_id ?? item.tmdb_id ?? item.rawg_id ?? item.google_id;
     const type = item.media_type ?? searchType;
-    setAdding(id);
+    setAdding(String(id));
     try {
-      await addToTracking(id, type, "planned");
+      await addToTracking(Number(id), type, "planned");
       setAdded((prev) => new Set(prev).add(id));
     } catch (e) {
       const msg = (e as Error).message;
@@ -73,7 +80,7 @@ export default function SearchPage({ onBack }: { onBack: () => void }) {
             <button
               key={t.value}
               onClick={() => {
-                setSearchType(t.value);
+                setSearchType(t.value as SearchType);
                 setResults([]);
               }}
               className={`px-4 py-1.5 rounded-full text-sm transition-colors ${

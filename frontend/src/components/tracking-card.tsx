@@ -38,7 +38,6 @@ export function TrackingCard({
 
   const uiStatus = mapStatusToUI(entry.status);
   const config = statusConfig[uiStatus];
-  const StatusIcon = config.icon;
 
   async function handleStatusChange(status: string) {
   setLoading(true);

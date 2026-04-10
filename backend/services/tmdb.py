@@ -6,31 +6,30 @@ TMDB_KEY = os.getenv("TMDB_API_KEY")
 TMDB_IMG = "/tmdb-image"
 
 
-async def search_movies(query: str) -> list[dict]:
+async def search_movies(query: str, genre_id: int = None) -> list[dict]:
+    params = {
+        "api_key": TMDB_KEY,
+        "query": query,
+        "language": "ru-RU",
+        "include_adult": True,
+    }
+    if genre_id:
+        params["with_genres"] = genre_id
     async with httpx.AsyncClient() as client:
-        response = await client.get(
-            f"{TMDB_BASE}/search/movie",
-            params={
-                "api_key": TMDB_KEY,
-                "query": query,
-                "language": "ru-RU",
-                "include_adult": False,
-            },
-        )
+        response = await client.get(f"{TMDB_BASE}/search/movie", params=params)
     data = response.json()
     return [format_movie(item) for item in data.get("results", [])[:10]]
 
-
-async def search_tv(query: str) -> list[dict]:
+async def search_tv(query: str, genre_id: int = None) -> list[dict]:
+    params = {
+        "api_key": TMDB_KEY,
+        "query": query,
+        "language": "ru-RU",
+    }
+    if genre_id:
+        params["with_genres"] = genre_id
     async with httpx.AsyncClient() as client:
-        response = await client.get(
-            f"{TMDB_BASE}/search/tv",
-            params={
-                "api_key": TMDB_KEY,
-                "query": query,
-                "language": "ru-RU",
-            },
-        )
+        response = await client.get(f"{TMDB_BASE}/search/tv", params=params)
     data = response.json()
     return [format_tv(item) for item in data.get("results", [])[:10]]
 
