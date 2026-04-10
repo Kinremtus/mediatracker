@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-
+from services import anilist, tmdb, rawg, books
 import models
 import schemas
 from database import get_db
