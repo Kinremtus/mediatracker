@@ -37,17 +37,23 @@ export async function getTracking(status?: string): Promise<TrackingEntry[]> {
   return api.get<TrackingEntry[]>(`/tracking${params}`);
 }
 
-export async function searchMedia(
-  query: string,
-  type: "anime" | "movies" | "tv",
-) {
+export async function searchMedia(query: string, type: SearchType) {
   const endpoints: Record<string, string> = {
     anime: "/search/anime",
+    manga: "/search/manga",
+    manhwa: "/search/manhwa",
+    manhua: "/search/manhua",
+    novels: "/search/novels",
     movies: "/search/movies",
     tv: "/search/tv",
+    dramas: "/search/dramas",
+    cartoons: "/search/cartoons",
+    "animated-movies": "/search/animated-movies",
+    games: "/search/games",
+    books: "/search/books",
   };
   return api.get<AnimeSearchResult[]>(
-    `${endpoints[type]}?q=${encodeURIComponent(query)}`,
+    `${endpoints[type]}?q=${encodeURIComponent(query)}`
   );
 }
 
