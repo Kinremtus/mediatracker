@@ -10,8 +10,9 @@ app = FastAPI(title="MediaTracker", redirect_slashes=False)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:5173",  # локальная разработка
-        "https://mediatracker.web-socket-test-bench.site:2053",  # прод
+    "http://localhost:5173",
+    "https://mediatracker.web-socket-test-bench.site:2053",
+    "https://mediatracker.web-socket-test-bench.site",  # ← добавь без порта тоже
     ],
     allow_credentials=True,
     allow_methods=["*"],
