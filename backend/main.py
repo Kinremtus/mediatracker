@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="MediaTracker")
+app = FastAPI(title="MediaTracker", redirect_slashes=False)
 
 app.add_middleware(
     CORSMiddleware,
