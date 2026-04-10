@@ -67,7 +67,8 @@ class TrackingEntryResponse(BaseModel):
 
 # --- Search ---
 class TrackingFromSearch(BaseModel):
-    anilist_id: int
+    external_id: int
+    media_type: str = "anime"  # anime / movie / tv-shows
     status: TrackingStatus = TrackingStatus.planned
     rating: float | None = None
     progress: int = 0
