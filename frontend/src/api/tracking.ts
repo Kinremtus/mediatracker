@@ -72,3 +72,9 @@ export async function updateTracking(
 export async function deleteTracking(id: number): Promise<void> {
   return api.delete(`/tracking/${id}`);
 }
+
+export type SearchType = 
+  "anime" | "manga" | "manhwa" | "manhua" | "novels" |
+  "movies" | "tv" | "dramas" | "cartoons" | "animated-movies" |
+  "games" | "books";
+
