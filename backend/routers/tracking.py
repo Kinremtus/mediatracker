@@ -46,36 +46,40 @@ def get_tracking(
     return query.all()
 
 
-@router.post(
-    "/from-search", response_model=schemas.TrackingEntryResponse
-)
+@router.post("/from-search", response_model=schemas.TrackingEntryResponse)
 async def add_tracking_from_search(
     entry: schemas.TrackingFromSearch,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
+    # Ищем в нашей БД
     media = (
         db.query(models.MediaItem)
-        .filter(
-            models.MediaItem.external_id == str(entry.anilist_id)
-        )
+        .filter(models.MediaItem.external_id == str(entry.external_id))
         .first()
     )
+
     if not media:
-        result = await anilist.search_anime_by_id(entry.anilist_id)
+        # Получаем данные в зависимости от типа
+        if entry.media_type == "anime":
+            result = await anilist.search_anime_by_id(entry.external_id)
+        elif entry.media_type in ("movie", "tv-shows"):
+            result = await tmdb.get_by_id(entry.external_id, entry.media_type)
+        else:
+            raise HTTPException(status_code=400, detail="Неизвестный тип медиа")
+
         if not result:
-            raise HTTPException(
-                status_code=404, detail="Аниме не найдено"
-            )
+            raise HTTPException(status_code=404, detail="Медиа не найдено")
+
         media = models.MediaItem(
-            title=result["title_romaji"],
-            title_english=result["title_english"],
-            title_native=result["title_native"],
-            title_russian=result["title_russian"],
-            media_type="anime",
-            external_id=str(entry.anilist_id),
-            poster_url=result["poster_url"],
-            episodes=result["episodes"],
+            title=result["title"],
+            title_english=result.get("title_english"),
+            title_native=result.get("title_native"),
+            title_russian=result.get("title_russian"),
+            media_type=entry.media_type,
+            external_id=str(entry.external_id),
+            poster_url=result.get("poster_url"),
+            episodes=result.get("episodes"),
         )
         db.add(media)
         db.commit()
@@ -90,9 +94,7 @@ async def add_tracking_from_search(
         .first()
     )
     if existing:
-        raise HTTPException(
-            status_code=400, detail="Уже в трекинге"
-        )
+        raise HTTPException(status_code=400, detail="Уже в трекинге")
 
     db_entry = models.TrackingEntry(
         media_id=media.id,

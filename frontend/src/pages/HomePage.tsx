@@ -83,11 +83,28 @@ function TrackingCard({
         </p>
         
         {entry.media.episodes && (
-          <p className="text-xs text-muted-foreground">
-            {entry.progress} / {entry.media.episodes} эп.
-          </p>
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <input
+              type="number"
+              min={0}
+              max={entry.media.episodes}
+              defaultValue={entry.progress}
+              className="w-10 rounded bg-white/10 px-1 text-center text-xs text-foreground"
+              onBlur={async (e) => {
+                const val = Math.min(
+                  parseInt(e.target.value) || 0,
+                  entry.media.episodes!,
+                );
+                if (val !== entry.progress) {
+                  await updateTracking(entry.id, { progress: val });
+                  onUpdate(entry.id, entry.status);
+                }
+              }}
+            />
+            <span>/ {entry.media.episodes} эп.</span>
+          </div>
         )}
-        
+
         <div className="relative">
           <button
             onClick={() => setOpen(!open)}
