@@ -3,7 +3,7 @@ import os
 
 TMDB_BASE = "https://api.themoviedb.org/3"
 TMDB_KEY = os.getenv("TMDB_API_KEY")
-TMDB_IMG = "https://image.tmdb.org/t/p/w500"
+TMDB_IMG = "/tmdb-image"
 
 
 async def search_movies(query: str) -> list[dict]:
@@ -47,7 +47,7 @@ def format_movie(item: dict) -> dict:
             if item.get("poster_path")
             else None
         ),
-        "media_type": "movie",
+        "media_type": "movies",
         "episodes": None,
         "status": "FINISHED" if item.get("release_date") else "UNKNOWN",
         "score": int(item["vote_average"] * 10) if item.get("vote_average") else None,

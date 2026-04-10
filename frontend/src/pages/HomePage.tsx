@@ -400,7 +400,7 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
                   <div className="mt-8 flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-12 text-center">
                     <p className="text-muted-foreground">Ничего не найдено</p>
                     <button onClick={() => setShowSearch(true)} className="mt-2 text-sm text-primary hover:underline">
-                      Найти и добавить аниме
+                      Найти и добавить {activeCategory === "all" ? "что-нибудь" : activeCategory} 
                     </button>
                   </div>
                 )}
