@@ -89,7 +89,8 @@ function TrackingCard({
               min={0}
               max={entry.media.episodes}
               defaultValue={entry.progress}
-              className="w-10 rounded bg-white/10 px-1 text-center text-xs text-foreground"
+              style={{ width: `${String(entry.media.episodes).length + 1}ch` }}
+              className="rounded bg-white/10 px-1 text-center text-xs text-foreground"
               onBlur={async (e) => {
                 const val = Math.min(
                   parseInt(e.target.value) || 0,
@@ -196,10 +197,28 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
   },[tracking]);
 
   // Заглушка для категорий (пока бэк не умеет отдавать тип медиа)
-  const categoryCounts = useMemo(() => ({
+  const categoryCounts = useMemo(() => {
+  const counts: Record<string, number> = {
     all: tracking.length,
-    anime: tracking.length, movies: 0, "tv-shows": 0, books: 0, manga: 0, manhwa: 0, manhua: 0, games: 0, dramas: 0, cartoons: 0, "animated-movies": 0, novels: 0,
-  }),[tracking]);
+    anime: 0,
+    movies: 0,
+    "tv-shows": 0,
+    books: 0,
+    manga: 0,
+    manhwa: 0,
+    manhua: 0,
+    games: 0,
+    dramas: 0,
+    cartoons: 0,
+    "animated-movies": 0,
+    novels: 0,
+  };
+  tracking.forEach((entry) => {
+    const type = entry.media.media_type;
+    if (type in counts) counts[type]++;
+  });
+  return counts;
+}, [tracking]);
 
   // Группируем то, что смотрим прямо сейчас, по категориям
   const inProgressByCategory = useMemo(() => {
@@ -223,15 +242,18 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
 
   // Фильтрация списка на фронте
   const filteredMedia = useMemo(() => {
-    return tracking.filter((entry) => {
-      const matchesSearch = (entry.media.title_russian || entry.media.title)
-        .toLowerCase()
-        .includes(searchQuery.toLowerCase());
-      const uiStatus = mapStatusToUI(entry.status);
-      const matchesFilter = activeFilter === "all" || uiStatus === activeFilter;
-      return matchesSearch && matchesFilter;
-    });
-  },[tracking, searchQuery, activeFilter]);
+  return tracking.filter((entry) => {
+    const matchesSearch = (entry.media.title_russian || entry.media.title)
+      .toLowerCase()
+      .includes(searchQuery.toLowerCase());
+    const uiStatus = mapStatusToUI(entry.status);
+    const matchesFilter = activeFilter === "all" || uiStatus === activeFilter;
+    const matchesCategory =
+      activeCategory === "all" ||
+      entry.media.media_type === activeCategory;
+    return matchesSearch && matchesFilter && matchesCategory;
+  });
+}, [tracking, searchQuery, activeFilter, activeCategory]);
 
   // Роутинг: Если открыт поиск - рендерим его
   if (showSearch) {
