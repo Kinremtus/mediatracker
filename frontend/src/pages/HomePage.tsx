@@ -249,11 +249,12 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
     const uiStatus = mapStatusToUI(entry.status);
     const matchesFilter = activeFilter === "all" || uiStatus === activeFilter;
     const matchesCategory =
+      !activeCategory ||
       activeCategory === "all" ||
       entry.media.media_type === activeCategory;
     return matchesSearch && matchesFilter && matchesCategory;
-  });
-}, [tracking, searchQuery, activeFilter, activeCategory]);
+    });
+  }, [tracking, searchQuery, activeFilter, activeCategory]);
 
   // Роутинг: Если открыт поиск - рендерим его
   if (showSearch) {

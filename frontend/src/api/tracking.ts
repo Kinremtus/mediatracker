@@ -37,22 +37,31 @@ export async function getTracking(status?: string): Promise<TrackingEntry[]> {
   return api.get<TrackingEntry[]>(`/tracking${params}`);
 }
 
-export async function searchAnime(query: string): Promise<AnimeSearchResult[]> {
+export async function searchMedia(
+  query: string,
+  type: "anime" | "movies" | "tv",
+) {
+  const endpoints: Record<string, string> = {
+    anime: "/search/anime",
+    movies: "/search/movies",
+    tv: "/search/tv",
+  };
   return api.get<AnimeSearchResult[]>(
-    `/search/anime?q=${encodeURIComponent(query)}`
+    `${endpoints[type]}?q=${encodeURIComponent(query)}`,
   );
 }
 
 export async function addToTracking(
-  anilistId: number,
-  status = "planned"
+  externalId: number,
+  mediaType: string,
+  status = "planned",
 ): Promise<TrackingEntry> {
   return api.post<TrackingEntry>("/tracking/from-search", {
-    anilist_id: anilistId,
+    external_id: externalId,
+    media_type: mediaType,
     status,
   });
 }
-
 export async function updateTracking(
   id: number,
   data: { status?: string; rating?: number | null; progress?: number }
