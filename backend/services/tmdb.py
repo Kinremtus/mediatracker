@@ -73,7 +73,8 @@ def format_tv(item: dict) -> dict:
     }
 
 async def get_by_id(tmdb_id: int, media_type: str) -> dict | None:
-    endpoint = "movie" if media_type == "movie" else "tv"
+    # Нормализуем тип — принимаем и "movies" и "movie"
+    endpoint = "movie" if media_type in ("movie", "movies") else "tv"
     async with httpx.AsyncClient() as client:
         response = await client.get(
             f"{TMDB_BASE}/{endpoint}/{tmdb_id}",
@@ -82,4 +83,4 @@ async def get_by_id(tmdb_id: int, media_type: str) -> dict | None:
     if response.status_code != 200:
         return None
     item = response.json()
-    return format_movie(item) if media_type == "movie" else format_tv(item)
+    return format_movie(item) if endpoint == "movie" else format_tv(item)

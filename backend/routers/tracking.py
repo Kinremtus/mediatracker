@@ -63,7 +63,7 @@ async def add_tracking_from_search(
         # Получаем данные в зависимости от типа
         if entry.media_type == "anime":
             result = await anilist.search_anime_by_id(entry.external_id)
-        elif entry.media_type in ("movie", "tv-shows"):
+        elif entry.media_type in ("movies", "movie", "tv-shows", "tv"):
             result = await tmdb.get_by_id(entry.external_id, entry.media_type)
         else:
             raise HTTPException(status_code=400, detail="Неизвестный тип медиа")
@@ -72,7 +72,7 @@ async def add_tracking_from_search(
             raise HTTPException(status_code=404, detail="Медиа не найдено")
 
         media = models.MediaItem(
-            title=result["title"],
+            title=result.get("title") or result.get("title_romaji", ""),
             title_english=result.get("title_english"),
             title_native=result.get("title_native"),
             title_russian=result.get("title_russian"),
@@ -80,7 +80,7 @@ async def add_tracking_from_search(
             external_id=str(entry.external_id),
             poster_url=result.get("poster_url"),
             episodes=result.get("episodes"),
-        )
+)
         db.add(media)
         db.commit()
         db.refresh(media)
