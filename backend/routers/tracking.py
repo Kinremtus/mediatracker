@@ -5,7 +5,6 @@ import models
 import schemas
 from database import get_db
 from dependencies import get_current_user
-from services import anilist, tmdb
 
 router = APIRouter(prefix="/tracking", tags=["tracking"])
 
@@ -61,12 +60,21 @@ async def add_tracking_from_search(
 
     if not media:
         # Получаем данные в зависимости от типа
-        if entry.media_type == "anime":
-            result = await anilist.search_anime_by_id(entry.external_id)
-        elif entry.media_type in ("movies", "movie", "tv-shows", "tv"):
-            result = await tmdb.get_by_id(entry.external_id, entry.media_type)
-        else:
-            raise HTTPException(status_code=400, detail="Неизвестный тип медиа")
+        MANGA_TYPES = ("manga", "manhwa", "manhua", "novels")
+    TMDB_TYPES = ("movies", "movie", "tv-shows", "tv", "dramas", "cartoons", "animated-movies")
+
+    if entry.media_type == "anime":
+        result = await anilist.search_anime_by_id(int(entry.external_id))
+    elif entry.media_type in MANGA_TYPES:
+        result = await anilist.search_manga_by_id(int(entry.external_id))
+    elif entry.media_type in TMDB_TYPES:
+        result = await tmdb.get_by_id(int(entry.external_id), entry.media_type)
+    elif entry.media_type == "games":
+        result = await rawg.get_game_by_id(entry.external_id)
+    elif entry.media_type == "books":
+        result = await books.get_book_by_id(entry.external_id)
+    else:
+        raise HTTPException(status_code=400, detail="Неизвестный тип медиа")
 
         if not result:
             raise HTTPException(status_code=404, detail="Медиа не найдено")
@@ -156,19 +164,3 @@ def delete_tracking(
 
     db.delete(entry)
     db.commit()
-
-MANGA_TYPES = ("manga", "manhwa", "manhua", "novels")
-TMDB_TYPES = ("movies", "movie", "tv-shows", "tv", "dramas", "cartoons", "animated-movies")
-
-if entry.media_type == "anime":
-    result = await anilist.search_anime_by_id(int(entry.external_id))
-elif entry.media_type in MANGA_TYPES:
-    result = await anilist.search_manga_by_id(int(entry.external_id))
-elif entry.media_type in TMDB_TYPES:
-    result = await tmdb.get_by_id(int(entry.external_id), entry.media_type)
-elif entry.media_type == "games":
-    result = await rawg.get_game_by_id(entry.external_id)
-elif entry.media_type == "books":
-    result = await books.get_book_by_id(entry.external_id)
-else:
-    raise HTTPException(status_code=400, detail="Неизвестный тип медиа")
