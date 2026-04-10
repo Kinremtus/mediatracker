@@ -41,13 +41,14 @@ export function TrackingCard({
   const StatusIcon = config.icon;
 
   async function handleStatusChange(status: string) {
-    setLoading(true);
-    setOpen(false);
-    try {
-      await updateTracking(entry.id, { status: mapStatusToBackend(status) });
-    } catch (e) { console.error(e); }
-    finally { setLoading(false); }
-  }
+  setLoading(true);
+  setOpen(false);
+  try {
+    await updateTracking(entry.id, { status: mapStatusToBackend(status) });
+    onUpdate(entry.id, mapStatusToBackend(status)); // ← добавь эту строку
+  } catch (e) { console.error(e); }
+  finally { setLoading(false); }
+}
 
   async function handleDelete() {
     setDeleting(true);
