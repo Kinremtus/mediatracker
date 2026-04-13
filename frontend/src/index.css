@@ -146,6 +146,11 @@
     --sidebar-accent-foreground: oklch(0.985 0 0);
     --sidebar-border: oklch(0.25 0.01 50);
     --sidebar-ring: oklch(0.556 0 0);
+        /* Цвета статусов для тёмной темы — чуть светлее */
+    --watching: #E8C49A;   /* Охристая глина — светлее */
+    --completed: #A8C4AE;  /* Шалфей — светлее */
+    --dropped: #9AABAC;    /* Графитовый туман — светлее */
+    --planned: #6B9DAD;    /* Пыльный океан — светлее */
 }
 
 @layer base {
