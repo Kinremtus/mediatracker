@@ -2,38 +2,48 @@ import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { searchMedia, addToTracking, type SearchType } from "@/api/tracking";
+import { ArrowLeft, Search } from "lucide-react";
+import { cn } from "@/lib/utils";
 
-const SEARCH_TYPES = [
-  { value: "anime", label: "Аниме" },
-  { value: "manga", label: "Манга" },
-  { value: "manhwa", label: "Манхва" },
-  { value: "manhua", label: "Маньхуа" },
-  { value: "novels", label: "Новеллы" },
-  { value: "movies", label: "Фильмы" },
-  { value: "tv", label: "Сериалы" },
-  { value: "dramas", label: "Дорамы" },
-  { value: "cartoons", label: "Мультсериалы" },
-  { value: "animated-movies", label: "Мультфильмы" },
-  { value: "games", label: "Игры" },
-  { value: "books", label: "Книги" },
+const SEARCH_TYPES: { value: SearchType; label: string; emoji: string }[] = [
+  { value: "anime", label: "Аниме", emoji: "▶" },
+  { value: "dramas", label: "Дорамы", emoji: "🎬" },
+  { value: "games", label: "Игры", emoji: "🎮" },
+  { value: "books", label: "Книги", emoji: "📖" },
+  { value: "manga", label: "Манга", emoji: "📚" },
+  { value: "manhwa", label: "Манхва", emoji: "📚" },
+  { value: "manhua", label: "Маньхуа", emoji: "📚" },
+  { value: "cartoons", label: "Мультсериалы", emoji: "📺" },
+  { value: "animated-movies", label: "Мультфильмы", emoji: "🎞" },
+  { value: "novels", label: "Новеллы", emoji: "📝" },
+  { value: "tv", label: "Сериалы", emoji: "📺" },
+  { value: "movies", label: "Фильмы", emoji: "🎥" },
 ];
 
-export default function SearchPage({ onBack }: { onBack: () => void }) {
+export default function SearchPage({
+  onBack,
+  initialType = "anime",
+}: {
+  onBack: () => void;
+  initialType?: SearchType;
+}) {
   const [query, setQuery] = useState("");
-  const [searchType, setSearchType] = useState<SearchType>("anime");
+  const [searchType, setSearchType] = useState<SearchType>(initialType);
   const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [adding, setAdding] = useState<string | null>(null);
   const [added, setAdded] = useState(new Set<string>());
   const [error, setError] = useState("");
 
-  async function handleSearch(e: React.FormEvent<HTMLFormElement>) {
+  const currentType = SEARCH_TYPES.find((t) => t.value === searchType);
+
+  async function handleSearch(e: React.FormEvent) {
     e.preventDefault();
     if (!query.trim()) return;
     setLoading(true);
     setError("");
     try {
-      const data = await searchMedia(query, searchType as "anime" | "movies" | "tv");
+      const data = await searchMedia(query, searchType);
       setResults(data);
     } catch (e) {
       setError((e as Error).message);
@@ -43,115 +53,169 @@ export default function SearchPage({ onBack }: { onBack: () => void }) {
   }
 
   async function handleAdd(item: any) {
-    const id = item.anilist_id ?? item.tmdb_id ?? item.rawg_id ?? item.google_id;
-    const type = item.media_type ?? searchType;
-    setAdding(String(id));
-    try {
-      await addToTracking(Number(id), type, "planned");
-      setAdded((prev) => new Set(prev).add(id));
-    } catch (e) {
-      const msg = (e as Error).message;
-      if (msg.includes("трекинге")) {
+      const id = String(
+        item.anilist_id ?? item.tmdb_id ?? item.rawg_id ?? item.google_id
+      );
+      const externalId = Number(
+        item.anilist_id ?? item.tmdb_id ?? item.rawg_id ?? item.google_id
+      );
+      const type = (item.media_type ?? searchType) as SearchType;
+      setAdding(id);
+      try {
+        await addToTracking(externalId, type, "planned");
         setAdded((prev) => new Set(prev).add(id));
-      } else {
-        setError(msg);
+      } catch (e) {
+        const msg = (e as Error).message;
+        if (msg.includes("трекинге")) {
+          setAdded((prev) => new Set(prev).add(id));
+        } else {
+          setError(msg);
+        }
+      } finally {
+        setAdding(null);
       }
-    } finally {
-      setAdding(null);
     }
-  }
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
-      <header className="border-b border-white/10 px-6 py-4 flex items-center gap-4">
+    <div className="min-h-screen bg-background text-foreground flex flex-col">
+      {/* Шапка */}
+      <div className="border-b border-border px-6 py-4 flex items-center gap-3">
         <button
           onClick={onBack}
-          className="text-white/50 hover:text-white transition-colors text-sm"
+          className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors text-sm"
         >
-          ← Назад
+          <ArrowLeft className="size-4" />
+          Назад
         </button>
-        <h1 className="text-xl font-bold">Поиск</h1>
-      </header>
+        <div className="h-4 w-px bg-border" />
+        <h1 className="text-lg font-semibold">Поиск</h1>
+        {currentType && (
+          <span className="text-sm text-muted-foreground">
+            — {currentType.label}
+          </span>
+        )}
+      </div>
 
-      <main className="max-w-5xl mx-auto px-6 py-8">
-        {/* Переключатель типа */}
-        <div className="flex gap-2 mb-4">
+      <div className="flex-1 max-w-5xl mx-auto w-full px-6 py-8 flex flex-col gap-6">
+
+        {/* Категории */}
+        <div className="flex flex-wrap gap-2">
           {SEARCH_TYPES.map((t) => (
             <button
               key={t.value}
               onClick={() => {
                 setSearchType(t.value as SearchType);
                 setResults([]);
+                setQuery("");
               }}
-              className={`px-4 py-1.5 rounded-full text-sm transition-colors ${
+              className={cn(
+                "px-4 py-2 rounded-xl text-sm font-medium transition-all border",
                 searchType === t.value
-                  ? "bg-white text-gray-950 font-semibold"
-                  : "bg-white/10 text-white/70 hover:bg-white/20"
-              }`}
+                  ? "bg-foreground text-background border-foreground"
+                  : "bg-card text-muted-foreground border-border hover:border-muted-foreground hover:text-foreground"
+              )}
             >
               {t.label}
             </button>
           ))}
         </div>
 
-        {/* Поиск */}
-        <form onSubmit={handleSearch} className="flex gap-3 mb-8">
-          <Input
-            placeholder={`Поиск ${SEARCH_TYPES.find((t) => t.value === searchType)?.label.toLowerCase()}...`}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="bg-white/5 border-white/20 text-white placeholder:text-white/40 rounded-full px-5"
-          />
+        {/* Строка поиска */}
+        <form onSubmit={handleSearch} className="flex gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+            <Input
+              placeholder={`Поиск ${currentType?.label.toLowerCase() ?? ""}...`}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="pl-11 h-12 bg-card border-border rounded-xl text-foreground placeholder:text-muted-foreground"
+            />
+          </div>
           <Button
             type="submit"
             disabled={loading}
-            className="rounded-full px-6 shrink-0"
+            className="h-12 px-8 rounded-xl font-semibold"
           >
             {loading ? "Ищем..." : "Найти"}
           </Button>
         </form>
 
-        {error && <p className="text-red-400 mb-4">{error}</p>}
+        {error && (
+          <p className="text-destructive text-sm">{error}</p>
+        )}
 
         {/* Результаты */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-          {results.map((item) => {
-            const id = item.anilist_id ?? item.tmdb_id;
-            const title =
-              item.title_russian || item.title_english || item.title_romaji || item.title;
-            return (
-              <div
-                key={id}
-                className="rounded-xl overflow-hidden bg-white/5 border border-white/10 flex flex-col"
-              >
-                {item.poster_url && (
-                  <img
-                    src={item.poster_url}
-                    alt={title}
-                    referrerPolicy="no-referrer"
-                    className="w-full aspect-[2/3] object-cover"
-                  />
-                )}
-                <div className="p-3 flex flex-col gap-2 flex-1">
-                  <p className="text-sm font-medium truncate">{title}</p>
-                  {item.episodes && (
-                    <p className="text-xs text-white/40">{item.episodes} эп.</p>
+        {results.length > 0 && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+            {results.map((item) => {
+              const id = String(
+                item.anilist_id ?? item.tmdb_id ?? item.rawg_id ?? item.google_id
+              );
+              const title =
+                item.title_russian ||
+                item.title_english ||
+                item.title_romaji ||
+                item.title;
+
+              return (
+                <div
+                  key={id}
+                  className="group flex flex-col rounded-xl overflow-hidden bg-card border border-border hover:border-muted-foreground transition-all"
+                >
+                  {item.poster_url ? (
+                    <img
+                      src={item.poster_url}
+                      alt={title}
+                      referrerPolicy="no-referrer"
+                      className="w-full aspect-[2/3] object-cover"
+                    />
+                  ) : (
+                    <div className="w-full aspect-[2/3] bg-muted flex items-center justify-center text-muted-foreground text-xs text-center p-2">
+                      Нет обложки
+                    </div>
                   )}
-                  <Button
-                    size="sm"
-                    disabled={adding === id || added.has(id)}
-                    onClick={() => handleAdd(item)}
-                    className="mt-auto w-full rounded-full text-xs"
-                    variant={added.has(id) ? "outline" : "default"}
-                  >
-                    {added.has(id) ? "✓ Добавлено" : adding === id ? "..." : "+ В список"}
-                  </Button>
+                  <div className="p-3 flex flex-col gap-2 flex-1">
+                    <p className="text-sm font-medium truncate text-foreground">
+                      {title}
+                    </p>
+                    {item.episodes && (
+                      <p className="text-xs text-muted-foreground">
+                        {item.episodes} эп.
+                      </p>
+                    )}
+                    <Button
+                      size="sm"
+                      disabled={adding === id || added.has(id)}
+                      onClick={() => handleAdd(item)}
+                      className={cn(
+                        "mt-auto w-full rounded-lg text-xs h-8",
+                        added.has(id) && "opacity-60"
+                      )}
+                      variant={added.has(id) ? "outline" : "default"}
+                    >
+                      {added.has(id)
+                        ? "✓ Добавлено"
+                        : adding === id
+                        ? "..."
+                        : "+ В список"}
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
-      </main>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Пустое состояние до поиска */}
+        {results.length === 0 && !loading && !error && (
+          <div className="flex-1 flex flex-col items-center justify-center py-20 text-center">
+            <div className="text-6xl mb-4 opacity-20">🔍</div>
+            <p className="text-muted-foreground">
+              Введи название и нажми «Найти»
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

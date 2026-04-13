@@ -158,18 +158,18 @@ export const mediaTypeConfig: Record<
 };
 
 export const mediaTypes: MediaType[] = [
-  "anime",
-  "movies",
-  "tv-shows",
-  "books",
-  "manga",
-  "manhwa",
-  "manhua",
-  "games",
-  "dramas",
-  "cartoons",
-  "animated-movies",
-  "novels",
+  "anime",           // Аниме
+  "dramas",          // Дорамы
+  "games",           // Игры
+  "books",           // Книги
+  "manga",           // Манга
+  "manhwa",          // Манхва
+  "manhua",          // Маньхуа
+  "cartoons",        // Мультсериалы
+  "animated-movies", // Мультфильмы
+  "novels",          // Новеллы
+  "tv-shows",        // Сериалы
+  "movies",          // Фильмы
 ];
 
 export function getProgressLabel(type: MediaType): string {

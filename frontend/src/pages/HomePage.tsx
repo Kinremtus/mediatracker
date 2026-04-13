@@ -7,6 +7,7 @@ import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { mediaTypeConfig, type MediaStatus, type MediaType } from "@/lib/media-types";
 import { StatisticsSection } from "@/components/statistics-section";
 import { TrackingCard, mapStatusToUI } from "@/components/tracking-card";
+import { type SearchType } from "@/api/tracking";
 
 // Импорты твоего API
 import { getTracking, type TrackingEntry } from "@/api/tracking";
@@ -27,15 +28,16 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
   const [tracking, setTracking] = useState<TrackingEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [showSearch, setShowSearch] = useState(false);
-
+  const [searchInitialType, setSearchInitialType] = useState<SearchType>("anime");
+  
   // Загрузка данных
-  const loadTracking = () => {
+  const loadTracking = (status?: string | null) => {
     setLoading(true);
-    getTracking()
+    getTracking(status ?? undefined)
       .then(setTracking)
       .catch(console.error)
       .finally(() => setLoading(false));
-  };
+  };  
 
   useEffect(() => {
     loadTracking();
@@ -156,9 +158,10 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
   if (showSearch) {
     return (
       <SearchPage
+        initialType={searchInitialType}
         onBack={() => {
           setShowSearch(false);
-          loadTracking();
+          loadTracking(activeFilter);
         }}
       />
     );
@@ -307,12 +310,17 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
                         Найти и добавить что-нибудь
                       </button>
                     )}
-                    {activeCategory && activeCategory !== "all" && (
+                    {activeCategory !== "all" && (
                       <button
-                        onClick={() => setShowSearch(true)}
+                        onClick={() => {
+                          const searchType: SearchType =
+                            activeCategory === "tv-shows" ? "tv" : (activeCategory as SearchType);
+                          setSearchInitialType(searchType);
+                          setShowSearch(true);
+                        }}
                         className="rounded-full px-6"
                       >
-                        Найти и добавить {CATEGORY_LABELS[activeCategory] ?? activeCategory}
+                        Найти и добавить {CATEGORY_LABELS[activeCategory] ?? "что-нибудь"}
                       </button>
                     )}
                   </div>
