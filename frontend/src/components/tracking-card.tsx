@@ -86,8 +86,11 @@ export function TrackingCard({
               min={0}
               max={entry.media.episodes}
               defaultValue={entry.progress}
-              style={{ width: `${String(entry.media.episodes).length + 1}ch` }}
-              className="rounded bg-white/10 px-1 text-center text-xs text-foreground"
+              style={{ 
+                width: `${String(entry.media.episodes).length + 2}ch`,
+                MozAppearance: "textfield" 
+              }}
+              className="rounded bg-white/10 px-1 text-center text-xs text-foreground [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
               onBlur={async (e) => {
                 const val = Math.min(
                   parseInt(e.target.value) || 0,
