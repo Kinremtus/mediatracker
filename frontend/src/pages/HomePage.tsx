@@ -305,7 +305,7 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
                     {(!activeCategory || activeCategory === "all") && (
                       <button
                         onClick={() => setShowSearch(true)}
-                        className="inline-flex items-center justify-center rounded-full bg-primary px-6 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/80"
+                        className="inline-flex items-center justify-center rounded-full border border-border px-6 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-primary/10 hover:text-foreground"
                       >
                         Найти и добавить что-нибудь
                       </button>
@@ -318,7 +318,7 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
                           setSearchInitialType(searchType);
                           setShowSearch(true);
                         }}
-                        className="inline-flex items-center justify-center rounded-full bg-primary px-6 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/80"
+                        className="inline-flex items-center justify-center rounded-full border border-border px-6 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-primary/10 hover:text-foreground"
                       >
                         Найти и добавить {CATEGORY_LABELS[activeCategory] ?? "что-нибудь"}
                       </button>
