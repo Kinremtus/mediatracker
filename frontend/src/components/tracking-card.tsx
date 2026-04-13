@@ -110,8 +110,13 @@ export function TrackingCard({
           <button
             onClick={() => setOpen(!open)}
             disabled={loading}
-            // Используем color из config (он у нас теперь в Tailwind)
-            className={cn("text-xs transition-opacity hover:opacity-80", config.className.split(" ")[1])}
+            className="text-xs transition-opacity hover:opacity-80"
+            style={{
+              color: uiStatus === "watching" ? "var(--watching)" :
+                     uiStatus === "completed" ? "var(--completed)" :
+                     uiStatus === "dropped" ? "var(--dropped)" :
+                     "var(--planned)",
+            }}
           >
             {loading ? "..." : config.label + " ▾"}
           </button>
