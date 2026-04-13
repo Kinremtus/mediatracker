@@ -22,6 +22,101 @@ export const mapStatusToBackend = (uiStatus: string): string => {
   }
 };
 
+function ProgressControl({
+  entry,
+  onUpdate,
+}: {
+  entry: TrackingEntry;
+  onUpdate: (id: number, status: string, progress?: number) => void;
+}) {
+  const [progress, setProgress] = useState(entry.progress);
+  const [editing, setEditing] = useState(false);
+  const [inputVal, setInputVal] = useState(String(entry.progress));
+
+  async function save(val: number) {
+    const clamped = Math.max(0, Math.min(entry.media.episodes!, val));
+    setProgress(clamped);
+    setInputVal(String(clamped));
+    if (clamped !== entry.progress) {
+      await updateTracking(entry.id, { progress: clamped });
+      onUpdate(entry.id, entry.status, clamped);
+    }
+  }
+
+  async function adjust(delta: number) {
+    const next = Math.max(0, Math.min(entry.media.episodes!, progress + delta));
+    setProgress(next);
+    setInputVal(String(next));
+    await updateTracking(entry.id, { progress: next });
+    onUpdate(entry.id, entry.status, next);
+  }
+
+  function handleWheel(e: React.WheelEvent) {
+    e.preventDefault();
+    adjust(e.deltaY < 0 ? 1 : -1);
+  }
+
+  return (
+    <div
+      className="flex items-center gap-1 text-xs text-muted-foreground"
+      onWheel={handleWheel}
+    >
+      <button
+        className="w-5 h-5 rounded flex items-center justify-center bg-white/10 hover:bg-white/20 transition-colors text-foreground select-none"
+        onClick={() => adjust(-1)}
+      >
+        −
+      </button>
+
+      {editing ? (
+        <input
+          autoFocus
+          type="number"
+          min={0}
+          max={entry.media.episodes ?? undefined}
+          value={inputVal}
+          onChange={(e) => setInputVal(e.target.value)}
+          onBlur={() => {
+            setEditing(false);
+            save(parseInt(inputVal) || 0);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              setEditing(false);
+              save(parseInt(inputVal) || 0);
+            }
+            if (e.key === "Escape") {
+              setEditing(false);
+              setInputVal(String(progress));
+            }
+          }}
+          className="w-8 text-center bg-white/10 rounded px-1 text-foreground [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+        />
+      ) : (
+        <span
+          className="min-w-[2ch] text-center text-foreground tabular-nums cursor-pointer hover:text-white transition-colors"
+          onClick={() => {
+            setEditing(true);
+            setInputVal(String(progress));
+          }}
+          title="Нажми чтобы ввести вручную"
+        >
+          {progress}
+        </span>
+      )}
+
+      <button
+        className="w-5 h-5 rounded flex items-center justify-center bg-white/10 hover:bg-white/20 transition-colors text-foreground select-none"
+        onClick={() => adjust(1)}
+      >
+        +
+      </button>
+
+      <span className="text-muted-foreground">/ {entry.media.episodes} эп.</span>
+    </div>
+  );
+}
+
 export function TrackingCard({
   entry,
   onUpdate,
@@ -39,14 +134,14 @@ export function TrackingCard({
   const config = statusConfig[uiStatus];
 
   async function handleStatusChange(status: string) {
-  setLoading(true);
-  setOpen(false);
-  try {
-    await updateTracking(entry.id, { status: mapStatusToBackend(status) });
-    onUpdate(entry.id, mapStatusToBackend(status)); // ← добавь эту строку
-  } catch (e) { console.error(e); }
-  finally { setLoading(false); }
-}
+    setLoading(true);
+    setOpen(false);
+    try {
+      await updateTracking(entry.id, { status: mapStatusToBackend(status) });
+      onUpdate(entry.id, mapStatusToBackend(status));
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  }
 
   async function handleDelete() {
     setDeleting(true);
@@ -72,43 +167,14 @@ export function TrackingCard({
         alt={entry.media.title}
         className="aspect-[2/3] w-full object-cover"
       />
-      
+
       <div className="flex flex-col gap-2 p-3">
         <p className="truncate text-sm font-medium text-foreground">
           {entry.media.title_russian || entry.media.title}
         </p>
-        
+
         {entry.media.episodes && (
-          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-            <button
-              className="w-5 h-5 rounded flex items-center justify-center bg-white/10 hover:bg-white/20 transition-colors text-foreground"
-              onClick={async () => {
-                const val = Math.max(0, entry.progress - 1);
-                if (val !== entry.progress) {
-                  await updateTracking(entry.id, { progress: val });
-                  onUpdate(entry.id, entry.status);
-                }
-              }}
-            >
-              −
-            </button>
-            <span className="min-w-[2ch] text-center text-foreground tabular-nums">
-              {entry.progress}
-            </span>
-            <button
-              className="w-5 h-5 rounded flex items-center justify-center bg-white/10 hover:bg-white/20 transition-colors text-foreground"
-              onClick={async () => {
-                const val = Math.min(entry.media.episodes!, entry.progress + 1);
-                if (val !== entry.progress) {
-                  await updateTracking(entry.id, { progress: val });
-                  onUpdate(entry.id, entry.status, val);
-                }
-              }}
-            >
-              +
-            </button>
-            <span className="text-muted-foreground">/ {entry.media.episodes} эп.</span>
-          </div>
+          <ProgressControl entry={entry} onUpdate={onUpdate} />
         )}
 
         <div className="relative">
@@ -125,7 +191,7 @@ export function TrackingCard({
           >
             {loading ? "..." : config.label + " ▾"}
           </button>
-          
+
           {open && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
