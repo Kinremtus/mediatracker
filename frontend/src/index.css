@@ -96,10 +96,10 @@
     --sidebar-ring: oklch(0.708 0 0);
     
     /* Твоя ретро-палитра (База) */
-    --watching: #D4A373;
-    --completed: #86A38E;
-    --dropped: #707B7C;
-    --planned: #466D7A;
+    --watching: #E8C49A;   /* Охристая глина */
+    --completed: #7EC89B;  /* Мятный шалфей */
+    --dropped: #C47D7D;    /* Пыльная роза */
+    --planned: #6B9DAD;    /* Пыльный океан */
 }
 
 .dark {
