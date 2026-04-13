@@ -75,9 +75,23 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
         counts[uiStatus]++;
       }
     });
-
   return counts;
 }, [tracking, activeCategory]);
+  
+  const globalStatusCounts = useMemo(() => {
+  const counts: Record<MediaStatus | "all", number> = {
+    all: tracking.length,
+    watching: 0,
+    completed: 0,
+    dropped: 0,
+    "plan-to-watch": 0,
+  };
+  tracking.forEach((entry) => {
+    const uiStatus = mapStatusToUI(entry.status);
+    if (counts.hasOwnProperty(uiStatus)) counts[uiStatus]++;
+  });
+  return counts;
+}, [tracking]);
 
   // Заглушка для категорий (пока бэк не умеет отдавать тип медиа)
   const categoryCounts = useMemo(() => {
@@ -247,10 +261,10 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
               <h1 className="mb-6 text-xl font-semibold text-foreground">Статистика</h1>
               {/* ВОТ ЗДЕСЬ ОНО ДОЛЖНО БЫТЬ: */}
               <StatsCards
-                watching={statusCounts.watching}
-                completed={statusCounts.completed}
-                dropped={statusCounts.dropped}
-                planToWatch={statusCounts["plan-to-watch"]}
+                watching={globalStatusCounts.watching}
+                completed={globalStatusCounts.completed}
+                dropped={globalStatusCounts.dropped}
+                planToWatch={globalStatusCounts["plan-to-watch"]}
               />
               <StatisticsSection tracking={tracking} />
             </section>
