@@ -56,23 +56,28 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
   };
 
   const statusCounts = useMemo(() => {
+    // Фильтруем по категории перед подсчётом
+    const base = activeCategory === "all"
+      ? tracking
+      : tracking.filter((e) => e.media.media_type === activeCategory);
+
     const counts: Record<MediaStatus | "all", number> = {
-      all: tracking.length,
+      all: base.length,
       watching: 0,
       completed: 0,
       dropped: 0,
       "plan-to-watch": 0,
     };
 
-    tracking.forEach((entry) => {
+    base.forEach((entry) => {
       const uiStatus = mapStatusToUI(entry.status);
       if (counts.hasOwnProperty(uiStatus)) {
-         counts[uiStatus]++;
+        counts[uiStatus]++;
       }
     });
 
-    return counts;
-  },[tracking]);
+  return counts;
+}, [tracking, activeCategory]);
 
   // Заглушка для категорий (пока бэк не умеет отдавать тип медиа)
   const categoryCounts = useMemo(() => {
@@ -241,25 +246,18 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
             <section className="animate-in fade-in slide-in-from-bottom-4 duration-500">
               <h1 className="mb-6 text-xl font-semibold text-foreground">Статистика</h1>
               {/* ВОТ ЗДЕСЬ ОНО ДОЛЖНО БЫТЬ: */}
+              <StatsCards
+                watching={statusCounts.watching}
+                completed={statusCounts.completed}
+                dropped={statusCounts.dropped}
+                planToWatch={statusCounts["plan-to-watch"]}
+              />
               <StatisticsSection tracking={tracking} />
             </section>
           )}
 
           {activeView === "media" && (
             <>
-              {/* Статистика */}
-              <section>
-                <h2 className="mb-3 text-sm font-medium text-muted-foreground">
-                  Моя статистика
-                </h2>
-                <StatsCards
-                  watching={statusCounts.watching}
-                  completed={statusCounts.completed}
-                  dropped={statusCounts.dropped}
-                  planToWatch={statusCounts["plan-to-watch"]}
-                />
-              </section>
-
               {/* Список тайтлов */}
               <section className="mt-8">
                 <div className="mb-4 flex items-center justify-between">
