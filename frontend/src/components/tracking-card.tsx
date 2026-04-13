@@ -28,7 +28,7 @@ export function TrackingCard({
   onDelete,
 }: {
   entry: TrackingEntry;
-  onUpdate: (id: number, status: string) => void;
+  onUpdate: (id: number, status: string, progress?: number) => void;
   onDelete: (id: number) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -80,28 +80,34 @@ export function TrackingCard({
         
         {entry.media.episodes && (
           <div className="flex items-center gap-1 text-xs text-muted-foreground">
-            <input
-              type="number"
-              min={0}
-              max={entry.media.episodes}
-              defaultValue={entry.progress}
-              style={{ 
-                width: `${String(entry.media.episodes).length + 2}ch`,
-                MozAppearance: "textfield" 
-              }}
-              className="rounded bg-white/10 px-1 text-center text-xs text-foreground [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-              onBlur={async (e) => {
-                const val = Math.min(
-                  parseInt(e.target.value) || 0,
-                  entry.media.episodes!,
-                );
+            <button
+              className="w-5 h-5 rounded flex items-center justify-center bg-white/10 hover:bg-white/20 transition-colors text-foreground"
+              onClick={async () => {
+                const val = Math.max(0, entry.progress - 1);
                 if (val !== entry.progress) {
                   await updateTracking(entry.id, { progress: val });
                   onUpdate(entry.id, entry.status);
                 }
               }}
-            />
-            <span>/ {entry.media.episodes} эп.</span>
+            >
+              −
+            </button>
+            <span className="min-w-[2ch] text-center text-foreground tabular-nums">
+              {entry.progress}
+            </span>
+            <button
+              className="w-5 h-5 rounded flex items-center justify-center bg-white/10 hover:bg-white/20 transition-colors text-foreground"
+              onClick={async () => {
+                const val = Math.min(entry.media.episodes!, entry.progress + 1);
+                if (val !== entry.progress) {
+                  await updateTracking(entry.id, { progress: val });
+                  onUpdate(entry.id, entry.status, val);
+                }
+              }}
+            >
+              +
+            </button>
+            <span className="text-muted-foreground">/ {entry.media.episodes} эп.</span>
           </div>
         )}
 

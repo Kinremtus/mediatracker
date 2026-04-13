@@ -44,9 +44,13 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
   },[]);
 
   // Обновление статуса без перезагрузки
-  const handleStatusUpdate = (id: number, status: string) => {
-    setTracking((prev) =>
-      prev.map((e) => (e.id === id ? { ...e, status } : e))
+  const handleStatusUpdate = (id: number, status: string, progress?: number) => {
+  setTracking((prev) =>
+    prev.map((e) =>
+      e.id === id
+        ? { ...e, status, ...(progress !== undefined ? { progress } : {}) }
+        : e
+      )
     );
   };
 
