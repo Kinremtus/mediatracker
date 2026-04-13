@@ -118,20 +118,40 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
 
   // Фильтрация списка на фронте
   const filteredMedia = useMemo(() => {
-  return tracking.filter((entry) => {
-    const matchesSearch = (entry.media.title_russian || entry.media.title)
-      .toLowerCase()
-      .includes(searchQuery.toLowerCase());
-    const uiStatus = mapStatusToUI(entry.status);
-    const matchesFilter = activeFilter === "all" || uiStatus === activeFilter;
-    const matchesCategory =
-      !activeCategory ||
-      activeCategory === "all" ||
-      entry.media.media_type === activeCategory;
-    return matchesSearch && matchesFilter && matchesCategory;
-    });
+    return tracking
+      .filter((entry) => {
+        const matchesSearch = (entry.media.title_russian || entry.media.title)
+          .toLowerCase()
+          .includes(searchQuery.toLowerCase());
+        const uiStatus = mapStatusToUI(entry.status);
+        const matchesFilter = activeFilter === "all" || uiStatus === activeFilter;
+        const matchesCategory =
+          !activeCategory ||
+          activeCategory === "all" ||
+          entry.media.media_type === activeCategory;
+        return matchesSearch && matchesFilter && matchesCategory;
+      })
+      .sort((a, b) => {
+        const titleA = (a.media.title_russian || a.media.title).toLowerCase();
+        const titleB = (b.media.title_russian || b.media.title).toLowerCase();
+        return titleA.localeCompare(titleB, "ru");
+      });
   }, [tracking, searchQuery, activeFilter, activeCategory]);
 
+  const CATEGORY_LABELS: Record<string, string> = {
+  anime: "аниме",
+  manga: "мангу",
+  manhwa: "манхву",
+  manhua: "маньхуа",
+  novels: "новеллу",
+  movies: "фильм",
+  tv: "сериал",
+  dramas: "дораму",
+  cartoons: "мультсериал",
+  "animated-movies": "мультфильм",
+  games: "игру",
+  books: "книгу",
+};
   // Роутинг: Если открыт поиск - рендерим его
   if (showSearch) {
     return (
@@ -273,11 +293,28 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
 
                 {/* Если список пуст */}
                 {!loading && filteredMedia.length === 0 && (
-                  <div className="mt-8 flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-12 text-center">
-                    <p className="text-muted-foreground">Ничего не найдено</p>
-                    <button onClick={() => setShowSearch(true)} className="mt-2 text-sm text-primary hover:underline">
-                      Найти и добавить {activeCategory === "all" ? "что-нибудь" : activeCategory} 
-                    </button>
+                  <div className="text-center py-20">
+                    <p className="text-white/30 text-lg mb-4">
+                      {activeCategory && activeCategory !== "all"
+                        ? "Ничего не найдено"
+                        : "Список пуст"}
+                    </p>
+                    {(!activeCategory || activeCategory === "all") && (
+                      <button
+                        onClick={() => setShowSearch(true)}
+                        className="rounded-full px-6"
+                      >
+                        Найти и добавить что-нибудь
+                      </button>
+                    )}
+                    {activeCategory && activeCategory !== "all" && (
+                      <button
+                        onClick={() => setShowSearch(true)}
+                        className="rounded-full px-6"
+                      >
+                        Найти и добавить {CATEGORY_LABELS[activeCategory] ?? activeCategory}
+                      </button>
+                    )}
                   </div>
                 )}
               </section>
