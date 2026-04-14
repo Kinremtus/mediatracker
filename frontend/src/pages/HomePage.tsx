@@ -8,6 +8,7 @@ import { mediaTypeConfig, type MediaStatus, type MediaType } from "@/lib/media-t
 import { StatisticsSection } from "@/components/statistics-section";
 import { TrackingCard, mapStatusToUI } from "@/components/tracking-card";
 import { type SearchType } from "@/api/tracking";
+import { MediaDetailSheet } from "@/components/media-detail-sheet";
 
 // Импорты твоего API
 import { getTracking, type TrackingEntry } from "@/api/tracking";
@@ -29,6 +30,7 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
   const [loading, setLoading] = useState(true);
   const [showSearch, setShowSearch] = useState(false);
   const [searchInitialType, setSearchInitialType] = useState<SearchType>("anime");
+  const [selectedEntry, setSelectedEntry] = useState<TrackingEntry | null>(null);
   
   // Загрузка данных
   const loadTracking = (status?: string | null) => {
@@ -190,6 +192,8 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
     );
   }
 
+  
+
   return (
     <SidebarProvider defaultOpen={true}>
       <AppSidebar
@@ -198,6 +202,12 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
         counts={categoryCounts}
         activeView={activeView}
         onViewChange={setActiveView}
+      />
+      <MediaDetailSheet
+        entry={selectedEntry}
+        open={selectedEntry !== null}
+        onClose={() => setSelectedEntry(null)}
+        onUpdate={handleStatusUpdate}
       />
       <SidebarInset className="bg-background">
         
@@ -248,6 +258,7 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
                               entry={entry}
                               onUpdate={handleStatusUpdate}
                               onDelete={handleDelete}
+                              onPosterClick={() => setSelectedEntry(entry)}
                             />
                           ))}
                         </div>

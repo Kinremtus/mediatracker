@@ -22,6 +22,7 @@ query ($search: String!) {
       episodes
       status
       averageScore
+      description(asHtml: false)
     }
   }
 }
@@ -68,7 +69,16 @@ def format_anime(item: dict) -> dict:
         "episodes": item.get("episodes"),
         "status": item.get("status"),
         "score": item.get("averageScore"),
+        "description": (
+            item.get("description", "")
+            .replace("<br>", " ")
+            .replace("<i>", "")
+            .replace("</i>", "")
+            .replace("<b>", "")
+            .replace("</b>", "")
+        ) if item.get("description") else None,
     }
+    
     
 ID_QUERY = """
 query ($id: Int!) {
@@ -86,6 +96,7 @@ query ($id: Int!) {
     episodes
     status
     averageScore
+    description(asHtml: false)
   }
 }
 """
@@ -182,4 +193,12 @@ def format_manga(item: dict) -> dict:
         "episodes": item.get("chapters"),
         "status": item.get("status"),
         "score": item.get("averageScore"),
+        "description": (
+            item.get("description", "")
+            .replace("<br>", " ")
+            .replace("<i>", "")
+            .replace("</i>", "")
+            .replace("<b>", "")
+            .replace("</b>", "")
+        ) if item.get("description") else None,
     }
