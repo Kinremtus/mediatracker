@@ -50,6 +50,7 @@ def format_movie(item: dict) -> dict:
         "episodes": None,
         "status": "FINISHED" if item.get("release_date") else "UNKNOWN",
         "score": int(item["vote_average"] * 10) if item.get("vote_average") else None,
+        "description": item.get("overview"),
     }
 
 
@@ -69,6 +70,7 @@ def format_tv(item: dict) -> dict:
         "episodes": item.get("number_of_episodes"),
         "status": "FINISHED" if item.get("last_air_date") else "ONGOING",
         "score": int(item["vote_average"] * 10) if item.get("vote_average") else None,
+        "description": item.get("overview"),
     }
 
 async def get_by_id(tmdb_id: int, media_type: str) -> dict | None:

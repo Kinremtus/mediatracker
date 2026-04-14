@@ -2,6 +2,7 @@ import { api } from "./client";
 
 export interface MediaItem {
   id: number;
+  external_id: string;
   title: string;
   title_english: string | null;
   title_native: string | null;
@@ -84,3 +85,9 @@ export type SearchType =
   "movies" | "tv" | "dramas" | "cartoons" | "animated-movies" |
   "games" | "books";
 
+export async function getMediaDetails(
+  mediaType: string,
+  externalId: string
+): Promise<any> {
+  return api.get(`/search/details?media_type=${mediaType}&external_id=${externalId}`);
+}

@@ -121,10 +121,12 @@ export function TrackingCard({
   entry,
   onUpdate,
   onDelete,
+  onPosterClick,
 }: {
   entry: TrackingEntry;
   onUpdate: (id: number, status: string, progress?: number) => void;
   onDelete: (id: number) => void;
+  onPosterClick?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -165,7 +167,8 @@ export function TrackingCard({
       <img
         src={entry.media.poster_url || "/placeholder.jpg"}
         alt={entry.media.title}
-        className="aspect-[2/3] w-full object-cover"
+        className="aspect-[2/3] w-full object-cover cursor-pointer"
+        onClick={onPosterClick}
       />
 
       <div className="flex flex-col gap-2 p-3">
