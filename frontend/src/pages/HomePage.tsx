@@ -200,17 +200,19 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
         activeCategory={activeCategory}
         onCategoryChange={setActiveCategory}
         counts={categoryCounts}
-        activeView={activeView}
+        activeView={activeView}1
         onViewChange={setActiveView}
       />
-      <MediaDetailSheet
+      <SidebarInset className="bg-background">
+        
+
+        <MediaDetailSheet
         entry={selectedEntry}
         open={selectedEntry !== null}
         onClose={() => setSelectedEntry(null)}
         onUpdate={handleStatusUpdate}
       />
-      <SidebarInset className="bg-background">
-        
+      
         {/* Хедер */}
         <DashboardHeader 
           searchQuery={searchQuery} 
