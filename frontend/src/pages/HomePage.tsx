@@ -200,7 +200,7 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
         activeCategory={activeCategory}
         onCategoryChange={setActiveCategory}
         counts={categoryCounts}
-        activeView={activeView}1
+        activeView={activeView}
         onViewChange={setActiveView}
       />
       <SidebarInset className="bg-background">
