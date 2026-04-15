@@ -2,7 +2,7 @@ import { api } from "./client";
 
 export interface MediaItem {
   id: number;
-  external_id: string;
+  external_id: string | null;
   title: string;
   title_english: string | null;
   title_native: string | null;
@@ -10,6 +10,7 @@ export interface MediaItem {
   media_type: string;
   poster_url: string | null;
   episodes: number | null;
+  
 }
 
 export interface TrackingEntry {
