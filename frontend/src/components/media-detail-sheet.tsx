@@ -55,12 +55,25 @@ export function MediaDetailSheet({
         className="w-full sm:max-w-md p-0 bg-card border-border flex flex-col overflow-y-auto"
       >
         {/* Постер */}
-        <div className="relative w-full aspect-[2/3] shrink-0">
+        <div className="flex gap-4 border-b border-border p-5">
           <img
             src={entry.media.poster_url || "/placeholder.jpg"}
             alt={title}
-            className="w-full h-full object-cover"
+            className="h-36 w-24 shrink-0 rounded-lg object-cover"
           />
+
+          <div className="min-w-0 flex-1">
+            <SheetHeader className="space-y-1 text-left">
+              <SheetTitle className="text-xl font-bold leading-tight text-foreground">
+                {title}
+              </SheetTitle>
+
+              {originalTitle && (
+                <p className="text-sm text-muted-foreground">{originalTitle}</p>  
+              )}
+            </SheetHeader>
+          </div>
+
           {/* Градиент снизу */}
           <div className="absolute inset-0 bg-gradient-to-t from-card via-card/40 to-transparent" />
 
@@ -81,18 +94,26 @@ export function MediaDetailSheet({
         <div className="flex flex-col gap-5 p-5">
 
           {/* Статус + прогресс */}
-          <div className="flex items-center justify-between">
+          <div className="mt-4 flex flex-wrap items-center gap-2">
             <span
-              className="text-sm font-medium px-3 py-1 rounded-full border"
+              className="rounded-full border px-3 py-1 text-sm font-medium"
               style={{
-                color: uiStatus === "watching" ? "var(--watching)" :
-                       uiStatus === "completed" ? "var(--completed)" :
-                       uiStatus === "dropped" ? "var(--dropped)" :
-                       "var(--planned)",
-                borderColor: uiStatus === "watching" ? "var(--watching)" :
-                             uiStatus === "completed" ? "var(--completed)" :
-                             uiStatus === "dropped" ? "var(--dropped)" :
-                             "var(--planned)",
+                color: 
+                  uiStatus === "watching"
+                    ? "var(--watching)"
+                    : uiStatus === "completed"
+                    ? "var(--completed)"
+                    : uiStatus === "dropped"
+                    ? "var(--dropped)"
+                    : "var(--planned)",
+                borderColor:
+                  uiStatus === "watching"
+                    ? "var(--watching)"
+                    : uiStatus === "completed"
+                    ? "var(--completed)"
+                    : uiStatus === "dropped"
+                    ? "var(--dropped)"
+                    : "var(--planned)",
                 backgroundColor: "transparent",
               }}
             >
@@ -105,6 +126,44 @@ export function MediaDetailSheet({
               </span>
             )}
           </div>
+          
+          <div className="grid grid-cols-2 gap-3">
+            {details?.seasons && (
+              <div className="rounded-lg border border-border bg-background p-3">
+                <p className="mb-1 text-xs text-muted-foreground">Сезонов</p>
+                <p className="text-sm font-medium text-foreground">{details.seasons}</p>
+              </div>
+            )}
+
+            {details?.episodes && (
+              <div className="rounded-lg border border-border bg-background p-3">
+                <p className="mb-1 text-xs text-muted-foreground">Серий</p>
+                <p className="text-sm font-medium text-foreground">{details.episodes}</p>
+              </div>
+            )}
+
+            {details?.score && (
+              <div className="rounded-lg border border-border bg-background p-3">
+                <p className="mb-1 text-xs text-muted-foreground">Оценка</p>
+                <p className="text-sm font-medium text-foreground">
+                  {details.score / 10}/10
+                </p>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <p className="mb-2 text-xs text-muted-foreground">Описание</p>
+            {loadingDetails ? (
+              <p className="text-sm text-muted-foreground">Загрузка...</p>
+            ) : details?.description ? (
+              <p className="text-sm leading-relaxed text-foreground">
+                {details.description}
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">Нет описания</p>
+            )}
+          </div>    
 
           {/* Смена статуса */}
           <div>
