@@ -318,6 +318,7 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
                         entry={entry}
                         onUpdate={handleStatusUpdate}
                         onDelete={handleDelete}
+                        onPosterClick={() => setSelectedEntry(entry)}
                       />
                     ))}
                   </div>
