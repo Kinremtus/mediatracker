@@ -46,14 +46,24 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
   },[]);
 
   // Обновление статуса без перезагрузки
-  const handleStatusUpdate = (id: number, status: string, progress?: number) => {
+  const handleStatusUpdate = (
+  id: number,
+  status: string,
+  progress?: number
+) => {
   setTracking((prev) =>
     prev.map((e) =>
       e.id === id
         ? { ...e, status, ...(progress !== undefined ? { progress } : {}) }
         : e
-      )
-    );
+    )
+  );
+
+  setSelectedEntry((prev) =>
+    prev && prev.id === id
+      ? { ...prev, status, ...(progress !== undefined ? { progress } : {}) }
+      : prev
+  );
   };
 
   // Удаление из стейта без перезагрузки
