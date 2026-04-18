@@ -129,6 +129,7 @@ query ($search: String!, $country: CountryCode, $format: MediaFormat) {
       status
       averageScore
       format
+      description(asHtml: false)
     }
   }
 }
@@ -145,6 +146,7 @@ query ($id: Int!) {
     status
     averageScore
     format
+    description(asHtml: false)
   }
 }
 """
