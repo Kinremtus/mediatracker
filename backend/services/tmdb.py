@@ -18,7 +18,7 @@ async def search_movies(query: str, genre_id: int = None) -> list[dict]:
     async with httpx.AsyncClient() as client:
         response = await client.get(f"{TMDB_BASE}/search/movie", params=params)
     data = response.json()
-    return [format_movie(item) for item in data.get("results", [])[:10]]
+    return [format_movie(item) for item in data.get("results", [])]
 
 async def search_tv(query: str, genre_id: int = None) -> list[dict]:
     params = {
@@ -31,7 +31,7 @@ async def search_tv(query: str, genre_id: int = None) -> list[dict]:
     async with httpx.AsyncClient() as client:
         response = await client.get(f"{TMDB_BASE}/search/tv", params=params)
     data = response.json()
-    return [format_tv(item) for item in data.get("results", [])[:10]]
+    return [format_tv(item) for item in data.get("results", [])]
 
 
 def format_movie(item: dict) -> dict:
@@ -49,11 +49,10 @@ def format_movie(item: dict) -> dict:
         "media_type": "movies",
         "episodes": None,
         "seasons": None,
-        "description": item.get("overview"),
+        "description": item.get("overview"), # ← ОПИСАНИЕ
         "status": "FINISHED" if item.get("release_date") else "UNKNOWN",
         "score": int(item["vote_average"] * 10) if item.get("vote_average") else None,
     }
-
 
 def format_tv(item: dict) -> dict:
     return {
@@ -69,19 +68,18 @@ def format_tv(item: dict) -> dict:
         ),
         "media_type": "tv-shows",
         "episodes": item.get("number_of_episodes"),
-        "seasons": item.get("number_of_seasons"),
-        "description": item.get("overview"),
+        "seasons": item.get("number_of_seasons"), # ← СЕЗОНЫ
+        "description": item.get("overview"),      # ← ОПИСАНИЕ
         "status": "FINISHED" if item.get("last_air_date") else "ONGOING",
         "score": int(item["vote_average"] * 10) if item.get("vote_average") else None,
     }
 
 async def get_by_id(tmdb_id: int, media_type: str) -> dict | None:
-    # Нормализуем тип — принимаем и "movies" и "movie"
     endpoint = "movie" if media_type in ("movie", "movies") else "tv"
     async with httpx.AsyncClient() as client:
         response = await client.get(
             f"{TMDB_BASE}/{endpoint}/{tmdb_id}",
-            params={"api_key": TMDB_KEY, "language": "ru-RU"},
+            params={"api_key": TMDB_KEY, "language": "ru-RU"}, # ← Важно для описаний!
         )
     if response.status_code != 200:
         return None
