@@ -34,5 +34,6 @@ def format_game(item: dict) -> dict:
         "media_type": "games",
         "episodes": None,
         "status": "FINISHED" if item.get("released") else "UNKNOWN",
+        "description": item.get("description_raw"),
         "score": int(item["rating"] * 20) if item.get("rating") else None,
     }

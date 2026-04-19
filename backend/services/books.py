@@ -31,5 +31,6 @@ def format_book(item: dict) -> dict:
         "media_type": "books",
         "episodes": info.get("pageCount"),
         "status": "FINISHED",
+        "description": info.get("description"),
         "score": None,
     }
