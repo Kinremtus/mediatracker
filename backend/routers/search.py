@@ -14,16 +14,19 @@ async def get_media_details(
     external_id: str,
     current_user: models.User = Depends(get_current_user),
 ):
-    if media_type == "anime":
-        return await anilist.search_anime_by_id(int(external_id))
-    elif media_type in MANGA_TYPES:
-        return await anilist.search_manga_by_id(int(external_id))
-    elif media_type in TMDB_TYPES:
-        return await tmdb.get_by_id(int(external_id), media_type)
-    elif media_type == "games":
-        return await rawg.get_game_by_id(external_id)
-    elif media_type == "books":
-        return await books.get_book_by_id(external_id)
+    try:
+        if media_type == "anime":
+            return await anilist.search_anime_by_id(int(external_id))
+        elif media_type in MANGA_TYPES:
+            return await anilist.search_manga_by_id(int(external_id))
+        elif media_type in TMDB_TYPES:
+            return await tmdb.get_by_id(int(external_id), media_type)
+        elif media_type == "games":
+            return await rawg.get_game_by_id(external_id)
+        elif media_type == "books":
+            return await books.get_book_by_id(external_id)
+    except Exception as e:
+        print(f"Error: {e}")
     return None
 
 @router.get("/anime")
