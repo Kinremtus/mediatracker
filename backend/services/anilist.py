@@ -7,7 +7,7 @@ ANILIST_URL = "https://graphql.anilist.co"
 # $search — переменная, подставим реальное значение при запросе
 SEARCH_QUERY = """
 query ($search: String!) {
-  Page(perPage: 10) {
+  Page(perPage: 25) {
     media(search: $search, type: ANIME) {
       id
       title {
@@ -119,7 +119,7 @@ async def search_anime_by_id(anilist_id: int) -> dict | None:
 
 MANGA_QUERY = """
 query ($search: String!, $country: CountryCode, $format: MediaFormat) {
-  Page(perPage: 10) {
+  Page(perPage: 25) {
     media(search: $search, type: MANGA, countryOfOrigin: $country, format: $format) {
       id
       title { romaji english native }
