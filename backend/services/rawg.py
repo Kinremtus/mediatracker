@@ -25,6 +25,7 @@ async def get_game_by_id(rawg_id: str) -> dict | None:
 
 def format_game(item: dict) -> dict:
     return {
+        "rawg_id": item["id"],
         "external_id": str(item["id"]),
         "title": item.get("name", ""),
         "title_russian": None,

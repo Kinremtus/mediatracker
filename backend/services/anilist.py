@@ -61,6 +61,7 @@ def format_anime(item: dict) -> dict:
 
     return {
         "anilist_id": item["id"],
+        "external_id": str(item["id"]),
         "title_romaji": title.get("romaji"),
         "title_english": title.get("english"),
         "title_native": title.get("native"),
@@ -187,6 +188,7 @@ def format_manga(item: dict) -> dict:
             break
     return {
         "anilist_id": item["id"],
+        "external_id": str(item["id"]),
         "title_romaji": title.get("romaji"),
         "title_english": title.get("english"),
         "title_native": title.get("native"),

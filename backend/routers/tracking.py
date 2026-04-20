@@ -51,34 +51,36 @@ async def add_tracking_from_search(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    # Ищем в нашей БД
+    # 1. Ищем в нашей БД
     media = (
         db.query(models.MediaItem)
         .filter(models.MediaItem.external_id == str(entry.external_id))
         .first()
     )
 
+    # 2. Если в БД нет, идем во внешние API
     if not media:
-        # Получаем данные в зависимости от типа
         MANGA_TYPES = ("manga", "manhwa", "manhua", "novels")
-    TMDB_TYPES = ("movies", "movie", "tv-shows", "tv", "dramas", "cartoons", "animated-movies")
+        TMDB_TYPES = ("movies", "movie", "tv-shows", "tv", "dramas", "cartoons", "animated-movies")
 
-    if entry.media_type == "anime":
-        result = await anilist.search_anime_by_id(int(entry.external_id))
-    elif entry.media_type in MANGA_TYPES:
-        result = await anilist.search_manga_by_id(int(entry.external_id))
-    elif entry.media_type in TMDB_TYPES:
-        result = await tmdb.get_by_id(int(entry.external_id), entry.media_type)
-    elif entry.media_type == "games":
-        result = await rawg.get_game_by_id(entry.external_id)
-    elif entry.media_type == "books":
-        result = await books.get_book_by_id(entry.external_id)
-    else:
-        raise HTTPException(status_code=400, detail="Неизвестный тип медиа")
+        if entry.media_type == "anime":
+            result = await anilist.search_anime_by_id(int(entry.external_id))
+        elif entry.media_type in MANGA_TYPES:
+            result = await anilist.search_manga_by_id(int(entry.external_id))
+        elif entry.media_type in TMDB_TYPES:
+            result = await tmdb.get_by_id(int(entry.external_id), entry.media_type)
+        elif entry.media_type == "games":
+            result = await rawg.get_game_by_id(entry.external_id)
+        elif entry.media_type == "books":
+            result = await books.get_book_by_id(entry.external_id)
+        else:
+            raise HTTPException(status_code=400, detail="Неизвестный тип медиа")
 
+        # Если внешнее API ничего не вернуло
         if not result:
             raise HTTPException(status_code=404, detail="Медиа не найдено")
 
+        # Создаем запись MediaItem в нашей БД
         media = models.MediaItem(
             title=result.get("title") or result.get("title_romaji", ""),
             title_english=result.get("title_english"),
@@ -88,11 +90,12 @@ async def add_tracking_from_search(
             external_id=str(entry.external_id),
             poster_url=result.get("poster_url"),
             episodes=result.get("episodes"),
-)
+        )
         db.add(media)
         db.commit()
         db.refresh(media)
 
+    # 3. Проверяем, нет ли уже этого медиа у пользователя в трекинге
     existing = (
         db.query(models.TrackingEntry)
         .filter(
@@ -104,6 +107,7 @@ async def add_tracking_from_search(
     if existing:
         raise HTTPException(status_code=400, detail="Уже в трекинге")
 
+    # 4. Добавляем в трекинг
     db_entry = models.TrackingEntry(
         media_id=media.id,
         user_id=current_user.id,
@@ -114,6 +118,7 @@ async def add_tracking_from_search(
     db.add(db_entry)
     db.commit()
     db.refresh(db_entry)
+    
     return db_entry
 
 @router.put("/{entry_id}", response_model=schemas.TrackingEntryResponse)
