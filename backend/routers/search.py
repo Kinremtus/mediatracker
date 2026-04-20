@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 import models
 from dependencies import get_current_user
 from services import anilist, tmdb, rawg, books
@@ -14,6 +14,9 @@ async def get_media_details(
     external_id: str,
     current_user: models.User = Depends(get_current_user),
 ):
+    if not external_id:
+        raise HTTPException(status_code=400, detail="external_id is required")
+
     try:
         if media_type == "anime":
             return await anilist.search_anime_by_id(int(external_id))
@@ -26,8 +29,8 @@ async def get_media_details(
         elif media_type == "books":
             return await books.get_book_by_id(external_id)
     except Exception as e:
-        print(f"Error: {e}")
-    return None
+        print(f"Details Fetch Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/anime")
 async def search_anime(q: str, current_user: models.User = Depends(get_current_user)):
