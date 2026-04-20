@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import AliasChoices, BaseModel, Field
 from enum import Enum
 from datetime import datetime
 
@@ -19,6 +19,7 @@ class UserCreate(BaseModel):
     username: str
     password: str
 
+
 class UserResponse(BaseModel):
     id: int
     username: str
@@ -38,6 +39,7 @@ class MediaItemCreate(BaseModel):
 
 class MediaItemResponse(BaseModel):
     id: int
+    external_id: str
     title: str
     title_english: str | None
     title_native: str | None
@@ -61,18 +63,24 @@ class TrackingEntryResponse(BaseModel):
     rating: float | None
     progress: int
     created_at: datetime
-    media: MediaItemResponse   # вложенный объект — сразу видно что трекаешь
+    media: MediaItemResponse
 
     model_config = {"from_attributes": True}
 
 # --- Search ---
 class TrackingFromSearch(BaseModel):
-    external_id: str   
-    media_type: str = "anime"
+    external_id: str = Field(
+        validation_alias=AliasChoices("external_id", "id")
+    )
+    media_type: str = Field(
+        default="anime",
+        validation_alias=AliasChoices("media_type", "type")
+    )
     status: TrackingStatus = TrackingStatus.planned
     rating: float | None = None
     progress: int = 0
-    
+
+
 class TrackingEntryUpdate(BaseModel):
     status: str | None = None
     rating: float | None = None
