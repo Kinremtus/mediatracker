@@ -37,6 +37,7 @@ async def search_tv(query: str, genre_id: int = None) -> list[dict]:
 def format_movie(item: dict) -> dict:
     return {
         "tmdb_id": item["id"],
+        "external_id": str(item["id"]),
         "title": item.get("title", ""),
         "title_russian": item.get("title"),
         "title_english": item.get("original_title"),
@@ -57,6 +58,7 @@ def format_movie(item: dict) -> dict:
 def format_tv(item: dict) -> dict:
     return {
         "tmdb_id": item["id"],
+        "external_id": str(item["id"]),
         "title": item.get("name", ""),
         "title_russian": item.get("name"),
         "title_english": item.get("original_name"),

@@ -23,6 +23,7 @@ def format_book(item: dict) -> dict:
     images = info.get("imageLinks", {})
     return {
         "google_id": item["id"],
+        "external_id": str(item["id"]),
         "title": info.get("title", ""),
         "title_russian": info.get("title"),
         "title_english": info.get("title"),
