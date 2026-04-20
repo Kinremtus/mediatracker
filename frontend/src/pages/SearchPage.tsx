@@ -1,7 +1,12 @@
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { searchMedia, addToTracking, type SearchType } from "@/api/tracking";
+import {
+  addToTracking,
+  searchMedia,
+  type SearchResult,
+  type SearchType,
+} from "@/api/tracking";
 import { ArrowLeft, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -20,6 +25,49 @@ const SEARCH_TYPES: { value: SearchType; label: string; emoji: string }[] = [
   { value: "movies", label: "Фильмы", emoji: "🎥" },
 ];
 
+function getExternalId(item: SearchResult): string | null {
+  const raw =
+    item.external_id ??
+    item.anilist_id ??
+    item.tmdb_id ??
+    item.rawg_id ??
+    item.google_id ??
+    item.id;
+
+  if (raw === undefined || raw === null || raw === "") {
+    return null;
+  }
+
+  return String(raw);
+}
+
+function getErrorMessage(error: unknown): string {
+  const err = error as {
+    response?: { data?: { detail?: unknown } };
+    message?: string;
+  };
+
+  const detail = err.response?.data?.detail;
+
+  if (typeof detail === "string") {
+    return detail;
+  }
+
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) =>
+        typeof item?.msg === "string" ? item.msg : JSON.stringify(item),
+      )
+      .join("; ");
+  }
+
+  if (typeof err.message === "string" && err.message) {
+    return err.message;
+  }
+
+  return "Не удалось выполнить запрос";
+}
+
 export default function SearchPage({
   onBack,
   initialType = "anime",
@@ -29,7 +77,7 @@ export default function SearchPage({
 }) {
   const [query, setQuery] = useState("");
   const [searchType, setSearchType] = useState<SearchType>(initialType);
-  const [results, setResults] = useState<any[]>([]);
+  const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [adding, setAdding] = useState<string | null>(null);
   const [added, setAdded] = useState(new Set<string>());
@@ -40,45 +88,52 @@ export default function SearchPage({
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault();
     if (!query.trim()) return;
+
     setLoading(true);
     setError("");
+
     try {
       const data = await searchMedia(query, searchType);
       setResults(data);
     } catch (e) {
-      setError((e as Error).message);
+      setError(getErrorMessage(e));
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleAdd(item: any) {
-      const id = String(
-        item.anilist_id ?? item.tmdb_id ?? item.rawg_id ?? item.google_id
-      );
-      const externalId = Number(
-        item.anilist_id ?? item.tmdb_id ?? item.rawg_id ?? item.google_id
-      );
-      const type = (item.media_type ?? searchType) as SearchType;
-      setAdding(id);
-      try {
-        await addToTracking(externalId, type, "planned");
-        setAdded((prev) => new Set(prev).add(id));
-      } catch (e) {
-        const msg = (e as Error).message;
-        if (msg.includes("трекинге")) {
-          setAdded((prev) => new Set(prev).add(id));
-        } else {
-          setError(msg);
-        }
-      } finally {
-        setAdding(null);
-      }
+  async function handleAdd(item: SearchResult) {
+    const externalId = getExternalId(item);
+    const type = (item.media_type ?? searchType) as SearchType;
+
+    if (!externalId) {
+      setError("У этого результата поиска нет external_id");
+      return;
     }
+
+    const itemKey = `${type}:${externalId}`;
+
+    setAdding(itemKey);
+    setError("");
+
+    try {
+      await addToTracking(externalId, type, "planned");
+      setAdded((prev) => new Set(prev).add(itemKey));
+    } catch (e) {
+      const msg = getErrorMessage(e);
+
+      if (msg.includes("Уже в трекинге")) {
+        setAdded((prev) => new Set(prev).add(itemKey));
+      } else {
+        setError(msg);
+      }
+    } finally {
+      setAdding(null);
+    }
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
-      {/* Шапка */}
       <div className="border-b border-border px-6 py-4 flex items-center gap-3">
         <button
           onClick={onBack}
@@ -97,22 +152,21 @@ export default function SearchPage({
       </div>
 
       <div className="flex-1 max-w-5xl mx-auto w-full px-6 py-8 flex flex-col gap-6">
-
-        {/* Категории */}
         <div className="flex flex-wrap gap-2">
           {SEARCH_TYPES.map((t) => (
             <button
               key={t.value}
               onClick={() => {
-                setSearchType(t.value as SearchType);
+                setSearchType(t.value);
                 setResults([]);
                 setQuery("");
+                setError("");
               }}
               className={cn(
                 "px-4 py-2 rounded-xl text-sm font-medium transition-all border",
                 searchType === t.value
                   ? "bg-foreground text-background border-foreground"
-                  : "bg-card text-muted-foreground border-border hover:border-muted-foreground hover:text-foreground"
+                  : "bg-card text-muted-foreground border-border hover:border-muted-foreground hover:text-foreground",
               )}
             >
               {t.label}
@@ -120,7 +174,6 @@ export default function SearchPage({
           ))}
         </div>
 
-        {/* Строка поиска */}
         <form onSubmit={handleSearch} className="flex gap-3">
           <div className="relative flex-1">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
@@ -140,26 +193,24 @@ export default function SearchPage({
           </Button>
         </form>
 
-        {error && (
-          <p className="text-destructive text-sm">{error}</p>
-        )}
+        {error && <p className="text-destructive text-sm">{error}</p>}
 
-        {/* Результаты */}
         {results.length > 0 && (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
             {results.map((item) => {
-              const id = String(
-                item.anilist_id ?? item.tmdb_id ?? item.rawg_id ?? item.google_id
-              );
+              const externalId = getExternalId(item);
+              const type = (item.media_type ?? searchType) as SearchType;
               const title =
                 item.title_russian ||
                 item.title_english ||
                 item.title_romaji ||
-                item.title;
+                item.title ||
+                "Без названия";
+              const itemKey = `${type}:${externalId ?? title}`;
 
               return (
                 <div
-                  key={id}
+                  key={itemKey}
                   className="group flex flex-col rounded-xl overflow-hidden bg-card border border-border hover:border-muted-foreground transition-all"
                 >
                   {item.poster_url ? (
@@ -185,19 +236,25 @@ export default function SearchPage({
                     )}
                     <Button
                       size="sm"
-                      disabled={adding === id || added.has(id)}
+                      disabled={
+                        !externalId ||
+                        adding === itemKey ||
+                        added.has(itemKey)
+                      }
                       onClick={() => handleAdd(item)}
                       className={cn(
                         "mt-auto w-full rounded-lg text-xs h-8",
-                        added.has(id) && "opacity-60"
+                        added.has(itemKey) && "opacity-60",
                       )}
-                      variant={added.has(id) ? "outline" : "default"}
+                      variant={added.has(itemKey) ? "outline" : "default"}
                     >
-                      {added.has(id)
-                        ? "✓ Добавлено"
-                        : adding === id
-                        ? "..."
-                        : "+ В список"}
+                      {!externalId
+                        ? "Нет ID"
+                        : added.has(itemKey)
+                          ? "✓ Добавлено"
+                          : adding === itemKey
+                            ? "..."
+                            : "+ В список"}
                     </Button>
                   </div>
                 </div>
@@ -206,12 +263,11 @@ export default function SearchPage({
           </div>
         )}
 
-        {/* Пустое состояние до поиска */}
         {results.length === 0 && !loading && !error && (
           <div className="flex-1 flex flex-col items-center justify-center py-20 text-center">
             <div className="text-6xl mb-4 opacity-20">🔍</div>
             <p className="text-muted-foreground">
-              Введи название и нажми «Найти»
+              Введите название и нажмите «Найти»
             </p>
           </div>
         )}
