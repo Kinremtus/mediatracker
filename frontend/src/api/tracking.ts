@@ -10,7 +10,6 @@ export interface MediaItem {
   media_type: string;
   poster_url: string | null;
   episodes: number | null;
-  
 }
 
 export interface TrackingEntry {
@@ -22,24 +21,46 @@ export interface TrackingEntry {
   media: MediaItem;
 }
 
-export interface AnimeSearchResult {
-  anilist_id: number;
-  title_romaji: string;
-  title_english: string | null;
-  title_native: string | null;
-  title_russian: string | null;
-  poster_url: string;
-  episodes: number | null;
-  status: string;
-  score: number | null;
+export interface SearchResult {
+  id?: number | string;
+  external_id?: string | null;
+  anilist_id?: number;
+  tmdb_id?: number;
+  rawg_id?: number;
+  google_id?: string;
+  title?: string;
+  title_romaji?: string;
+  title_english?: string | null;
+  title_native?: string | null;
+  title_russian?: string | null;
+  poster_url?: string | null;
+  episodes?: number | null;
+  media_type?: string;
 }
+
+export type SearchType =
+  | "anime"
+  | "manga"
+  | "manhwa"
+  | "manhua"
+  | "novels"
+  | "movies"
+  | "tv"
+  | "dramas"
+  | "cartoons"
+  | "animated-movies"
+  | "games"
+  | "books";
 
 export async function getTracking(status?: string): Promise<TrackingEntry[]> {
   const params = status ? `?status=${status}` : "";
   return api.get<TrackingEntry[]>(`/tracking${params}`);
 }
 
-export async function searchMedia(query: string, type: SearchType) {
+export async function searchMedia(
+  query: string,
+  type: SearchType,
+): Promise<SearchResult[]> {
   const endpoints: Record<string, string> = {
     anime: "/search/anime",
     manga: "/search/manga",
@@ -54,13 +75,14 @@ export async function searchMedia(query: string, type: SearchType) {
     games: "/search/games",
     books: "/search/books",
   };
-  return api.get<AnimeSearchResult[]>(
-    `${endpoints[type]}?q=${encodeURIComponent(query)}`
+
+  return api.get<SearchResult[]>(
+    `${endpoints[type]}?q=${encodeURIComponent(query)}`,
   );
 }
 
 export async function addToTracking(
-  externalId: number,
+  externalId: string,
   mediaType: string,
   status = "planned",
 ): Promise<TrackingEntry> {
@@ -70,9 +92,10 @@ export async function addToTracking(
     status,
   });
 }
+
 export async function updateTracking(
   id: number,
-  data: { status?: string; rating?: number | null; progress?: number }
+  data: { status?: string; rating?: number | null; progress?: number },
 ): Promise<TrackingEntry> {
   return api.put<TrackingEntry>(`/tracking/${id}`, data);
 }
@@ -81,14 +104,11 @@ export async function deleteTracking(id: number): Promise<void> {
   return api.delete(`/tracking/${id}`);
 }
 
-export type SearchType = 
-  "anime" | "manga" | "manhwa" | "manhua" | "novels" |
-  "movies" | "tv" | "dramas" | "cartoons" | "animated-movies" |
-  "games" | "books";
-
 export async function getMediaDetails(
   mediaType: string,
-  externalId: string
+  externalId: string,
 ): Promise<any> {
-  return api.get(`/search/details?media_type=${mediaType}&external_id=${externalId}`);
+  return api.get(
+    `/search/details?media_type=${mediaType}&external_id=${externalId}`,
+  );
 }
