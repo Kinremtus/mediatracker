@@ -1,4 +1,3 @@
-from sqlalchemy.orm import relationship
 from database import Base
 ffrom sqlalchemy import (
     Column,

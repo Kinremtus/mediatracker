@@ -6,20 +6,24 @@ from sqlalchemy import engine_from_config, pool
 
 from alembic import context
 
-# Это нужно, чтобы Alembic видел твои модули (models, database)
+# Чтобы Alembic видел backend/database.py и backend/models.py
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-# Импортируем твою базу и модели — важно, чтобы Alembic видел все таблицы
-from database import Base, SQLALCHEMY_DATABASE_URL
-import models  # noqa: F401 — модели должны загрузиться, чтобы Base.metadata их увидел
+# Импортируем твою базу и модели (models нужен, чтобы Base.metadata увидел таблицы)
+from database import Base
+import models  # noqa: F401
 
-# Alembic Config
+# --- URL ---
+# Берём из окружения. Для локальной работы fallback на docker-compose URL.
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql+psycopg2://postgres:postgres@localhost:5432/mediatracker"
+)
+
 config = context.config
+config.set_main_option("sqlalchemy.url", DATABASE_URL)
 
-# Подменяем placeholder из alembic.ini на реальный URL из проекта
-config.set_main_option("sqlalchemy.url", SQLALCHEMY_DATABASE_URL)
-
-# Настройка логирования
+# Логирование
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
