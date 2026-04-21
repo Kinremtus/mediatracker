@@ -1,5 +1,5 @@
 from database import Base
-ffrom sqlalchemy import (
+from sqlalchemy import (
     Column,
     Integer,
     String,
