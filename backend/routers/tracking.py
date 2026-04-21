@@ -53,8 +53,11 @@ async def add_tracking_from_search(
 ):
     # 1. Ищем в нашей БД
     media = (
-        db.query(models.MediaItem)
-        .filter(models.MediaItem.external_id == str(entry.external_id))
+        db.query(MediaItem)
+        .filter(
+            MediaItem.provider == result.get("provider", "unknown"),
+            MediaItem.external_id == str(entry.external_id),
+        )
         .first()
     )
 
@@ -82,6 +85,8 @@ async def add_tracking_from_search(
 
         # Создаем запись MediaItem в нашей БД
         media = models.MediaItem(
+            provider=result.get("provider", "unknown"),
+            external_id=str(entry.external_id), 
             title=result.get("title") or result.get("title_romaji", ""),
             title_english=result.get("title_english"),
             title_native=result.get("title_native"),

@@ -17,17 +17,23 @@ class MediaItem(Base):
     __tablename__ = "media_items"
 
     id = Column(Integer, primary_key=True)
+    external_id = Column(String, nullable=False)
+    provider = Column(String, nullable=False, default="anilist")  # ← новое
+    media_type = Column(String, nullable=False)
     title = Column(String, nullable=False)
     title_english = Column(String, nullable=True)
     title_native = Column(String, nullable=True)
     title_russian = Column(String, nullable=True)
-    media_type = Column(String, nullable=False)
-    external_id = Column(String, nullable=True)  # anilist_id как строка
     poster_url = Column(String, nullable=True)
     episodes = Column(Integer, nullable=True)
+    description = Column(Text, nullable=True)
+    status = Column(String, nullable=True)
+    score = Column(Integer, nullable=True)
 
-    tracking_entries = relationship("TrackingEntry", back_populates="media")
-
+    # Уникальность теперь по паре, а не только по external_id
+    __table_args__ = (
+        UniqueConstraint("provider", "external_id", name="uix_provider_external"),
+    )
 class TrackingEntry(Base):
     __tablename__ = "tracking_entries"
 
