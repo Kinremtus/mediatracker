@@ -1,8 +1,17 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey
 from sqlalchemy.orm import relationship
 from database import Base
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime
+from sqlalchemy import (
+    Column,
+    Integer,
+    ForeignKey,
+    String,
+    Text,              # ← добавь это
+    UniqueConstraint,  # ← и это
+)
+from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime, timezone
+
+Base = declarative_base()
 
 class User(Base):
     __tablename__ = "users"
