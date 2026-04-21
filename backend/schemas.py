@@ -2,11 +2,13 @@ from pydantic import AliasChoices, BaseModel, Field
 from enum import Enum
 from datetime import datetime
 
+
 class MediaType(str, Enum):
     anime = "anime"
     movie = "movie"
     game = "game"
     book = "book"
+
 
 class TrackingStatus(str, Enum):
     planned = "planned"
@@ -14,7 +16,7 @@ class TrackingStatus(str, Enum):
     completed = "completed"
     dropped = "dropped"
 
-# --- User ---
+
 class UserCreate(BaseModel):
     username: str
     password: str
@@ -26,36 +28,38 @@ class UserResponse(BaseModel):
 
     model_config = {"from_attributes": True}
 
-# --- Token ---
+
 class Token(BaseModel):
     access_token: str
     token_type: str
 
-# --- MediaItem ---
+
 class MediaItemCreate(BaseModel):
     title: str
     media_type: MediaType
     poster_url: str | None = None
 
+
 class MediaItemResponse(BaseModel):
     id: int
     external_id: str
     title: str
-    title_english: str | None
-    title_native: str | None
-    title_russian: str | None
+    title_english: str | None = None
+    title_native: str | None = None
+    title_russian: str | None = None
     media_type: str
-    poster_url: str | None
-    episodes: int | None
+    poster_url: str | None = None
+    episodes: int | None = None
 
     model_config = {"from_attributes": True}
 
-# --- TrackingEntry ---
+
 class TrackingEntryCreate(BaseModel):
     media_id: int
     status: TrackingStatus = TrackingStatus.planned
     rating: float | None = None
     progress: int = 0
+
 
 class TrackingEntryResponse(BaseModel):
     id: int
@@ -67,8 +71,23 @@ class TrackingEntryResponse(BaseModel):
 
     model_config = {"from_attributes": True}
 
-# --- Search ---
+
+class SearchResult(BaseModel):
+    external_id: str
+    title: str
+    title_english: str | None = None
+    title_native: str | None = None
+    title_russian: str | None = None
+    poster_url: str | None = None
+    media_type: str
+    episodes: int | None = None
+    seasons: int | None = None
+    status: str | None = None
+    score: int | None = None
+    description: str | None = None
+
 class TrackingFromSearch(BaseModel):
+    # Можно оставить на 1 релиз для совместимости со старым фронтом
     external_id: str = Field(
         validation_alias=AliasChoices("external_id", "id")
     )

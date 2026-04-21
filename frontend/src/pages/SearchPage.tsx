@@ -1,13 +1,14 @@
-import { useState } from "react";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
+import { useState, type FormEvent } from "react";
+import { ArrowLeft, Search } from "lucide-react";
+
 import {
   addToTracking,
   searchMedia,
   type SearchResult,
   type SearchType,
 } from "@/api/tracking";
-import { ArrowLeft, Search } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 const SEARCH_TYPES: { value: SearchType; label: string; emoji: string }[] = [
@@ -25,31 +26,19 @@ const SEARCH_TYPES: { value: SearchType; label: string; emoji: string }[] = [
   { value: "movies", label: "Фильмы", emoji: "🎥" },
 ];
 
-function getExternalId(item: SearchResult): string | null {
-  const raw =
-    item.external_id ??
-    item.anilist_id ??
-    item.tmdb_id ??
-    item.rawg_id ??
-    item.google_id ??
-    item.id;
-
-  if (raw === undefined || raw === null || raw === "") {
-    return null;
-  }
-
-  return String(raw);
-}
-
 function getErrorMessage(error: unknown): string {
   const err = error as {
-    response?: { data?: { detail?: unknown } };
+    response?: {
+      data?: {
+        detail?: unknown;
+      };
+    };
     message?: string;
   };
 
   const detail = err.response?.data?.detail;
 
-  if (typeof detail === "string") {
+  if (typeof detail === "string" && detail) {
     return detail;
   }
 
@@ -85,9 +74,12 @@ export default function SearchPage({
 
   const currentType = SEARCH_TYPES.find((t) => t.value === searchType);
 
-  async function handleSearch(e: React.FormEvent) {
+  async function handleSearch(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!query.trim()) return;
+
+    if (!query.trim()) {
+      return;
+    }
 
     setLoading(true);
     setError("");
@@ -103,15 +95,14 @@ export default function SearchPage({
   }
 
   async function handleAdd(item: SearchResult) {
-    const externalId = getExternalId(item);
-    const type = (item.media_type ?? searchType) as SearchType;
+    const externalId = item.external_id;
+    const type = (item.media_type || searchType) as SearchType;
+    const itemKey = `${type}:${externalId}`;
 
     if (!externalId) {
       setError("У этого результата поиска нет external_id");
       return;
     }
-
-    const itemKey = `${type}:${externalId}`;
 
     setAdding(itemKey);
     setError("");
@@ -142,8 +133,11 @@ export default function SearchPage({
           <ArrowLeft className="size-4" />
           Назад
         </button>
+
         <div className="h-4 w-px bg-border" />
+
         <h1 className="text-lg font-semibold">Поиск</h1>
+
         {currentType && (
           <span className="text-sm text-muted-foreground">
             — {currentType.label}
@@ -184,6 +178,7 @@ export default function SearchPage({
               className="pl-11 h-12 bg-card border-border rounded-xl text-foreground placeholder:text-muted-foreground"
             />
           </div>
+
           <Button
             type="submit"
             disabled={loading}
@@ -198,15 +193,15 @@ export default function SearchPage({
         {results.length > 0 && (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
             {results.map((item) => {
-              const externalId = getExternalId(item);
-              const type = (item.media_type ?? searchType) as SearchType;
+              const externalId = item.external_id;
+              const type = (item.media_type || searchType) as SearchType;
+              const itemKey = `${type}:${externalId}`;
               const title =
                 item.title_russian ||
                 item.title_english ||
-                item.title_romaji ||
+                item.title_native ||
                 item.title ||
                 "Без названия";
-              const itemKey = `${type}:${externalId ?? title}`;
 
               return (
                 <div
@@ -225,22 +220,21 @@ export default function SearchPage({
                       Нет обложки
                     </div>
                   )}
+
                   <div className="p-3 flex flex-col gap-2 flex-1">
                     <p className="text-sm font-medium truncate text-foreground">
                       {title}
                     </p>
+
                     {item.episodes && (
                       <p className="text-xs text-muted-foreground">
                         {item.episodes} эп.
                       </p>
                     )}
+
                     <Button
                       size="sm"
-                      disabled={
-                        !externalId ||
-                        adding === itemKey ||
-                        added.has(itemKey)
-                      }
+                      disabled={adding === itemKey || added.has(itemKey)}
                       onClick={() => handleAdd(item)}
                       className={cn(
                         "mt-auto w-full rounded-lg text-xs h-8",
@@ -248,13 +242,11 @@ export default function SearchPage({
                       )}
                       variant={added.has(itemKey) ? "outline" : "default"}
                     >
-                      {!externalId
-                        ? "Нет ID"
-                        : added.has(itemKey)
-                          ? "✓ Добавлено"
-                          : adding === itemKey
-                            ? "..."
-                            : "+ В список"}
+                      {added.has(itemKey)
+                        ? "✓ Добавлено"
+                        : adding === itemKey
+                          ? "..."
+                          : "+ В список"}
                     </Button>
                   </div>
                 </div>
