@@ -1,13 +1,18 @@
 from sqlalchemy.orm import relationship
 from database import Base
-from sqlalchemy import (
+ffrom sqlalchemy import (
     Column,
     Integer,
-    ForeignKey,
     String,
-    Text,              # ← добавь это
-    UniqueConstraint,  # ← и это
+    Float,
+    Text,
+    ForeignKey,
+    DateTime,
+    UniqueConstraint,
 )
+from sqlalchemy.orm import relationship
+from database import Base
+
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime, timezone
 
