@@ -3,6 +3,7 @@ import models
 import schemas
 from dependencies import get_current_user
 from services import anilist, tmdb, rawg, books
+from services import shikimori
 
 router = APIRouter(prefix="/search", tags=["search"])
 
@@ -45,11 +46,9 @@ async def get_media_details(
 
 
 @router.get("/anime", response_model=list[schemas.SearchResult])
-async def search_anime(
-    q: str,
-    current_user: models.User = Depends(get_current_user),
-):
-    return await anilist.search_anime(q)
+async def search_anime(q: str, ...):
+    # Пока используем только Shikimori для аниме
+    return await shikimori.search_anime(q)
 
 
 @router.get("/manga", response_model=list[schemas.SearchResult])
