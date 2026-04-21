@@ -1,5 +1,19 @@
 import { api } from "./client";
 
+export type SearchType =
+  | "anime"
+  | "manga"
+  | "manhwa"
+  | "manhua"
+  | "novels"
+  | "movies"
+  | "tv"
+  | "dramas"
+  | "cartoons"
+  | "animated-movies"
+  | "games"
+  | "books";
+
 export interface MediaItem {
   id: number;
   external_id: string | null;
@@ -22,38 +36,48 @@ export interface TrackingEntry {
 }
 
 export interface SearchResult {
-  id?: number | string;
-  external_id?: string | null;
-  anilist_id?: number;
-  tmdb_id?: number;
-  rawg_id?: number;
-  google_id?: string;
-  title?: string;
-  title_romaji?: string;
-  title_english?: string | null;
-  title_native?: string | null;
-  title_russian?: string | null;
-  poster_url?: string | null;
-  episodes?: number | null;
-  media_type?: string;
+  external_id: string;
+  title: string;
+  title_english: string | null;
+  title_native: string | null;
+  title_russian: string | null;
+  poster_url: string | null;
+  media_type: SearchType;
+  episodes: number | null;
+  seasons: number | null;
+  status: string | null;
+  score: number | null;
+  description: string | null;
 }
 
-export type SearchType =
-  | "anime"
-  | "manga"
-  | "manhwa"
-  | "manhua"
-  | "novels"
-  | "movies"
-  | "tv"
-  | "dramas"
-  | "cartoons"
-  | "animated-movies"
-  | "games"
-  | "books";
+export interface UpdateTrackingPayload {
+  status?: string;
+  rating?: number | null;
+  progress?: number;
+}
 
-export async function getTracking(status?: string): Promise<TrackingEntry[]> {
-  const params = status ? `?status=${status}` : "";
+const SEARCH_ENDPOINTS: Record<SearchType, string> = {
+  anime: "/search/anime",
+  manga: "/search/manga",
+  manhwa: "/search/manhwa",
+  manhua: "/search/manhua",
+  novels: "/search/novels",
+  movies: "/search/movies",
+  tv: "/search/tv",
+  dramas: "/search/dramas",
+  cartoons: "/search/cartoons",
+  "animated-movies": "/search/animated-movies",
+  games: "/search/games",
+  books: "/search/books",
+};
+
+export async function getTracking(
+  status?: string,
+): Promise<TrackingEntry[]> {
+  const params = status
+    ? `?status=${encodeURIComponent(status)}`
+    : "";
+
   return api.get<TrackingEntry[]>(`/tracking${params}`);
 }
 
@@ -61,29 +85,14 @@ export async function searchMedia(
   query: string,
   type: SearchType,
 ): Promise<SearchResult[]> {
-  const endpoints: Record<string, string> = {
-    anime: "/search/anime",
-    manga: "/search/manga",
-    manhwa: "/search/manhwa",
-    manhua: "/search/manhua",
-    novels: "/search/novels",
-    movies: "/search/movies",
-    tv: "/search/tv",
-    dramas: "/search/dramas",
-    cartoons: "/search/cartoons",
-    "animated-movies": "/search/animated-movies",
-    games: "/search/games",
-    books: "/search/books",
-  };
-
   return api.get<SearchResult[]>(
-    `${endpoints[type]}?q=${encodeURIComponent(query)}`,
+    `${SEARCH_ENDPOINTS[type]}?q=${encodeURIComponent(query)}`,
   );
 }
 
 export async function addToTracking(
   externalId: string,
-  mediaType: string,
+  mediaType: SearchType,
   status = "planned",
 ): Promise<TrackingEntry> {
   return api.post<TrackingEntry>("/tracking/from-search", {
@@ -95,7 +104,7 @@ export async function addToTracking(
 
 export async function updateTracking(
   id: number,
-  data: { status?: string; rating?: number | null; progress?: number },
+  data: UpdateTrackingPayload,
 ): Promise<TrackingEntry> {
   return api.put<TrackingEntry>(`/tracking/${id}`, data);
 }
@@ -105,10 +114,12 @@ export async function deleteTracking(id: number): Promise<void> {
 }
 
 export async function getMediaDetails(
-  mediaType: string,
+  mediaType: SearchType,
   externalId: string,
-): Promise<any> {
-  return api.get(
-    `/search/details?media_type=${mediaType}&external_id=${externalId}`,
-  );
+): Promise<SearchResult> {
+  const params =
+    `media_type=${encodeURIComponent(mediaType)}` +
+    `&external_id=${encodeURIComponent(externalId)}`;
+
+  return api.get<SearchResult>(`/search/details?${params}`);
 }
