@@ -18,6 +18,8 @@ services:
     image: postgres:17
     env_file:
       - .env
+    ports:
+      - "127.0.0.1:5432:5432"  
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -25,6 +27,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+      
   nginx:
     image: nginx:alpine
     ports:
