@@ -46,7 +46,7 @@ async def get_media_details(
 
 
 @router.get("/anime", response_model=list[schemas.SearchResult])
-async def search_anime(q: str, ...):
+async def search_anime(q: str):
     # Пока используем только Shikimori для аниме
     return await shikimori.search_anime(q)
 
