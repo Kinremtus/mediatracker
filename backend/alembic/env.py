@@ -10,14 +10,14 @@ from alembic import context
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 # Импортируем твою базу и модели (models нужен, чтобы Base.metadata увидел таблицы)
-from database import Base
 import models  # noqa: F401
+from models import Base
 
 # --- URL ---
 # Берём из окружения. Для локальной работы fallback на docker-compose URL.
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql+psycopg2://postgres:postgres@localhost:5432/mediatracker"
+    "postgresql+psycopg2://:${POSTGRES_USER}@localhost:5432/${POSTGRES_DB}"
 )
 
 config = context.config
