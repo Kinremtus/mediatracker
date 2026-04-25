@@ -20,7 +20,7 @@ class User(Base):
     email = Column(String, unique=True, nullable=False)
     hashed_password = Column(String, nullable=False)
 
-    tracking_entries = relationship("TrackingEntry", back_populates="user")
+    tracking_entries = relationship("TrackingEntry", back_populates="owner")
 
 class MediaItem(Base):
     __tablename__ = "media_items"
@@ -43,6 +43,10 @@ class MediaItem(Base):
     __table_args__ = (
         UniqueConstraint("provider", "external_id", name="uix_provider_external"),
     )
+
+    tracking_entries = relationship("TrackingEntry", back_populates="media")
+
+
 class TrackingEntry(Base):
     __tablename__ = "tracking_entries"
 
@@ -55,5 +59,5 @@ class TrackingEntry(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     media_id = Column(Integer, ForeignKey("media_items.id"), nullable=False)
 
-    owner = relationship("User", back_populates="tracking_entries")
+    owner = relationship("User", back_populates="tracking_entries", foreign_keys=[user_id])
     media = relationship("MediaItem", back_populates="tracking_entries")
