@@ -1,7 +1,7 @@
 const DEFAULT_DEV_BASE_URL =
   "https://mediatracker.web-socket-test-bench.site:2053";
 
-const BASE_URL =
+export const BASE_URL =
   import.meta.env.VITE_API_BASE_URL ||
   (import.meta.env.DEV ? DEFAULT_DEV_BASE_URL : "");
 

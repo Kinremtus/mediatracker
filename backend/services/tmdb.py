@@ -111,7 +111,7 @@ async def search_movies(
     results = await _search_tmdb(
         "/search/movie",
         query,
-        include_adult=True,
+        include_adult=False,
     )
     filtered = [item for item in results if _matches_genre(item, genre_id)]
     media_type = _movie_media_type(genre_id)

@@ -10,21 +10,17 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
-from database import Base
-
-from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime, timezone
-
-Base = declarative_base()
 
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, nullable=False)
+    email = Column(String, unique=True, nullable=False)
     hashed_password = Column(String, nullable=False)
 
-    tracking_entries = relationship("TrackingEntry", back_populates="owner")
+    tracking_entries = relationship("TrackingEntry", back_populates="user")
 
 class MediaItem(Base):
     __tablename__ = "media_items"

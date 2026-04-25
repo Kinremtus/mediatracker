@@ -17,7 +17,7 @@ from models import Base
 # Берём из окружения. Для локальной работы fallback на docker-compose URL.
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql+psycopg2://:${POSTGRES_USER}@localhost:5432/${POSTGRES_DB}"
+    "postgresql+psycopg2://postgres:postgres@localhost:5432/postgres"
 )
 
 config = context.config

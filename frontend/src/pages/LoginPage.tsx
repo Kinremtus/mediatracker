@@ -5,14 +5,22 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { login } from "@/api/auth";
 
-export default function LoginPage({ onSwitchToRegister, onLoginSuccess }) {
+interface LoginPageProps {
+  onSwitchToRegister: () => void;
+  onLoginSuccess: () => void;
+}
+
+export default function LoginPage({
+  onSwitchToRegister,
+  onLoginSuccess,
+}: LoginPageProps) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  async function handleSubmit(e) {
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError("");
     setLoading(true);

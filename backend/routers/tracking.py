@@ -5,8 +5,12 @@ import models
 import schemas
 from database import get_db
 from dependencies import get_current_user
+from datetime import datetime, timezone
 
 router = APIRouter(prefix="/tracking", tags=["tracking"])
+
+MANGA_TYPES = ("manga", "manhwa", "manhua", "novels")
+TMDB_TYPES = ("movies", "movie", "tv-shows", "tv", "dramas", "cartoons", "animated-movies")
 
 
 @router.post("", response_model=schemas.TrackingEntryResponse)
@@ -15,6 +19,17 @@ def add_tracking(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
+    existing = (
+        db.query(models.TrackingEntry)
+        .filter(
+            models.TrackingEntry.user_id == current_user.id,
+            models.TrackingEntry.media_id == entry.media_id,
+        )
+        .first()
+    )
+    if existing:
+        raise HTTPException(status_code=400, detail="Уже в трекинге")
+
     media = (
         db.query(models.MediaItem)
         .filter(models.MediaItem.id == entry.media_id)
@@ -23,7 +38,9 @@ def add_tracking(
     if not media:
         raise HTTPException(status_code=404, detail="Медиа не найдено")
     db_entry = models.TrackingEntry(
-        **entry.model_dump(), user_id=current_user.id
+        **entry.model_dump(),
+        user_id=current_user.id,
+        created_at=datetime.now(timezone.utc),
     )
     db.add(db_entry)
     db.commit()
@@ -51,21 +68,15 @@ async def add_tracking_from_search(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    # 1. Ищем в нашей БД
     media = (
-        db.query(MediaItem)
+        db.query(models.MediaItem)
         .filter(
-            MediaItem.provider == result.get("provider", "unknown"),
-            MediaItem.external_id == str(entry.external_id),
+            models.MediaItem.external_id == str(entry.external_id),
         )
         .first()
     )
 
-    # 2. Если в БД нет, идем во внешние API
     if not media:
-        MANGA_TYPES = ("manga", "manhwa", "manhua", "novels")
-        TMDB_TYPES = ("movies", "movie", "tv-shows", "tv", "dramas", "cartoons", "animated-movies")
-
         if entry.media_type == "anime":
             result = await anilist.search_anime_by_id(int(entry.external_id))
         elif entry.media_type in MANGA_TYPES:
@@ -79,14 +90,21 @@ async def add_tracking_from_search(
         else:
             raise HTTPException(status_code=400, detail="Неизвестный тип медиа")
 
-        # Если внешнее API ничего не вернуло
         if not result:
             raise HTTPException(status_code=404, detail="Медиа не найдено")
 
-        # Создаем запись MediaItem в нашей БД
+        provider_map = {
+            "anilist": "anilist",
+            "shikimori": "shikimori",
+            "tmdb": "tmdb",
+            "rawg": "rawg",
+            "books": "google_books",
+        }
+        provider = provider_map.get(result.get("provider", ""), result.get("provider", "unknown"))
+
         media = models.MediaItem(
-            provider=result.get("provider", "unknown"),
-            external_id=str(entry.external_id), 
+            provider=provider,
+            external_id=str(entry.external_id),
             title=result.get("title") or result.get("title_romaji", ""),
             title_english=result.get("title_english"),
             title_native=result.get("title_native"),
@@ -94,12 +112,12 @@ async def add_tracking_from_search(
             media_type=entry.media_type,
             poster_url=result.get("poster_url"),
             episodes=result.get("episodes"),
+            description=result.get("description"),
         )
         db.add(media)
         db.commit()
         db.refresh(media)
 
-    # 3. Проверяем, нет ли уже этого медиа у пользователя в трекинге
     existing = (
         db.query(models.TrackingEntry)
         .filter(
@@ -111,19 +129,20 @@ async def add_tracking_from_search(
     if existing:
         raise HTTPException(status_code=400, detail="Уже в трекинге")
 
-    # 4. Добавляем в трекинг
     db_entry = models.TrackingEntry(
         media_id=media.id,
         user_id=current_user.id,
         status=entry.status,
         rating=entry.rating,
         progress=entry.progress,
+        created_at=datetime.now(timezone.utc),
     )
     db.add(db_entry)
     db.commit()
     db.refresh(db_entry)
-    
+
     return db_entry
+
 
 @router.put("/{entry_id}", response_model=schemas.TrackingEntryResponse)
 def update_tracking(
@@ -153,6 +172,7 @@ def update_tracking(
     db.commit()
     db.refresh(entry)
     return entry
+
 
 @router.delete("/{entry_id}", status_code=204)
 def delete_tracking(

@@ -1,4 +1,4 @@
-import { api } from "./client";
+import { api, BASE_URL } from "./client";
 
 export interface TokenResponse {
   access_token: string;
@@ -14,9 +14,6 @@ export async function login(
   username: string,
   password: string
 ): Promise<TokenResponse> {
-  const BASE_URL = import.meta.env.DEV
-  ? "https://mediatracker.web-socket-test-bench.site:2053"
-  : "";
   const formData = new URLSearchParams();
   formData.append("username", username);
   formData.append("password", password);

@@ -33,7 +33,7 @@ const actionColors = {
   started: "text-watching bg-watching/10",
   updated: "text-accent bg-accent/10",
   dropped: "text-dropped bg-dropped/10",
-  paused: "text-on-hold bg-on-hold/10",
+  paused: "text-planned bg-planned/10",
   rated: "text-yellow-400 bg-yellow-400/10",
 };
 

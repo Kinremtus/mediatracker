@@ -33,8 +33,11 @@ function ProgressControl({
   const [editing, setEditing] = useState(false);
   const [inputVal, setInputVal] = useState(String(entry.progress));
 
+  const episodes = entry.media.episodes;
+  const total = episodes ?? 0;
+
   async function save(val: number) {
-    const clamped = Math.max(0, Math.min(entry.media.episodes!, val));
+    const clamped = Math.max(0, Math.min(total, val));
     setProgress(clamped);
     setInputVal(String(clamped));
     if (clamped !== entry.progress) {
@@ -44,7 +47,7 @@ function ProgressControl({
   }
 
   async function adjust(delta: number) {
-    const next = Math.max(0, Math.min(entry.media.episodes!, progress + delta));
+    const next = Math.max(0, Math.min(total, progress + delta));
     setProgress(next);
     setInputVal(String(next));
     await updateTracking(entry.id, { progress: next });
@@ -73,7 +76,7 @@ function ProgressControl({
           autoFocus
           type="number"
           min={0}
-          max={entry.media.episodes ?? undefined}
+          max={total || undefined}
           value={inputVal}
           onChange={(e) => setInputVal(e.target.value)}
           onBlur={() => {
@@ -112,7 +115,7 @@ function ProgressControl({
         +
       </button>
 
-      <span className="text-muted-foreground">/ {entry.media.episodes} эп.</span>
+      <span className="text-muted-foreground">/ {total || "?"} эп.</span>
     </div>
   );
 }
@@ -176,7 +179,7 @@ export function TrackingCard({
           {entry.media.title_russian || entry.media.title}
         </p>
 
-        {entry.media.episodes && (
+        {episodes != null && (
           <ProgressControl entry={entry} onUpdate={onUpdate} />
         )}
 
