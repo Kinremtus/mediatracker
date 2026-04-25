@@ -15,7 +15,6 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Добавляем колонки которых реально нет на VPS
     op.add_column(
         "media_items",
         sa.Column("provider", sa.String(), nullable=True),
@@ -25,11 +24,34 @@ def upgrade() -> None:
         sa.Column("description", sa.Text(), nullable=True),
     )
 
-    # Заполняем provider для существующих записей
-    op.execute("UPDATE media_items SET provider = 'unknown' WHERE provider IS NULL")
+    op.execute(
+        """
+        UPDATE media_items
+        SET provider = CASE
+            WHEN media_type IN ('anime', 'manga') THEN 'anilist'
+            WHEN media_type IN ('movie', 'movies', 'tv', 'series') THEN 'tmdb'
+            WHEN media_type IN ('game', 'games') THEN 'rawg'
+            WHEN media_type IN ('book', 'books') THEN 'books'
+            ELSE 'unknown'
+        END
+        WHERE provider IS NULL
+        """
+    )
 
-    # Теперь делаем NOT NULL
-    op.alter_column("media_items", "provider", nullable=False)
+    op.execute(
+        """
+        UPDATE media_items
+        SET external_id = 'legacy-' || id::text
+        WHERE external_id IS NULL OR external_id = ''
+        """
+    )
+
+    op.alter_column(
+        "media_items",
+        "provider",
+        existing_type=sa.String(),
+        nullable=False,
+    )
     op.alter_column(
         "media_items",
         "external_id",
@@ -37,25 +59,8 @@ def upgrade() -> None:
         nullable=False,
     )
 
-    # Уникальный constraint
     op.create_unique_constraint(
         "uix_provider_external",
         "media_items",
         ["provider", "external_id"],
     )
-    # created_at — уже есть, не трогаем
-    # status/score в media_items — не нужны
-
-
-def downgrade() -> None:
-    op.drop_constraint(
-        "uix_provider_external", "media_items", type_="unique"
-    )
-    op.alter_column(
-        "media_items",
-        "external_id",
-        existing_type=sa.VARCHAR(),
-        nullable=True,
-    )
-    op.drop_column("media_items", "description")
-    op.drop_column("media_items", "provider")
