@@ -29,23 +29,7 @@ function formatDateRu(dateStr: string): string {
 
 // Генератор данных (генерим только до сегодняшнего дня, будущее будет пустым)
 function generateActivityData(year: number): Record<string, number> {
-  const data: Record<string, number> = {};
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  
-  const start = new Date(year, 0, 1);
-  const end = today.getFullYear() === year ? today : new Date(year, 11, 31);
-  
-  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-    const dateStr = getLocalDateString(d);
-    const rand = Math.random();
-    if (rand < 0.6) data[dateStr] = 0;
-    else if (rand < 0.75) data[dateStr] = 1;
-    else if (rand < 0.85) data[dateStr] = 2;
-    else if (rand < 0.93) data[dateStr] = 3;
-    else data[dateStr] = 4;
-  }
-  return data;
+  return {};
 }
 
 const MONTHS_SHORT =["Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"];

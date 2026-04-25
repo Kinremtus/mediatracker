@@ -87,7 +87,7 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
 
     base.forEach((entry) => {
       const uiStatus = mapStatusToUI(entry.status);
-      if (counts.hasOwnProperty(uiStatus)) {
+      if (Object.prototype.hasOwnProperty.call(counts, uiStatus)) {
         counts[uiStatus]++;
       }
     });
@@ -104,7 +104,7 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
   };
   tracking.forEach((entry) => {
     const uiStatus = mapStatusToUI(entry.status);
-    if (counts.hasOwnProperty(uiStatus)) counts[uiStatus]++;
+    if (Object.prototype.hasOwnProperty.call(counts, uiStatus)) counts[uiStatus]++;
   });
   return counts;
 }, [tracking]);
@@ -196,7 +196,7 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
         initialType={searchInitialType}
         onBack={() => {
           setShowSearch(false);
-          loadTracking(activeFilter);
+          loadTracking();
         }}
       />
     );
