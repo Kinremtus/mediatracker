@@ -144,7 +144,7 @@ export function MediaDetailSheet({
     : null;
 
   const description = details?.description ?? null;
-  const totalEpisodes = details?.episodes ?? entry.media.episodes ?? null;
+  const totalEpisodes = details?.episodes ?? entry.media?.episodes ?? null;
   const seasons = details?.seasons ?? null;
   const score = details?.score ?? null;
   const releaseStatus = details?.status ?? null;
