@@ -9,6 +9,7 @@ export default function RegisterPage({
   onSwitchToLogin: () => void;
 }) {
   const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState("");
@@ -24,7 +25,7 @@ export default function RegisterPage({
     setError("");
     setLoading(true);
     try {
-      await register(username, password);
+      await register(username, email, password);
       setSuccess(true);
     } catch (err) {
       setError((err as Error).message);
@@ -90,6 +91,17 @@ export default function RegisterPage({
               placeholder="Имя пользователя"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
+              style={{
+                background: "rgba(255, 255, 255, 0.08)",
+                borderColor: "rgba(255, 255, 255, 0.2)",
+              }}
+              className="text-white placeholder:text-white/40 h-11 rounded-full px-5"
+            />
+            <Input
+              type="email"
+              placeholder="Email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               style={{
                 background: "rgba(255, 255, 255, 0.08)",
                 borderColor: "rgba(255, 255, 255, 0.2)",
