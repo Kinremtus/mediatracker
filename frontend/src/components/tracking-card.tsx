@@ -33,7 +33,7 @@ function ProgressControl({
   const [editing, setEditing] = useState(false);
   const [inputVal, setInputVal] = useState(String(entry.progress));
 
-  const episodes = entry.media.episodes;
+  const episodes = entry.media?.episodes;
   const total = episodes ?? 0;
 
   async function save(val: number) {
