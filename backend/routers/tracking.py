@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from services import anilist, tmdb, rawg, books
+from services import mal, mangadex, tmdb, rawg, books
 import models
 import schemas
 from database import get_db
@@ -78,9 +78,13 @@ async def add_tracking_from_search(
 
     if not media:
         if entry.media_type == "anime":
-            result = await anilist.search_anime_by_id(int(entry.external_id))
+            result = await mal.get_anime_by_id(int(entry.external_id))
         elif entry.media_type in MANGA_TYPES:
-            result = await anilist.search_manga_by_id(int(entry.external_id))
+            # For manga/manhwa/manhua/novels use MangaDex (or MangaUpdates for novels)
+            if entry.media_type == "novels":
+                result = await mangaupdates.get_series_by_id(str(entry.external_id))
+            else:
+                result = await mangadex.get_manga_by_id(str(entry.external_id))
         elif entry.media_type in TMDB_TYPES:
             result = await tmdb.get_by_id(int(entry.external_id), entry.media_type)
         elif entry.media_type == "games":
@@ -94,7 +98,9 @@ async def add_tracking_from_search(
             raise HTTPException(status_code=404, detail="Медиа не найдено")
 
         provider_map = {
-            "anilist": "anilist",
+            "mal": "mal",
+            "mangadex": "mangadex",
+            "mangaupdates": "mangaupdates",
             "shikimori": "shikimori",
             "tmdb": "tmdb",
             "rawg": "rawg",

@@ -27,7 +27,7 @@ class MediaItem(Base):
 
     id = Column(Integer, primary_key=True)
     external_id = Column(String, nullable=False)
-    provider = Column(String, nullable=False, default="anilist")  # ← новое
+    provider = Column(String, nullable=False, default="mal")  # ← новое
     media_type = Column(String, nullable=False)
     title = Column(String, nullable=False)
     title_english = Column(String, nullable=True)
