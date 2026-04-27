@@ -15,7 +15,7 @@ revision = "20230427z9y8"
 #   a1b2c3d4e5f6 – adds email column (already applied)
 #   add_status_column – adds status column (already applied)
 
-down_revision = ('bdedc21ab4e8', 'a1b2c3d4e5f6', 'add_status_column', '20230427a1b2', 'aa7411391eb2', 'f7f071e7e421')
+down_revision = ('bdedc21ab4e8', 'a1b2c3d4e5f6', 'add_status_column', '20230427a1b2', 'aa7411391eb2', 'f7f071e7e421', '20230427m0g0')
 branch_labels = None
 depends_on = None
 
