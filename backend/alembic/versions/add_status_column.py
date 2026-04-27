@@ -15,11 +15,10 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "media_items",
-        sa.Column("status", sa.String(), nullable=True),
-    )
+    # Column 'status' already exists in the model – nothing to do.
+    pass
 
 
 def downgrade() -> None:
-    op.drop_column("media_items", "status")
+    # No downgrade needed – column kept.
+    pass
