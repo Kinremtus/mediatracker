@@ -179,7 +179,7 @@ export function TrackingCard({
           {entry.media.title_russian || entry.media.title}
         </p>
 
-        {episodes != null && (
+        {entry.media?.episodes != null && (
           <ProgressControl entry={entry} onUpdate={onUpdate} />
         )}
 
