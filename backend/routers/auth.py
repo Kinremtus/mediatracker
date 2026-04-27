@@ -25,6 +25,7 @@ def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
         )
     db_user = models.User(
         username=user.username,
+        email=user.email,
         hashed_password=auth.hash_password(user.password),
     )
     db.add(db_user)
