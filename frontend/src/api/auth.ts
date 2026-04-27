@@ -8,6 +8,7 @@ export interface TokenResponse {
 export interface UserResponse {
   id: number;
   username: string;
+  email: string;
 }
 
 export async function login(
@@ -42,7 +43,8 @@ export async function login(
 
 export async function register(
   username: string,
+  email: string,
   password: string
 ): Promise<UserResponse> {
-  return api.post<UserResponse>("/auth/register", { username, password });
+  return api.post<UserResponse>("/auth/register", { username, email, password });
 }
