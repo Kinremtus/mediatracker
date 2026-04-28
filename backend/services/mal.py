@@ -35,6 +35,8 @@ async def _get_token() -> str:
             },
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
+        if resp.status_code != 200:
+            print(f"MAL Token Error: Status {resp.status_code}, Body: {resp.text}")
         resp.raise_for_status()
         token = resp.json().get("access_token")
         if not token:
