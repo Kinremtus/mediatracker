@@ -108,7 +108,7 @@ export default function SearchPage({
     setError("");
 
     try {
-      await addToTracking(externalId, type, "planned");
+      await addToTracking(externalId, type, "planned", item.provider);
       setAdded((prev) => new Set(prev).add(itemKey));
     } catch (e) {
       const msg = getErrorMessage(e);
