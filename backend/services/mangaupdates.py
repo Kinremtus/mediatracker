@@ -16,7 +16,7 @@ def format_mu_item(item: dict) -> dict:
         "title_native": None,
         "title_russian": None,
         "poster_url": record.get("image", {}).get("url", {}).get("original") if isinstance(record.get("image"), dict) else None,
-        "media_type": "novels" if "novel" in (record.get("type") or "").lower() else "manga",
+        "media_type": "novels",
         "episodes": record.get("latest_chapter") or record.get("chapters"),
         "status": record.get("status") or record.get("series_status", {}).get("status"),
         "description": record.get("description"),
