@@ -20,7 +20,7 @@ def format_mu_item(item: dict) -> dict:
         "episodes": record.get("latest_chapter") or record.get("chapters"),
         "status": record.get("status") or record.get("series_status", {}).get("status"),
         "description": record.get("description"),
-        "score": record.get("bayesian_rating"),
+        "score": round(record.get("bayesian_rating")) if record.get("bayesian_rating") is not None else None,
     }
 
 
