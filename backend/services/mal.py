@@ -33,14 +33,23 @@ async def _request(path: str, params: Optional[dict] = None) -> dict:
 # Formatting – convert MAL response to the unified SearchResult schema.
 # ---------------------------------------------------------------------------
 def _format_mal_item(item: dict, media_type: str = "anime") -> dict:
-    # ``title`` contains a dict with possible keys: "romaji", "english", "native".
-    title_map = item.get("title", {})
+    # ``title`` can be a dict with keys: "romaji", "english", "native", or just a string.
+    title_data = item.get("title", "")
+    if isinstance(title_data, dict):
+        title = title_data.get("romaji") or title_data.get("english") or title_data.get("native") or ""
+        title_english = title_data.get("english")
+        title_native = title_data.get("native")
+    else:
+        title = title_data
+        title_english = None
+        title_native = None
+
     return {
         "external_id": str(item.get("id")),
         "provider": "mal",
-        "title": title_map.get("romaji") or title_map.get("english") or title_map.get("native") or "",
-        "title_english": title_map.get("english"),
-        "title_native": title_map.get("native"),
+        "title": title,
+        "title_english": title_english,
+        "title_native": title_native,
         "title_russian": None,
         "poster_url": (item.get("main_picture") or {}).get("large"),
         "media_type": media_type,
@@ -69,7 +78,9 @@ async def get_anime_by_id(anime_id: int) -> dict | None:
     Returns ``None`` if the anime is not found.
     """
     try:
-        item = await _request(f"/anime/{anime_id}")
+        # Request specific fields to ensure we get the title dictionary and other data
+        fields = "id,title,main_picture,synopsis,mean,status,num_episodes"
+        item = await _request(f"/anime/{anime_id}", {"fields": fields})
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code == 404:
             return None
