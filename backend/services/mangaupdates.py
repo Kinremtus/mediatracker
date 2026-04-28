@@ -5,19 +5,22 @@ TIMEOUT = 20.0
 
 
 def format_mu_item(item: dict) -> dict:
+    # The API wraps the series data in a 'record' field during search
+    record = item.get("record", item)
+    
     return {
-        "external_id": str(item.get("series_id") or item.get("id")),
+        "external_id": str(record.get("series_id") or record.get("id")),
         "provider": "mangaupdates",
-        "title": item.get("title") or "",
-        "title_english": item.get("title"),
+        "title": record.get("title") or "",
+        "title_english": record.get("title"),
         "title_native": None,
         "title_russian": None,
-        "poster_url": item.get("image", {}).get("url") if isinstance(item.get("image"), dict) else None,
-        "media_type": "novels" if "novel" in (item.get("type") or "").lower() else "manga",
-        "episodes": item.get("latest_chapter") or item.get("chapters"),
-        "status": item.get("status") or item.get("series_status", {}).get("status"),
-        "description": item.get("description"),
-        "score": None,
+        "poster_url": record.get("image", {}).get("url", {}).get("original") if isinstance(record.get("image"), dict) else None,
+        "media_type": "novels" if "novel" in (record.get("type") or "").lower() else "manga",
+        "episodes": record.get("latest_chapter") or record.get("chapters"),
+        "status": record.get("status") or record.get("series_status", {}).get("status"),
+        "description": record.get("description"),
+        "score": record.get("bayesian_rating"),
     }
 
 
