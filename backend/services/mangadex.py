@@ -57,7 +57,7 @@ async def search_manga(query: str, original_language: Optional[str] = None) -> L
     params: Dict[str, any] = {
         "title": query,
         "limit": SEARCH_LIMIT,
-        "includes": "cover_art",
+        "includes[]": "cover_art",  # Correct way to pass array params to MangaDex API
         "order[relevance]": "desc",
     }
     if original_language:

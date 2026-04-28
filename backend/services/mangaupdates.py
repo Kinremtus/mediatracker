@@ -24,21 +24,18 @@ def format_mu_item(item: dict) -> dict:
     }
 
 
-NOVEL_TYPES = {"novel", "light novel", "web novel", "doujinshi novel"}
-
-
 async def search_series(query: str) -> list[dict]:
     async with httpx.AsyncClient(timeout=TIMEOUT) as client:
         response = await client.post(
             f"{MU_BASE}/series/search",
-            json={"search": query, "page": 1, "type": "Novel"},
+            json={"search": query, "page": 1},
         )
         response.raise_for_status()
 
     data = response.json()
     results = data.get("results", [])
 
-    # Дополнительная фильтрация на случай если API вернул что-то лишнее
+    # Мягкая фильтрация: оставляем только то, что явно является новеллой
     filtered = []
     for r in results:
         record = r.get("record", r)
