@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 router = APIRouter(prefix="/tracking", tags=["tracking"])
 
-MANGA_TYPES = ("manga", "manhwa", "manhua", "novels")
+MANGA_TYPES = ("manga", "manhwa", "manhua", "novel", "novels")
 TMDB_TYPES = ("movies", "movie", "tv-shows", "tv", "dramas", "cartoons", "animated-movies")
 
 
@@ -86,7 +86,7 @@ async def add_tracking_from_search(
             elif entry.provider == "mangadex":
                 result = await mangadex.get_manga_by_id(str(entry.external_id))
             # Priority 2: Fallback by media_type if provider is missing
-            elif entry.media_type == "novels":
+            elif entry.media_type in ("novel", "novels"):
                 result = await mangaupdates.get_series_by_id(str(entry.external_id))
             else:
                 result = await mangadex.get_manga_by_id(str(entry.external_id))
