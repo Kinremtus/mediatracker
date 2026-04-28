@@ -81,7 +81,7 @@ async def add_tracking_from_search(
             result = await mal.get_anime_by_id(int(entry.external_id))
         elif entry.media_type in MANGA_TYPES:
             # Priority 1: Explicit provider from search results
-            if entry.provider == "mangaupdates":
+            if entry.provider == "mangaupdates" or entry.media_type in ("novel", "novels"):
                 result = await mangaupdates.get_series_by_id(str(entry.external_id))
             elif entry.provider == "mangadex":
                 result = await mangadex.get_manga_by_id(str(entry.external_id))

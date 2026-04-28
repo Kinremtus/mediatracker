@@ -1,3 +1,4 @@
+import os
 import httpx
 from typing import Optional, List, Dict
 
@@ -41,7 +42,9 @@ def _format_md_item(item: dict, media_type: str) -> dict:
 
 
 async def _request(path: str, params: Optional[dict] = None) -> dict:
-    async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+    api_key = os.getenv("MANGADEX_API_KEY")
+    headers = {"Api-Key": api_key} if api_key else {}
+    async with httpx.AsyncClient(timeout=TIMEOUT, headers=headers) as client:
         resp = await client.get(f"{MD_BASE}{path}", params=params or {})
         resp.raise_for_status()
         return resp.json()
@@ -54,7 +57,7 @@ async def search_manga(query: str, original_language: Optional[str] = None) -> L
     params: Dict[str, any] = {
         "title": query,
         "limit": SEARCH_LIMIT,
-        "includes[]": "cover_art",
+        "includes": "cover_art",
         "order[relevance]": "desc",
     }
     if original_language:
@@ -75,7 +78,7 @@ async def get_manga_by_id(manga_id: str) -> Optional[dict]:
     Returns ``None`` if not found.
     """
     try:
-        data = await _request(f"/manga/{manga_id}", {"includes[]": "cover_art"})
+        data = await _request(f"/manga/{manga_id}", {"includes": "cover_art"})
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code == 404:
             return None
