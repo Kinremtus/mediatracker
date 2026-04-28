@@ -84,9 +84,13 @@ async def add_tracking_from_search(
             if entry.provider == "mangaupdates" or entry.media_type in ("novel", "novels"):
                 result = await mangaupdates.get_series_by_id(str(entry.external_id))
             elif entry.provider == "mangadex":
-                result = await mangadex.get_manga_by_id(str(entry.external_id))
-            # Priority 2: Fallback by media_type if provider is missing
-            elif entry.media_type in ("novel", "novels"):
+                # Even if provider is mangadex, check if ID is numeric (likely a mistake)
+                if str(entry.external_id).isdigit():
+                    result = await mangaupdates.get_series_by_id(str(entry.external_id))
+                else:
+                    result = await mangadex.get_manga_by_id(str(entry.external_id))
+            # Priority 2: Fallback by ID format if provider is missing
+            elif str(entry.external_id).isdigit():
                 result = await mangaupdates.get_series_by_id(str(entry.external_id))
             else:
                 result = await mangadex.get_manga_by_id(str(entry.external_id))
