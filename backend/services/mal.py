@@ -17,38 +17,13 @@ TIMEOUT = 20.0
 SEARCH_LIMIT = 30
 
 # ---------------------------------------------------------------------------
-# Helper: obtain a bearer token. If a token is supplied via MAL_ACCESS_TOKEN we use it directly.
-# Otherwise we request a token using the client‑credentials grant (no user interaction).
-# ---------------------------------------------------------------------------
-async def _get_token() -> str:
-    if MAL_ACCESS_TOKEN:
-        return MAL_ACCESS_TOKEN
-    if not MAL_CLIENT_ID or not MAL_CLIENT_SECRET:
-        raise RuntimeError("MAL_CLIENT_ID and MAL_CLIENT_SECRET must be set for MyAnimeList API access")
-    async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-        resp = await client.post(
-            "https://myanimelist.net/v1/oauth2/token",
-            data={
-                "grant_type": "client_credentials",
-                "client_id": MAL_CLIENT_ID,
-                "client_secret": MAL_CLIENT_SECRET,
-            },
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-        )
-        if resp.status_code != 200:
-            print(f"MAL Token Error: Status {resp.status_code}, Body: {resp.text}")
-        resp.raise_for_status()
-        token = resp.json().get("access_token")
-        if not token:
-            raise RuntimeError("Failed to obtain MyAnimeList access token")
-        return token
-
-# ---------------------------------------------------------------------------
-# Core request wrapper – adds Authorization header and parses JSON.
+# Core request wrapper – adds Client-ID header and parses JSON.
 # ---------------------------------------------------------------------------
 async def _request(path: str, params: Optional[dict] = None) -> dict:
-    token = await _get_token()
-    headers = {"Authorization": f"Bearer {token}"}
+    if not MAL_CLIENT_ID:
+        raise RuntimeError("MAL_CLIENT_ID must be set in environment variables for MyAnimeList API access")
+    
+    headers = {"X-MAL-CLIENT-ID": MAL_CLIENT_ID}
     async with httpx.AsyncClient(timeout=TIMEOUT, headers=headers) as client:
         resp = await client.get(f"{MAL_BASE}{path}", params=params or {})
         resp.raise_for_status()
