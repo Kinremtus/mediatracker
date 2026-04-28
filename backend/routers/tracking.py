@@ -106,10 +106,6 @@ async def add_tracking_from_search(
         if not result:
             raise HTTPException(status_code=404, detail="Медиа не найдено")
 
-        # DEBUG LOGGING
-        print(f"DEBUG: result from service: {result}")
-        print(f"DEBUG: entry.media_type: {entry.media_type}")
-
         provider_map = {
             "mal": "mal",
             "mangadex": "mangadex",
@@ -128,7 +124,7 @@ async def add_tracking_from_search(
             title_english=result.get("title_english"),
             title_native=result.get("title_native"),
             title_russian=result.get("title_russian"),
-            media_type=result.get("media_type", entry.media_type),
+            media_type=entry.media_type if entry.media_type in ("novel", "novels") else result.get("media_type", entry.media_type),
             poster_url=result.get("poster_url"),
             episodes=result.get("episodes"),
             description=result.get("description"),
