@@ -48,6 +48,7 @@ export interface SearchResult {
   status: string | null;
   score: number | null;
   description: string | null;
+  provider: string | null;
 }
 
 export interface UpdateTrackingPayload {
@@ -94,11 +95,13 @@ export async function addToTracking(
   externalId: string,
   mediaType: SearchType,
   status = "planned",
+  provider?: string,
 ): Promise<TrackingEntry> {
   return api.post<TrackingEntry>("/tracking/from-search", {
     external_id: externalId,
     media_type: mediaType,
     status,
+    provider,
   });
 }
 
