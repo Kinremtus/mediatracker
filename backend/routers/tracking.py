@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from services import mal, mangadex, tmdb, rawg, books
+from services import mal, mangadex, tmdb, rawg, books, mangaupdates
 import models
 import schemas
 from database import get_db
@@ -80,8 +80,9 @@ async def add_tracking_from_search(
         if entry.media_type == "anime":
             result = await mal.get_anime_by_id(int(entry.external_id))
         elif entry.media_type in MANGA_TYPES:
-            # For manga/manhwa/manhua/novels use MangaDex (or MangaUpdates for novels)
-            if entry.media_type == "novels":
+            # Use the provider from search results if available, otherwise fallback by type
+            provider = getattr(entry, "provider", None)
+            if provider == "mangaupdates" or (provider is None and entry.media_type == "novels"):
                 result = await mangaupdates.get_series_by_id(str(entry.external_id))
             else:
                 result = await mangadex.get_manga_by_id(str(entry.external_id))
