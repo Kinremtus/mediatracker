@@ -97,6 +97,10 @@ class TrackingFromSearch(BaseModel):
         default="anime",
         validation_alias=AliasChoices("media_type", "type")
     )
+    provider: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("provider")
+    )
     status: TrackingStatus = TrackingStatus.planned
     rating: float | None = None
     progress: int = 0
