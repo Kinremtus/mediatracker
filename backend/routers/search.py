@@ -78,7 +78,10 @@ async def search_novels(
     q: str,
     current_user: models.User = Depends(get_current_user),
 ):
-    return await mangaupdates.search_series(q)
+    results = await mangaupdates.search_series(q)
+    for r in results:
+        r["media_type"] = "novels"
+    return results
 
 
 @router.get("/movies", response_model=list[schemas.SearchResult])

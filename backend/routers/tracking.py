@@ -80,17 +80,7 @@ async def add_tracking_from_search(
         if entry.media_type == "anime":
             result = await mal.get_anime_by_id(int(entry.external_id))
         elif entry.media_type in MANGA_TYPES:
-            # Priority 1: Explicit provider from search results
-            if entry.provider == "mangaupdates" or entry.media_type in ("novel", "novels"):
-                result = await mangaupdates.get_series_by_id(str(entry.external_id))
-            elif entry.provider == "mangadex":
-                # Even if provider is mangadex, check if ID is numeric (likely a mistake)
-                if str(entry.external_id).isdigit():
-                    result = await mangaupdates.get_series_by_id(str(entry.external_id))
-                else:
-                    result = await mangadex.get_manga_by_id(str(entry.external_id))
-            # Priority 2: Fallback by ID format if provider is missing
-            elif str(entry.external_id).isdigit():
+            if entry.media_type in ("novel", "novels") or entry.provider == "mangaupdates":
                 result = await mangaupdates.get_series_by_id(str(entry.external_id))
             else:
                 result = await mangadex.get_manga_by_id(str(entry.external_id))
@@ -124,7 +114,7 @@ async def add_tracking_from_search(
             title_english=result.get("title_english"),
             title_native=result.get("title_native"),
             title_russian=result.get("title_russian"),
-            media_type=entry.media_type if entry.media_type in ("novel", "novels") else result.get("media_type", entry.media_type),
+            media_type=entry.media_type,
             poster_url=result.get("poster_url"),
             episodes=result.get("episodes"),
             description=result.get("description"),
