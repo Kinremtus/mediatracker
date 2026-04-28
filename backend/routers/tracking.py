@@ -68,10 +68,27 @@ async def add_tracking_from_search(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
+    # Определяем провайдера заранее, чтобы искать в БД по паре (provider, external_id)
+    if entry.media_type == "anime":
+        expected_provider = "mal"
+    elif entry.media_type in ("novel", "novels") or entry.provider == "mangaupdates":
+        expected_provider = "mangaupdates"
+    elif entry.media_type in MANGA_TYPES:
+        expected_provider = entry.provider or "mangadex"
+    elif entry.media_type in TMDB_TYPES:
+        expected_provider = "tmdb"
+    elif entry.media_type == "games":
+        expected_provider = "rawg"
+    elif entry.media_type == "books":
+        expected_provider = "google_books"
+    else:
+        raise HTTPException(status_code=400, detail="Неизвестный тип медиа")
+
     media = (
         db.query(models.MediaItem)
         .filter(
             models.MediaItem.external_id == str(entry.external_id),
+            models.MediaItem.provider == expected_provider,
         )
         .first()
     )
