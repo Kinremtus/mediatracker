@@ -24,18 +24,29 @@ def format_mu_item(item: dict) -> dict:
     }
 
 
+NOVEL_TYPES = {"novel", "light novel", "web novel", "doujinshi novel"}
+
+
 async def search_series(query: str) -> list[dict]:
     async with httpx.AsyncClient(timeout=TIMEOUT) as client:
         response = await client.post(
             f"{MU_BASE}/series/search",
-            json={"search": query, "page": 1},
+            json={"search": query, "page": 1, "type": "Novel"},
         )
         response.raise_for_status()
 
     data = response.json()
     results = data.get("results", [])
 
-    return [format_mu_item(r) for r in results]
+    # Дополнительная фильтрация на случай если API вернул что-то лишнее
+    filtered = []
+    for r in results:
+        record = r.get("record", r)
+        series_type = (record.get("type") or "").lower()
+        if "novel" in series_type:
+            filtered.append(r)
+
+    return [format_mu_item(r) for r in filtered]
 
 
 async def get_series_by_id(series_id: str) -> dict | None:

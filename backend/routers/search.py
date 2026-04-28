@@ -81,7 +81,8 @@ async def search_novels(
     results = await mangaupdates.search_series(q)
     for r in results:
         r["media_type"] = "novels"
-    return results
+    # Гарантируем, что в результатах нет манги/маньхуа и т.п.
+    return [r for r in results if r.get("media_type") == "novels"]
 
 
 @router.get("/movies", response_model=list[schemas.SearchResult])
