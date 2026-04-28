@@ -124,7 +124,7 @@ async def add_tracking_from_search(
             title_english=result.get("title_english"),
             title_native=result.get("title_native"),
             title_russian=result.get("title_russian"),
-            media_type=entry.media_type,
+            media_type=result.get("media_type", entry.media_type),
             poster_url=result.get("poster_url"),
             episodes=result.get("episodes"),
             description=result.get("description"),
