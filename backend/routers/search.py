@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 import models
 import schemas
 from dependencies import get_current_user
-from services import mal, mangadex, tmdb, rawg, books, shikimori, mangaupdates
+from services import mal, tmdb, rawg, books, shikimori, mangaupdates
 
 
 router = APIRouter(prefix="/search", tags=["search"])
@@ -31,8 +31,7 @@ async def get_media_details(
     if media_type == "anime":
         return await mal.get_anime_by_id(int(external_id))
     elif media_type in MANGA_TYPES:
-        # Use MangaDex for manga/manhwa/manhua/novels. external_id assumed to be a MangaDex UUID.
-        return await mangadex.get_manga_by_id(str(external_id))
+        return await mangaupdates.get_series_by_id(str(external_id))
     elif media_type in TMDB_TYPES:
         return await tmdb.get_by_id(int(external_id), media_type)
     elif media_type == "games":
@@ -54,7 +53,19 @@ async def search_manga(
     q: str,
     current_user: models.User = Depends(get_current_user),
 ):
-    return await mangadex.search_manga(q)
+    return await mangaupdates.search_series(
+        q,
+        allowed_types=[
+            "Manga",
+            "OEL",
+            "Doujinshi",
+            "Filipino",
+            "Indonesian",
+            "Thai",
+            "Vietnamese",
+            "Malaysian",
+        ],
+    )
 
 
 @router.get("/manhwa", response_model=list[schemas.SearchResult])
@@ -62,7 +73,7 @@ async def search_manhwa(
     q: str,
     current_user: models.User = Depends(get_current_user),
 ):
-    return await mangadex.search_manga(q, original_language="ko")
+    return await mangaupdates.search_series(q, allowed_types=["Manhwa"])
 
 
 @router.get("/manhua", response_model=list[schemas.SearchResult])
@@ -70,7 +81,7 @@ async def search_manhua(
     q: str,
     current_user: models.User = Depends(get_current_user),
 ):
-    return await mangadex.search_manga(q, original_language="zh")
+    return await mangaupdates.search_series(q, allowed_types=["Manhua"])
 
 
 @router.get("/novels", response_model=list[schemas.SearchResult])
@@ -78,11 +89,7 @@ async def search_novels(
     q: str,
     current_user: models.User = Depends(get_current_user),
 ):
-    results = await mangaupdates.search_series(q)
-    for r in results:
-        r["media_type"] = "novels"
-    # Гарантируем, что в результатах нет манги/маньхуа и т.п.
-    return [r for r in results if r.get("media_type") == "novels"]
+    return await mangaupdates.search_series(q, allowed_types=["novel"])
 
 
 @router.get("/movies", response_model=list[schemas.SearchResult])
