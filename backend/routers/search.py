@@ -55,16 +55,7 @@ async def search_manga(
 ):
     return await mangaupdates.search_series(
         q,
-        allowed_types=[
-            "Manga",
-            "OEL",
-            "Doujinshi",
-            "Filipino",
-            "Indonesian",
-            "Thai",
-            "Vietnamese",
-            "Malaysian",
-        ],
+        allowed_types=["Manga"],
     )
 
 
@@ -82,6 +73,25 @@ async def search_manhua(
     current_user: models.User = Depends(get_current_user),
 ):
     return await mangaupdates.search_series(q, allowed_types=["Manhua"])
+
+
+@router.get("/other-comics", response_model=list[schemas.SearchResult])
+async def search_other_comics(
+    q: str,
+    current_user: models.User = Depends(get_current_user),
+):
+    return await mangaupdates.search_series(
+        q,
+        allowed_types=[
+            "OEL",
+            "Doujinshi",
+            "Filipino",
+            "Indonesian",
+            "Thai",
+            "Vietnamese",
+            "Malaysian",
+        ],
+    )
 
 
 @router.get("/novels", response_model=list[schemas.SearchResult])
@@ -113,6 +123,7 @@ async def search_dramas(
     q: str,
     current_user: models.User = Depends(get_current_user),
 ):
+    # Дорамы обычно это TV-шоу с определенным жанром (например, 18 - Drama)
     return await tmdb.search_tv(q, genre_id=18)
 
 
@@ -121,6 +132,7 @@ async def search_cartoons(
     q: str,
     current_user: models.User = Depends(get_current_user),
 ):
+    # Мультсериалы: тип TV + жанр Анимация (16)
     return await tmdb.search_tv(q, genre_id=16)
 
 
@@ -132,6 +144,7 @@ async def search_animated_movies(
     q: str,
     current_user: models.User = Depends(get_current_user),
 ):
+    # Мультфильмы: тип Movie + жанр Анимация (16)
     return await tmdb.search_movies(q, genre_id=16)
 
 
