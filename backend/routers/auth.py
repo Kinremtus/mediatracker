@@ -1,5 +1,5 @@
 from services.email.service import email_service
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
@@ -31,7 +31,11 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/register", response_model=schemas.UserResponse)
-def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
+def register(
+    user: schemas.UserCreate, 
+    background_tasks: BackgroundTasks, 
+    db: Session = Depends(get_db)
+):
     existing_username = (
         db.query(models.User)
         .filter(models.User.username == user.username)
@@ -60,8 +64,11 @@ def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
-    email_service.send_welcome(db_user.email, db_user.username)
+    
+    background_tasks.add_task(email_service.send_welcome, db_user.email, db_user.username)
+    
     return db_user
+
 
 
 @router.post("/login", response_model=schemas.Token)
