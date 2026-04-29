@@ -12,7 +12,8 @@ export type SearchType =
   | "cartoons"
   | "animated-movies"
   | "games"
-  | "books";
+  | "books"
+  | "other-comics";
 
 export interface MediaItem {
   id: number;
@@ -70,6 +71,7 @@ const SEARCH_ENDPOINTS: Record<SearchType, string> = {
   "animated-movies": "/search/animated-movies",
   games: "/search/games",
   books: "/search/books",
+  "other-comics": "/search/other-comics",
 };
 
 export async function getTracking(

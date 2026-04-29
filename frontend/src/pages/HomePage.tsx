@@ -111,27 +111,28 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
 
   // Заглушка для категорий (пока бэк не умеет отдавать тип медиа)
   const categoryCounts = useMemo(() => {
-  const counts: Record<string, number> = {
-    all: tracking.length,
-    anime: 0,
-    movies: 0,
-    "tv-shows": 0,
-    books: 0,
-    manga: 0,
-    manhwa: 0,
-    manhua: 0,
-    games: 0,
-    dramas: 0,
-    cartoons: 0,
-    "animated-movies": 0,
-    novels: 0,
-  };
-  tracking.forEach((entry) => {
-    const type = entry.media.media_type;
-    if (type in counts) counts[type]++;
-  });
-  return counts;
-}, [tracking]);
+    const counts: Record<string, number> = {
+      all: tracking.length,
+      anime: 0,
+      movies: 0,
+      "tv-shows": 0,
+      books: 0,
+      manga: 0,
+      manhwa: 0,
+      manhua: 0,
+      "other-comics": 0,
+      games: 0,
+      dramas: 0,
+      cartoons: 0,
+      "animated-movies": 0,
+      novels: 0,
+    };
+    tracking.forEach((entry) => {
+      const type = entry.media.media_type;
+      if (type in counts) counts[type]++;
+    });
+    return counts;
+  }, [tracking]);
 
   // Группируем то, что смотрим прямо сейчас, по категориям
   const inProgressByCategory = useMemo(() => {
@@ -176,19 +177,20 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
   }, [tracking, searchQuery, activeFilter, activeCategory]);
 
   const CATEGORY_LABELS: Record<string, string> = {
-  anime: "аниме",
-  manga: "мангу",
-  manhwa: "манхву",
-  manhua: "маньхуа",
-  novels: "новеллу",
-  movies: "фильм",
-  tv: "сериал",
-  dramas: "дораму",
-  cartoons: "мультсериал",
-  "animated-movies": "мультфильм",
-  games: "игру",
-  books: "книгу",
-};
+    anime: "аниме",
+    manga: "мангу",
+    manhwa: "манхву",
+    manhua: "маньхуа",
+    "other-comics": "другие комиксы",
+    novels: "новеллу",
+    movies: "фильм",
+    tv: "сериал",
+    dramas: "дораму",
+    cartoons: "мультсериал",
+    "animated-movies": "мультфильм",
+    games: "игру",
+    books: "книгу",
+  };
   // Роутинг: Если открыт поиск - рендерим его
   if (showSearch) {
     return (
@@ -350,7 +352,7 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
                         Найти и добавить что-нибудь
                       </button>
                     )}
-                    {activeCategory !== "all" && (
+                    {activeCategory && activeCategory !== "all" && (
                       <button
                         onClick={() => {
                           const searchType: SearchType =
