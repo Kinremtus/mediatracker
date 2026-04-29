@@ -32,15 +32,26 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/register", response_model=schemas.UserResponse)
 def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    existing = (
+    existing_username = (
         db.query(models.User)
         .filter(models.User.username == user.username)
         .first()
     )
-    if existing:
+    if existing_username:
         raise HTTPException(
-            status_code=400, detail="Пользователь уже существует"
+            status_code=400, detail="Имя пользователя уже занято"
         )
+    
+    existing_email = (
+        db.query(models.User)
+        .filter(models.User.email == user.email)
+        .first()
+    )
+    if existing_email:
+        raise HTTPException(
+            status_code=400, detail="Этот email уже используется"
+        )
+
     db_user = models.User(
         username=user.username,
         email=user.email,
