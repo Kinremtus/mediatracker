@@ -31,7 +31,8 @@ export type MediaType =
   | "dramas"
   | "cartoons"
   | "animated-movies"
-  | "novels";
+  | "novels"
+  | "other-comics";
 
 export interface MediaItem {
   id: number;
@@ -155,6 +156,12 @@ export const mediaTypeConfig: Record<
     icon: BookOpen,
     progressUnit: "ch",
   },
+  "other-comics": {
+    label: "Other Comics",
+    labelRu: "Другие комиксы",
+    icon: BookOpen,
+    progressUnit: "ch",
+  },
 };
 
 export const mediaTypes: MediaType[] = [
@@ -165,12 +172,14 @@ export const mediaTypes: MediaType[] = [
   "manga",           // Манга
   "manhwa",          // Манхва
   "manhua",          // Маньхуа
+  "other-comics",    // Другие комиксы
   "cartoons",        // Мультсериалы
   "animated-movies", // Мультфильмы
   "novels",          // Новеллы
   "tv-shows",        // Сериалы
   "movies",          // Фильмы
 ];
+
 
 export function getProgressLabel(type: MediaType): string {
   const unit = mediaTypeConfig[type].progressUnit;

@@ -19,6 +19,7 @@ const SEARCH_TYPES: { value: SearchType; label: string; emoji: string }[] = [
   { value: "manga", label: "Манга", emoji: "📚" },
   { value: "manhwa", label: "Манхва", emoji: "📚" },
   { value: "manhua", label: "Маньхуа", emoji: "📚" },
+  { value: "other-comics", label: "Другие комиксы", emoji: "📚" },
   { value: "cartoons", label: "Мультсериалы", emoji: "📺" },
   { value: "animated-movies", label: "Мультфильмы", emoji: "🎞" },
   { value: "novels", label: "Новеллы", emoji: "📝" },
