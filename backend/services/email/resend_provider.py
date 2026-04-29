@@ -3,6 +3,8 @@ from .base import EmailProvider
 
 logger = logging.getLogger(__name__)
 
+load_dotenv(os.path.join(os.path.dirname(file), "../.env"))
+
 class ResendProvider(EmailProvider):
     def __init__(self):
         resend.api_key = os.getenv("RESEND_API_KEY")
