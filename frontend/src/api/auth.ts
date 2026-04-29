@@ -48,3 +48,7 @@ export async function register(
 ): Promise<UserResponse> {
   return api.post<UserResponse>("/auth/register", { username, email, password });
 }
+
+export async function deleteAccount(): Promise<void> {
+  return api.delete("/auth/me");
+}
