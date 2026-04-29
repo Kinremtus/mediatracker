@@ -2,7 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import { mediaTypes, mediaTypeConfig, type MediaType } from "@/lib/media-types";
-import { LayoutGrid, Layers, Activity, ChevronDown, Home } from "lucide-react";
+import { LayoutGrid, Layers, Activity, ChevronDown, Home, Trash2 } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -25,6 +25,20 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { useState } from "react";
+import { deleteAccount } from "@/api/auth";
+import { toast } from "sonner";
 
 export type SidebarView = "overview" | "media" | "statistics";
 
@@ -194,6 +208,47 @@ export function AppSidebar({
                   <Activity className="size-4" />
                   <span>Статистика</span>
                 </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <SidebarMenuButton
+                      tooltip="Удалить аккаунт"
+                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                    >
+                      <Trash2 className="size-4" />
+                      <span>Удалить аккаунт</span>
+                    </SidebarMenuButton>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Вы уверены?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Это действие необратимо. Все ваши данные о просмотренном контенте будут безвозвратно удалены.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Отмена</AlertDialogCancel>
+                      <AlertDialogAction
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        onClick={async (e) => {
+                          e.preventDefault();
+                          try {
+                            await deleteAccount();
+                            toast.success("Аккаунт успешно удален");
+                            localStorage.removeItem("token");
+                            sessionStorage.removeItem("token");
+                            window.location.href = "/login";
+                          } catch (error) {
+                            toast.error("Ошибка при удалении аккаунта");
+                          }
+                        }}
+                      >
+                        Удалить
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>

@@ -56,7 +56,7 @@ class TrackingEntry(Base):
     progress = Column(Integer, default=0)        # серия/страница/часы
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))  # ← добавить
 
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     media_id = Column(Integer, ForeignKey("media_items.id"), nullable=False)
 
     owner = relationship("User", back_populates="tracking_entries", foreign_keys=[user_id])
