@@ -71,7 +71,7 @@ async def add_tracking_from_search(
     # Определяем провайдера заранее, чтобы искать в БД по паре (provider, external_id)
     if entry.media_type == "anime":
         expected_provider = "mal"
-    elif entry.media_type in ("novel", "novels") or entry.provider == "mangaupdates":
+    elif entry.media_type in ("novel", "novels", "other-comics", "comics") or entry.provider == "mangaupdates":
         expected_provider = "mangaupdates"
     elif entry.media_type in MANGA_TYPES:
         expected_provider = "mangaupdates"
@@ -96,7 +96,7 @@ async def add_tracking_from_search(
     if not media:
         if entry.media_type == "anime":
             result = await mal.get_anime_by_id(int(entry.external_id))
-        elif entry.media_type in MANGA_TYPES:
+        elif entry.media_type in MANGA_TYPES or entry.media_type in ("other-comics", "comics", "novel", "novels"):
             result = await mangaupdates.get_series_by_id(str(entry.external_id))
         elif entry.media_type in TMDB_TYPES:
             result = await tmdb.get_by_id(int(entry.external_id), entry.media_type)

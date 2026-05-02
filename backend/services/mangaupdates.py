@@ -39,7 +39,7 @@ async def search_series(query: str, allowed_types: list[str] = None) -> list[dic
     async with httpx.AsyncClient(timeout=TIMEOUT) as client:
         response = await client.post(
             f"{MU_BASE}/series/search",
-            json={"search": query, "page": 1},
+            json={"search": query, "page": 1, "perpage": 50},
         )
         response.raise_for_status()
 
