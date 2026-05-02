@@ -19,8 +19,8 @@ const themes = [
 export function ModeToggle() {
   const { theme, setTheme } = useTheme();
 
-  const currentIcon =
-    themes.find((t) => t.value === theme)?.icon ?? Moon;
+  const activeTheme = themes.find((t) => t.value === theme) || themes[0];
+  const Icon = activeTheme.icon;
 
   return (
     <DropdownMenu>
@@ -30,20 +30,20 @@ export function ModeToggle() {
           variant="outline"
           className="size-8 text-muted-foreground hover:text-foreground bg-background/50"
         >
-          <currentIcon className="size-4" />
+          <Icon className="size-4" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-36 border-border bg-popover">
-        {themes.map(({ value, label, icon: Icon }) => (
+        {themes.map(({ value, label, icon: ThemeIcon }) => (
           <DropdownMenuItem
             key={value}
             onClick={() => setTheme(value)}
             className={cn(
               "cursor-pointer",
-              theme === value && "text-accent"
+              theme === value && "bg-accent text-accent-foreground"
             )}
           >
-            <Icon className="mr-2 size-4" />
+            <ThemeIcon className="mr-2 size-4" />
             <span>{label}</span>
           </DropdownMenuItem>
         ))}
