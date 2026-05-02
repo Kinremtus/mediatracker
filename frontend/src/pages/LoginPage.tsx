@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { login } from "@/api/auth";
+import { ModeToggle } from "@/components/mode-toggle";
 
 interface LoginPageProps {
   onSwitchToRegister: () => void;
@@ -50,6 +51,11 @@ export default function LoginPage({
         backgroundPosition: "center",
       }}
     >
+      {/* Кнопка смены темы */}
+      <div className="absolute top-4 right-4 z-20">
+        <ModeToggle />
+      </div>
+
       {/* Звёзды */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         {[...Array(80)].map((_, i) => (

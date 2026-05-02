@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { register } from "@/api/auth";
+import { ModeToggle } from "@/components/mode-toggle";
 
 export default function RegisterPage({
   onSwitchToLogin,
@@ -43,6 +44,11 @@ export default function RegisterPage({
         backgroundPosition: "center",
       }}
     >
+      {/* Кнопка смены темы */}
+      <div className="absolute top-4 right-4 z-20">
+        <ModeToggle />
+      </div>
+
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         {[...Array(80)].map((_, i) => (
           <div
