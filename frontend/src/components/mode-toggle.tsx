@@ -1,7 +1,7 @@
 "use client";
 
 import { useTheme } from "next-themes";
-import { Sun, Palette } from "lucide-react";
+import { Sun, Moon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,22 +13,22 @@ import {
 
 const themes = [
   { value: "light", label: "Светлая", icon: Sun },
-  { value: "graphite", label: "Графит", icon: Palette },
+  { value: "graphite", label: "Графит", icon: Moon },
 ] as const;
 
 export function ModeToggle() {
   const { theme, setTheme } = useTheme();
 
   const currentIcon =
-    themes.find((t) => t.value === theme)?.icon ?? Palette;
+    themes.find((t) => t.value === theme)?.icon ?? Moon;
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
           size="icon"
-          variant="ghost"
-          className="size-8 text-muted-foreground hover:text-foreground"
+          variant="outline"
+          className="size-8 text-muted-foreground hover:text-foreground bg-background/50"
         >
           <currentIcon className="size-4" />
         </Button>
