@@ -9,8 +9,11 @@ def format_mu_item(item: dict) -> dict:
     record = item.get("record", item)
     
     # Map MU type to our media_type
-    mu_type = (record.get("type") or "Manga").lower()
-    if "novel" in mu_type:
+    mu_type = (record.get("type") or "").lower()
+    
+    if not mu_type:
+        internal_type = "manga" # Fallback
+    elif "novel" in mu_type:
         internal_type = "novels"
     elif "manhwa" in mu_type:
         internal_type = "manhwa"
