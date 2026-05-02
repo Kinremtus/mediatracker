@@ -97,7 +97,7 @@ export default function SearchPage({
 
   async function handleAdd(item: SearchResult) {
     const externalId = item.external_id;
-    const type = searchType;
+    const type = (item.media_type || searchType) as SearchType;
     const itemKey = `${type}:${externalId}`;
 
     if (!externalId) {
