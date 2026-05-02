@@ -17,9 +17,8 @@ export function MediaCard({ item }: { item: MediaItem }) {
       : 0;
 
   return (
-    <div className="group flex items-center gap-4 rounded-lg border border-border bg-card p-3 transition-all hover:border-muted-foreground/30 hover:bg-secondary/50">
-      {/* Poster */}
-      <div className="relative h-20 w-14 shrink-0 overflow-hidden rounded-md bg-secondary">
+    <div className="group flex flex-col overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-muted-foreground/30">
+      <div className="relative aspect-[2/3] w-full overflow-hidden bg-secondary">
         <img
           src={item.poster}
           alt={item.title}
@@ -27,8 +26,7 @@ export function MediaCard({ item }: { item: MediaItem }) {
         />
       </div>
 
-      {/* Content */}
-      <div className="min-w-0 flex-1">
+      <div className="flex flex-col gap-2 p-3">
         <div className="flex items-start justify-between gap-2">
           <h3 className="truncate text-sm font-medium text-foreground">
             {item.title}
@@ -40,17 +38,15 @@ export function MediaCard({ item }: { item: MediaItem }) {
           )}
         </div>
 
-        {/* Status Badge */}
         <Badge
           variant="outline"
-          className={cn("mt-1.5 gap-1 text-[10px]", config.className)}
+          className={cn("gap-1 text-[10px] w-fit", config.className)}
         >
           <StatusIcon className="size-3" />
           {config.label}
         </Badge>
 
-        {/* Progress */}
-        <div className="mt-2.5 flex items-center gap-2">
+        <div className="mt-1 flex items-center gap-2">
           <div className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-secondary">
             <div
               className={cn(

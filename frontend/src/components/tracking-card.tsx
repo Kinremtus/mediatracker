@@ -167,12 +167,14 @@ export function TrackingCard({
         ✕
       </button>
 
-      <img
-        src={entry.media.poster_url || "/placeholder.jpg"}
-        alt={entry.media.title}
-        className="aspect-[2/3] w-full object-cover cursor-pointer"
-        onClick={onPosterClick}
-      />
+      <div className="relative aspect-[2/3] w-full overflow-hidden">
+        <img
+          src={entry.media.poster_url || "/placeholder.jpg"}
+          alt={entry.media.title}
+          className="h-full w-full object-cover cursor-pointer"
+          onClick={onPosterClick}
+        />
+      </div>
 
       <div className="flex flex-col gap-2 p-3">
         <p className="truncate text-sm font-medium text-foreground">
