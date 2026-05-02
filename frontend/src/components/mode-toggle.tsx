@@ -1,0 +1,55 @@
+"use client";
+
+import { useTheme } from "next-themes";
+import { Sun, Moon, Palette, Monitor } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+
+const themes = [
+  { value: "light", label: "Светлая", icon: Sun },
+  { value: "dark", label: "Тёмная", icon: Moon },
+  { value: "graphite", label: "Графит", icon: Palette },
+  { value: "system", label: "Системная", icon: Monitor },
+] as const;
+
+export function ModeToggle() {
+  const { theme, setTheme } = useTheme();
+
+  const currentIcon =
+    themes.find((t) => t.value === theme)?.icon ?? Moon;
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="size-8 text-muted-foreground hover:text-foreground"
+        >
+          <currentIcon className="size-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-36 border-border bg-popover">
+        {themes.map(({ value, label, icon: Icon }) => (
+          <DropdownMenuItem
+            key={value}
+            onClick={() => setTheme(value)}
+            className={cn(
+              "cursor-pointer",
+              theme === value && "text-accent"
+            )}
+          >
+            <Icon className="mr-2 size-4" />
+            <span>{label}</span>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
