@@ -128,7 +128,7 @@ async def add_tracking_from_search(
             title_english=result.get("title_english"),
             title_native=result.get("title_native"),
             title_russian=result.get("title_russian"),
-            media_type=entry.media_type,
+            media_type=result.get("media_type") or entry.media_type,
             poster_url=result.get("poster_url"),
             episodes=result.get("episodes"),
             description=result.get("description"),
@@ -136,6 +136,30 @@ async def add_tracking_from_search(
         db.add(media)
         db.commit()
         db.refresh(media)
+    else:
+        # Всегда проверяем актуальный тип из API, чтобы исправить ошибки в БД
+        # Для этого нам нужно вызвать соответствующий сервис
+        try:
+            if media.provider == "mal":
+                result = await mal.get_anime_by_id(int(media.external_id))
+            elif media.provider == "mangaupdates":
+                result = await mangaupdates.get_series_by_id(str(media.external_id))
+            elif media.provider == "tmdb":
+                result = await tmdb.get_by_id(int(media.external_id), media.media_type)
+            elif media.provider == "rawg":
+                result = await rawg.get_game_by_id(media.external_id)
+            elif media.provider == "google_books":
+                result = await books.get_book_by_id(media.external_id)
+            else:
+                result = None
+
+            if result and result.get("media_type") and result.get("media_type") != media.media_type:
+                media.media_type = result.get("media_type")
+                db.commit()
+                db.refresh(media)
+        except Exception:
+            # Если API недоступно, просто оставляем как есть
+            pass
 
     existing = (
         db.query(models.TrackingEntry)
