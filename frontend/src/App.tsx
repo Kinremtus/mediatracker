@@ -17,7 +17,7 @@ function App() {
   }
 
   return (
-    <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
+    <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme" themes={["light", "dark", "graphite", "system"]}>
       {isLoggedIn ? (
         <HomePage onLogout={handleLogout} />
       ) : (

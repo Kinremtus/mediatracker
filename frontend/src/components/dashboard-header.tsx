@@ -2,6 +2,7 @@ import { Search, Plus, User, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import { ModeToggle } from "@/components/mode-toggle";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -55,6 +56,9 @@ export function DashboardHeader({
             <span className="hidden sm:inline">Добавить</span>
           </Button>
           
+          {/* Смена темы */}
+          <ModeToggle />
+
           {/* Аккаунт с выпадающим списком */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
