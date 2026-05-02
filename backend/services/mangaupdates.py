@@ -16,8 +16,10 @@ def format_mu_item(item: dict) -> dict:
         internal_type = "manhwa"
     elif "manhua" in mu_type:
         internal_type = "manhua"
-    else:
+    elif mu_type == "manga":
         internal_type = "manga"
+    else:
+        internal_type = "other-comics"
 
     return {
         "external_id": str(record.get("series_id") or record.get("id")),
