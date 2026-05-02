@@ -2,6 +2,7 @@ import { useState } from "react";
 import LoginPage from "@/pages/LoginPage";
 import RegisterPage from "@/pages/RegisterPage";
 import HomePage from "@/pages/HomePage";
+import { ThemeProvider } from "@/components/theme-provider";
 
 function App() {
   const [page, setPage] = useState("login");
@@ -15,22 +16,24 @@ function App() {
     setIsLoggedIn(false);
   }
 
-  if (isLoggedIn) {
-    return <HomePage onLogout={handleLogout} />;
-  }
-
   return (
-    <>
-      {page === "login" && (
-        <LoginPage
-          onSwitchToRegister={() => setPage("register")}
-          onLoginSuccess={() => setIsLoggedIn(true)}
-        />
+    <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
+      {isLoggedIn ? (
+        <HomePage onLogout={handleLogout} />
+      ) : (
+        <>
+          {page === "login" && (
+            <LoginPage
+              onSwitchToRegister={() => setPage("register")}
+              onLoginSuccess={() => setIsLoggedIn(true)}
+            />
+          )}
+          {page === "register" && (
+            <RegisterPage onSwitchToLogin={() => setPage("login")} />
+          )}
+        </>
       )}
-      {page === "register" && (
-        <RegisterPage onSwitchToLogin={() => setPage("login")} />
-      )}
-    </>
+    </ThemeProvider>
   );
 }
 
