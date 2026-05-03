@@ -93,7 +93,7 @@ export const sampleMediaData: MediaItem[] = [
     currentProgress: 62,
     totalProgress: 62,
     score: 9.5,
-    type: "tv-shows",
+    type: "tv",
   },
   {
     id: 202,
@@ -103,7 +103,7 @@ export const sampleMediaData: MediaItem[] = [
     currentProgress: 5,
     totalProgress: 9,
     score: 8.8,
-    type: "tv-shows",
+    type: "tv",
   },
   {
     id: 203,
@@ -113,7 +113,7 @@ export const sampleMediaData: MediaItem[] = [
     currentProgress: 3,
     totalProgress: 9,
     score: 8.7,
-    type: "tv-shows",
+    type: "tv",
   },
 
   // Books

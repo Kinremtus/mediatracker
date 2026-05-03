@@ -12,7 +12,6 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-// Удалили "on-hold" из типов
 export type MediaStatus =
   | "watching"
   | "completed"
@@ -22,7 +21,7 @@ export type MediaStatus =
 export type MediaType =
   | "anime"
   | "movies"
-  | "tv-shows"
+  | "tv"
   | "books"
   | "manga"
   | "manhwa"
@@ -52,7 +51,6 @@ export const statusConfig: Record<
   watching: {
     label: "Смотрю",
     icon: Play,
-    // Используем классы, созданные в index.css
     className: "bg-watching/10 text-watching border-watching/30",
   },
   completed: {
@@ -79,7 +77,6 @@ export const progressColors: Record<MediaStatus, string> = {
   "plan-to-watch": "bg-planned",
 };
 
-
 export const mediaTypeConfig: Record<
   MediaType,
   { label: string; labelRu: string; icon: LucideIcon; progressUnit: string }
@@ -96,7 +93,7 @@ export const mediaTypeConfig: Record<
     icon: Film,
     progressUnit: "min",
   },
-  "tv-shows": {
+  tv: {
     label: "TV Shows",
     labelRu: "Сериалы",
     icon: Tv,
@@ -165,24 +162,26 @@ export const mediaTypeConfig: Record<
 };
 
 export const mediaTypes: MediaType[] = [
-  "anime",           // Аниме
-  "dramas",          // Дорамы
-  "games",           // Игры
-  "books",           // Книги
-  "manga",           // Манга
-  "manhwa",          // Манхва
-  "manhua",          // Маньхуа
-  "other-comics",    // Другие комиксы
-  "cartoons",        // Мультсериалы
-  "animated-movies", // Мультфильмы
-  "novels",          // Новеллы
-  "tv-shows",        // Сериалы
-  "movies",          // Фильмы
+  "anime",
+  "dramas",
+  "games",
+  "books",
+  "manga",
+  "manhwa",
+  "manhua",
+  "other-comics",
+  "cartoons",
+  "animated-movies",
+  "novels",
+  "tv",
+  "movies",
 ];
 
-
 export function getProgressLabel(type: MediaType): string {
-  const unit = mediaTypeConfig[type].progressUnit;
+  const config = mediaTypeConfig[type];
+  if (!config) return "эп.";
+  
+  const unit = config.progressUnit;
   switch (unit) {
     case "ep":
       return "эп.";
@@ -195,6 +194,6 @@ export function getProgressLabel(type: MediaType): string {
     case "min":
       return "мин.";
     default:
-      return "";
+      return "эп.";
   }
 }

@@ -115,7 +115,7 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
       all: tracking.length,
       anime: 0,
       movies: 0,
-      "tv-shows": 0,
+      "tv": 0,
       books: 0,
       manga: 0,
       manhwa: 0,
@@ -355,8 +355,7 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
                     {activeCategory && activeCategory !== "all" && (
                       <button
                         onClick={() => {
-                          const searchType: SearchType =
-                            activeCategory === "tv-shows" ? "tv" : (activeCategory as SearchType);
+                          const searchType = activeCategory as SearchType;
                           setSearchInitialType(searchType);
                           setShowSearch(true);
                         }}

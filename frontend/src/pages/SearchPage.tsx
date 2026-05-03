@@ -10,6 +10,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { UnifiedMediaCard } from "@/components/unified-media-card";
+import { type MediaType } from "@/lib/media-types";
 
 const SEARCH_TYPES: { value: SearchType; label: string; emoji: string }[] = [
   { value: "anime", label: "Аниме", emoji: "▶" },
@@ -205,52 +207,17 @@ export default function SearchPage({
                 "Без названия";
 
               return (
-                <div
+                <UnifiedMediaCard
                   key={itemKey}
-                  className="group flex flex-col rounded-xl overflow-hidden bg-card border border-border hover:border-muted-foreground transition-all"
-                >
-                  {item.poster_url ? (
-                    <img
-                      src={item.poster_url}
-                      alt={title}
-                      referrerPolicy="no-referrer"
-                      className="w-full aspect-[2/3] object-cover"
-                    />
-                  ) : (
-                    <div className="w-full aspect-[2/3] bg-muted flex items-center justify-center text-muted-foreground text-xs text-center p-2">
-                      Нет обложки
-                    </div>
-                  )}
-
-                  <div className="p-3 flex flex-col gap-2 flex-1">
-                    <p className="text-sm font-medium truncate text-foreground">
-                      {title}
-                    </p>
-
-                    {item.episodes && (
-                      <p className="text-xs text-muted-foreground">
-                        {item.episodes} эп.
-                      </p>
-                    )}
-
-                    <Button
-                      size="sm"
-                      disabled={adding === itemKey || added.has(itemKey)}
-                      onClick={() => handleAdd(item)}
-                      className={cn(
-                        "mt-auto w-full rounded-lg text-xs h-8",
-                        added.has(itemKey) && "opacity-60",
-                      )}
-                      variant={added.has(itemKey) ? "outline" : "default"}
-                    >
-                      {added.has(itemKey)
-                        ? "✓ Добавлено"
-                        : adding === itemKey
-                          ? "..."
-                          : "+ В список"}
-                    </Button>
-                  </div>
-                </div>
+                  variant="search"
+                  title={title}
+                  posterUrl={item.poster_url}
+                  mediaType={type as MediaType}
+                  episodes={item.episodes}
+                  onAdd={() => handleAdd(item)}
+                  isAdding={adding === itemKey}
+                  isAdded={added.has(itemKey)}
+                />
               );
             })}
           </div>
