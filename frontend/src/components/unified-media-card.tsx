@@ -140,7 +140,7 @@ export function UnifiedMediaCard({
   const unit = mediaType ? getProgressLabel(mediaType) : "эп.";
 
   return (
-    <div className="group relative flex flex-col overflow-hidden rounded-xl border border-border bg-card transition-all hover:border-muted-foreground/30 h-full shadow-sm">
+    <div className="group relative flex flex-col overflow-hidden rounded-xl border border-border bg-card transition-all hover:border-muted-foreground/30 h-full shadow-sm w-full max-w-[200px] mx-auto">
       {/* Delete button */}
       {variant === "tracking" && onDelete && (
         <button
