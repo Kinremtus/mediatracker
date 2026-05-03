@@ -194,7 +194,7 @@ export default function SearchPage({
         {error && <p className="text-destructive text-sm">{error}</p>}
 
         {results.length > 0 && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+          <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
             {results.map((item) => {
               const externalId = item.external_id;
               const type = (item.media_type || searchType) as SearchType;
