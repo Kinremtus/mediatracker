@@ -50,10 +50,10 @@ function ProgressControl({
   }
 
   return (
-    <div className="flex h-6 items-center gap-1.5 text-xs text-muted-foreground">
+    <div className="flex items-center gap-1 text-xs text-muted-foreground">
       <button
         type="button"
-        className="w-5 h-5 rounded flex items-center justify-center bg-secondary hover:bg-secondary/80 transition-colors text-foreground select-none"
+        className="w-5 h-5 rounded flex items-center justify-center bg-white/10 hover:bg-white/20 transition-colors text-foreground select-none"
         onClick={(e) => {
           e.stopPropagation();
           onChange(Math.max(0, current - 1));
@@ -83,11 +83,11 @@ function ProgressControl({
               setInputVal(String(current));
             }
           }}
-          className="w-8 text-center bg-secondary rounded h-5 text-foreground [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+          className="w-8 text-center bg-white/10 rounded h-5 text-foreground [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
         />
       ) : (
         <span
-          className="min-w-[1.5ch] text-center text-foreground tabular-nums cursor-pointer hover:text-primary transition-colors font-medium"
+          className="min-w-[1.5ch] text-center text-foreground tabular-nums cursor-pointer hover:text-primary transition-colors"
           onClick={(e) => {
             e.stopPropagation();
             setEditing(true);
@@ -100,7 +100,7 @@ function ProgressControl({
 
       <button
         type="button"
-        className="w-5 h-5 rounded flex items-center justify-center bg-secondary hover:bg-secondary/80 transition-colors text-foreground select-none"
+        className="w-5 h-5 rounded flex items-center justify-center bg-white/10 hover:bg-white/20 transition-colors text-foreground select-none"
         onClick={(e) => {
           e.stopPropagation();
           onChange(Math.min(total || Infinity, current + 1));
@@ -140,7 +140,7 @@ export function UnifiedMediaCard({
   const unit = mediaType ? getProgressLabel(mediaType) : "эп.";
 
   return (
-    <div className="group relative flex flex-col overflow-hidden rounded-xl border border-border bg-card transition-all hover:border-muted-foreground/30 h-full shadow-sm w-full max-w-[200px] mx-auto">
+    <div className="group relative flex flex-col overflow-hidden rounded-xl border border-border bg-card transition-all hover:border-muted-foreground/30 h-full">
       {/* Delete button */}
       {variant === "tracking" && onDelete && (
         <button
@@ -155,7 +155,7 @@ export function UnifiedMediaCard({
         </button>
       )}
 
-      {/* Poster */}
+      {/* Poster Container - FIXED ASPECT RATIO */}
       <div 
         className="relative aspect-[2/3] w-full overflow-hidden bg-muted cursor-pointer shrink-0"
         onClick={onPosterClick}
@@ -165,7 +165,7 @@ export function UnifiedMediaCard({
             src={posterUrl}
             alt={title}
             referrerPolicy="no-referrer"
-            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-[10px] text-muted-foreground italic p-4 text-center">
@@ -174,45 +174,43 @@ export function UnifiedMediaCard({
         )}
         
         {score && score > 0 && (
-          <div className="absolute bottom-2 right-2 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-bold text-yellow-500 backdrop-blur-sm shadow-sm border border-white/10">
+          <div className="absolute bottom-2 right-2 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-bold text-yellow-500 backdrop-blur-sm border border-white/10">
             {(score / 10).toFixed(1)}
           </div>
         )}
       </div>
 
-      {/* Info Content */}
-      <div className="flex flex-col p-3 flex-1 min-h-0 gap-3">
-        <div className="flex flex-col gap-1.5">
-          <h3 className="line-clamp-2 text-sm font-semibold text-foreground leading-snug h-10 overflow-hidden" title={title}>
-            {title}
-          </h3>
+      {/* Info Content - Return to Natural Flow */}
+      <div className="flex flex-col p-3 flex-1 gap-2">
+        <h3 className="truncate text-sm font-medium text-foreground" title={title}>
+          {title}
+        </h3>
 
-          {/* Progress row - Rigid height */}
-          <div className="h-6 flex items-center overflow-hidden">
-            {variant === "tracking" && onProgressChange ? (
-              <ProgressControl
-                current={progress}
-                total={episodes ?? null}
-                unit={unit}
-                onChange={onProgressChange}
-              />
-            ) : (
-              <div className="text-xs text-muted-foreground flex items-center gap-1">
-                {episodes ? (
-                  <>
-                    <span className="font-medium text-foreground/80">{episodes}</span>
-                    <span className="opacity-70">{unit}</span>
-                  </>
-                ) : (
-                  <span className="opacity-30 italic">Без данных</span>
-                )}
-              </div>
-            )}
-          </div>
+        {/* Progress row - consistent height but simpler style */}
+        <div className="h-6 flex items-center">
+          {variant === "tracking" && onProgressChange ? (
+            <ProgressControl
+              current={progress}
+              total={episodes ?? null}
+              unit={unit}
+              onChange={onProgressChange}
+            />
+          ) : (
+            <div className="text-xs text-muted-foreground flex items-center gap-1">
+              {episodes ? (
+                <>
+                  <span className="font-medium text-foreground/80">{episodes}</span>
+                  <span className="opacity-70">{unit}</span>
+                </>
+              ) : (
+                <span className="opacity-30 italic">Без данных</span>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* Actions row - Standardized height */}
-        <div className="relative mt-auto h-9">
+        {/* Actions row */}
+        <div className="relative mt-auto">
           {variant === "tracking" && onStatusChange ? (
             <>
               <button
@@ -221,7 +219,7 @@ export function UnifiedMediaCard({
                   setStatusOpen(!statusOpen);
                 }}
                 disabled={isLoading}
-                className="w-full h-full rounded-lg text-[11px] font-bold transition-all flex items-center justify-between px-3 bg-secondary/80 hover:bg-secondary border border-transparent hover:border-border shadow-sm active:scale-[0.98]"
+                className="text-xs transition-opacity hover:opacity-80 flex items-center gap-1 font-medium"
                 style={{
                   color: uiStatus === "watching" ? "var(--watching)" :
                          uiStatus === "completed" ? "var(--completed)" :
@@ -229,14 +227,14 @@ export function UnifiedMediaCard({
                          "var(--planned)",
                 }}
               >
-                <span className="truncate mr-2">{isLoading ? "..." : config.label.toUpperCase()}</span>
-                <span className="text-[9px] opacity-40">▼</span>
+                {isLoading ? "..." : config.label}
+                <span className="text-[10px] opacity-50">▼</span>
               </button>
 
               {statusOpen && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setStatusOpen(false)} />
-                  <div className="absolute bottom-full left-0 z-50 mb-2 w-full overflow-hidden rounded-xl border border-border bg-popover shadow-2xl animate-in fade-in slide-in-from-bottom-2 duration-200">
+                  <div className="absolute bottom-full left-0 z-50 mb-1 w-36 overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
                     {(Object.entries(statusConfig) as [MediaStatus, any][]).map(([statusKey, cfg]) => (
                       <button
                         key={statusKey}
@@ -246,12 +244,11 @@ export function UnifiedMediaCard({
                           setStatusOpen(false);
                         }}
                         className={cn(
-                          "w-full px-3 py-2.5 text-left text-[11px] font-medium transition-colors hover:bg-secondary flex items-center justify-between",
-                          uiStatus === statusKey ? "bg-secondary/50 text-foreground" : "text-muted-foreground hover:text-foreground"
+                          "w-full px-3 py-2 text-left text-xs text-foreground transition-colors hover:bg-secondary",
+                          uiStatus === statusKey ? "bg-secondary/50" : ""
                         )}
                       >
                         {cfg.label}
-                        {uiStatus === statusKey && <div className="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_8px_var(--primary)]" />}
                       </button>
                     ))}
                   </div>
@@ -267,18 +264,14 @@ export function UnifiedMediaCard({
                 onAdd();
               }}
               className={cn(
-                "w-full h-full rounded-lg text-[11px] font-bold shadow-sm transition-transform active:scale-[0.98]",
-                isAdded ? "bg-secondary text-muted-foreground border-border hover:bg-secondary/80" : "bg-primary text-primary-foreground",
+                "w-full rounded-lg text-xs h-8",
+                isAdded && "opacity-60",
               )}
               variant={isAdded ? "outline" : "default"}
             >
-              {isAdded ? "✓ В СПИСКЕ" : isAdding ? "..." : "+ В СПИСОК"}
+              {isAdded ? "✓ Добавлено" : isAdding ? "..." : "+ В список"}
             </Button>
-          ) : (
-            <div className="w-full h-full rounded-lg bg-muted/20 border border-dashed border-border flex items-center justify-center">
-               <span className="text-[10px] text-muted-foreground/30 uppercase tracking-wider">Нет действий</span>
-            </div>
-          )}
+          ) : null}
         </div>
       </div>
     </div>
