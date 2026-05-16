@@ -319,27 +319,12 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
                   counts={statusCounts}
                 />
 
-                {/* Сетка карточек */}
+                {/* Сетка карточек — три состояния: загрузка / пусто / есть данные */}
                 {loading ? (
                   <p className="py-10 text-center text-muted-foreground">Загрузка...</p>
-                ) : (
-                  <div className="mt-4 min-h-[300px] grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-                    {filteredMedia.map((entry) => (
-                      <TrackingCard
-                        key={entry.id}
-                        entry={entry}
-                        onUpdate={handleStatusUpdate}
-                        onDelete={handleDelete}
-                        onPosterClick={() => setSelectedEntry(entry)}
-                      />
-                    ))}
-                  </div>
-                )}
-
-                {/* Если список пуст */}
-                {!loading && filteredMedia.length === 0 && (
-                  <div className="text-center py-20">
-                    <p className="text-white/30 text-lg mb-4">
+                ) : filteredMedia.length === 0 ? (
+                  <div className="mt-4 flex min-h-[400px] flex-col items-center justify-center rounded-lg border border-dashed border-border text-center">
+                    <p className="text-muted-foreground text-lg mb-4">
                       {activeCategory && activeCategory !== "all"
                         ? "Ничего не найдено"
                         : "Список пуст"}
@@ -364,6 +349,18 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
                         Найти и добавить {CATEGORY_LABELS[activeCategory] ?? "что-нибудь"}
                       </button>
                     )}
+                  </div>
+                ) : (
+                  <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+                    {filteredMedia.map((entry) => (
+                      <TrackingCard
+                        key={entry.id}
+                        entry={entry}
+                        onUpdate={handleStatusUpdate}
+                        onDelete={handleDelete}
+                        onPosterClick={() => setSelectedEntry(entry)}
+                      />
+                    ))}
                   </div>
                 )}
               </section>
