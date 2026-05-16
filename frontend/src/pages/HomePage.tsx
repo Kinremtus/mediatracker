@@ -323,7 +323,7 @@ export default function HomePage({ onLogout }: { onLogout: () => void }) {
                 {loading ? (
                   <p className="py-10 text-center text-muted-foreground">Загрузка...</p>
                 ) : (
-                  <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+                  <div className="mt-4 min-h-[300px] grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
                     {filteredMedia.map((entry) => (
                       <TrackingCard
                         key={entry.id}
