@@ -20,7 +20,7 @@ jobs:
           script: |
             cd ${{ secrets.TARGET_DIR }}
             git pull origin main
-            docker compose up --build -d
+            DOCKER_BUILDKIT=1 docker compose up --build -d
 
             echo "⏳ Ждём запуска сервиса..."
             sleep 15

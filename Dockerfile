@@ -1,8 +1,24 @@
 # Builder stage
 FROM rust:1.95-slim-bookworm AS builder
 WORKDIR /app
+
+# Copy only manifest files first for dependency caching
+COPY Cargo.toml Cargo.lock ./
+
+# Create a dummy main.rs to build dependencies only
+RUN mkdir src && echo "fn main() {}" > src/main.rs
+RUN --mount=type=cache,target=/root/.cargo/registry \
+    --mount=type=cache,target=/root/.cargo/git \
+    cargo build --release
+RUN rm -f target/release/deps/mediatracker*
+
+# Copy actual source code
 COPY . .
-RUN cargo build --release
+
+# Build the real application (dependencies already cached)
+RUN --mount=type=cache,target=/root/.cargo/registry \
+    --mount=type=cache,target=/root/.cargo/git \
+    cargo build --release
 
 # Runtime stage
 FROM debian:bookworm-slim

@@ -1,0 +1,11 @@
+.git
+.github
+target
+.vscode
+.idea
+*.md
+AGENTS.md
+tests
+legacy-python
+frontend
+backend
