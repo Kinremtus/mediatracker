@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <h1>Добро пожаловать, {{ username }}!</h1>
+    <p>Это главная страница MediaTracker.</p>
+    <a href="/tracking">Мои списки</a> | <a href="/search">Поиск</a> | <a href="/stats">Статистика</a>
+</div>
+{% endblock %}
