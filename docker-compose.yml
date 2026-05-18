@@ -1,15 +1,13 @@
 services:
-  backend:
-    build: ./backend
-    # порт убираем — снаружи не торчит
-    volumes:
-      - ./backend:/app
+  app:
+    build: .
+    ports:
+      - "8080:8080"
     env_file:
       - .env
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
-      - TMDB_API_KEY=${TMDB_API_KEY}
-      - RAWG_API_KEY=${RAWG_API_KEY} 
+      - RUST_LOG=info
     depends_on:
       db:
         condition: service_healthy
@@ -19,7 +17,7 @@ services:
     env_file:
       - .env
     ports:
-      - "127.0.0.1:5432:5432"  
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -27,18 +25,18 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-      
+
   nginx:
     image: nginx:alpine
     ports:
       - "2053:443"
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf
-      - ./frontend/dist:/usr/share/nginx/html:ro
+      - ./static:/usr/share/nginx/html:ro
       - /etc/ssl/cloudflare.pem:/etc/ssl/cloudflare.pem:ro
       - /etc/ssl/cloudflare.key:/etc/ssl/cloudflare.key:ro
     depends_on:
-      - backend
+      - app
 
 volumes:
   postgres_data:
