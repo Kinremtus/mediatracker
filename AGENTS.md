@@ -34,6 +34,53 @@ Workflow:
 
 Full-stack media tracking app: **Rust (Axum) backend**, **Askama + HTMX frontend**, PostgreSQL, nginx reverse proxy.
 
+## Project Structure
+```text
+mediatracker/
+├── Cargo.toml                          # Зависимости Rust
+├── docker-compose.yml                  # Оркестрация сервисов
+├── nginx.conf                          # Настройки веб-сервера
+├── .env                                # Переменные окружения
+├── migrations/
+│   └── 001_init.sql                    # Схема БД (users, sessions, media, tracking)
+├── src/
+│   ├── main.rs                         # Точка входа, запуск сервера
+│   ├── config.rs                       # Загрузка конфигурации
+│   ├── app_state.rs                    # Состояние приложения (БД + сервисы)
+│   ├── lib.rs                          # Экспорт модулей
+│   ├── routes/                         # HTTP эндпоинты (auth, home, media, search, stats, tracking)
+│   ├── services/                       # Бизнес-логика (auth, tracking, stats, external providers)
+│   ├── models/                         # Структуры данных (user, session, media, tracking)
+│   ├── middleware/                     # Middleware (auth, logging)
+│   ├── templates/                      # Askama шаблоны
+│   ├── static/                         # CSS, JS, images
+│   └── utils/                          # Вспомогательные функции
+├── docs/                               # Документация
+├── infra/                              # Terraform (будущее)
+└── k8s/                                # Kubernetes (будущее)
+```
+
+## Current Status
+- [x] Инициализация Rust-проекта
+- [x] Настройка `Cargo.toml`
+- [x] Создание структуры папок
+- [x] Схема БД (`001_init.sql`)
+- [x] Базовый сервер (`main.rs`)
+- [x] AppState и сервисы
+- [x] Middleware аутентификации (`auth_middleware`, `CurrentUser`)
+- [x] Базовые шаблоны (home, search, media, stats, tracking)
+- [x] Модель `TrackingEntryWithMedia` для отображения списков
+- [ ] Реализация поиска (Shikimori, MangaUpdates)
+- [ ] Реализация деталей медиа
+- [x] Удаление legacy-кода (`backend/`)
+- [ ] Тестирование через Docker Compose
+
+## Next Steps
+1. Удалить папку `backend/` (legacy Python код).
+2. Реализовать `src/middleware/auth.rs`.
+3. Заполнить роуты и шаблоны для Фазы 1 (Auth, Home).
+4. Протестировать запуск через Docker Compose.
+
 ## Development Commands
 
 ```bash
@@ -83,6 +130,6 @@ docker compose exec db psql -U Kin -d tracker    # psql console
 - Rust: 1.88+
 - Axum: 0.8
 - SQLx: 0.8
-- Askama: 0.13
+- Askama: 0.16
 - PostgreSQL: 17
 - Docker Compose: v2+

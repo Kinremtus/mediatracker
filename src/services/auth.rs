@@ -114,6 +114,15 @@ impl AuthService {
         }
     }
 
+    pub async fn get_user_by_id(&self, user_id: Uuid) -> Result<User, anyhow::Error> {
+        let user = sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(&self.db)
+            .await?;
+
+        user.ok_or_else(|| anyhow::anyhow!("User not found"))
+    }
+
     pub async fn logout(&self, token: &str) -> Result<(), anyhow::Error> {
         let token_hash = sha256(token);
         sqlx::query("DELETE FROM sessions WHERE token_hash = $1")

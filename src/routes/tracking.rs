@@ -9,13 +9,13 @@ use uuid::Uuid;
 
 use crate::app_state::AppState;
 use crate::middleware::CurrentUser;
-use crate::models::tracking_entry::UpdateTracking;
+use crate::models::tracking_entry::{TrackingEntryWithMedia, UpdateTracking};
 
 #[derive(Template)]
 #[template(path = "tracking_list.html")]
 struct TrackingListTemplate {
     username: String,
-    entries: Vec<crate::models::tracking_entry::TrackingEntry>,
+    entries: Vec<TrackingEntryWithMedia>,
     current_status: String,
 }
 

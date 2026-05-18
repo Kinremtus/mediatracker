@@ -1,7 +1,7 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::models::tracking_entry::{TrackingEntry, UpdateTracking};
+use crate::models::tracking_entry::{TrackingEntry, TrackingEntryWithMedia, UpdateTracking};
 use crate::models::media_item::CreateMediaItem;
 
 #[derive(Clone)]
@@ -130,14 +130,14 @@ impl TrackingService {
         &self,
         user_id: Uuid,
         status: Option<&str>,
-    ) -> Result<Vec<TrackingEntry>, anyhow::Error> {
+    ) -> Result<Vec<TrackingEntryWithMedia>, anyhow::Error> {
         let query = if let Some(s) = status {
-            "SELECT * FROM tracking_entries WHERE user_id = $1 AND status = $2 ORDER BY updated_at DESC"
+            "SELECT tracking_entries.*, media_items.* FROM tracking_entries JOIN media_items ON tracking_entries.media_id = media_items.id WHERE tracking_entries.user_id = $1 AND tracking_entries.status = $2 ORDER BY tracking_entries.updated_at DESC"
         } else {
-            "SELECT * FROM tracking_entries WHERE user_id = $1 ORDER BY updated_at DESC"
+            "SELECT tracking_entries.*, media_items.* FROM tracking_entries JOIN media_items ON tracking_entries.media_id = media_items.id WHERE tracking_entries.user_id = $1 ORDER BY tracking_entries.updated_at DESC"
         };
 
-        let mut q = sqlx::query_as::<_, TrackingEntry>(query).bind(user_id);
+        let mut q = sqlx::query_as::<_, TrackingEntryWithMedia>(query).bind(user_id);
         if let Some(s) = status {
             q = q.bind(s);
         }

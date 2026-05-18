@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <h1>Мои списки ({{ current_status }})</h1>
+    <ul>
+        {% for entry in entries %}
+        <li>{{ entry.media.title }} - {{ entry.entry.status }}</li>
+        {% else %}
+        <li>Список пуст</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endblock %}
