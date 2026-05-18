@@ -1,6 +1,6 @@
 # AGENTS.md
 
-# Mediatracker Project Rules
+# Mediatracker Project Rules (Rust Edition)
 
 ## IMPORTANT: Development Environment
 
@@ -20,54 +20,69 @@ Workflow:
 
 ## Critical Project Rules
 
-- After ANY change to `models.py` → immediately:
+- After ANY change to `migrations/` → immediately:
 ```bash
-  docker compose exec backend alembic revision --autogenerate -m "description"
-  docker compose exec backend alembic upgrade head
+  docker compose exec db psql -U Kin -d tracker -c "SELECT 1" # Verify connection
+  # Migrations run automatically on app startup via sqlx::migrate!()
 ```
 - DB: user=`Kin`, db=`tracker` (NOT `postgres`, NOT `mediatracker`)
 - Deploy: `docker compose up -d --build`
-- Logs: `docker compose logs --tail=50 backend`
+- Logs: `docker compose logs --tail=50 app`
 - Logs: `docker compose logs --tail=50 db`
 
 ## Project Overview
 
-Full-stack media tracking app: React + Vite frontend, FastAPI backend, PostgreSQL, nginx reverse proxy.
+Full-stack media tracking app: **Rust (Axum) backend**, **Askama + HTMX frontend**, PostgreSQL, nginx reverse proxy.
 
 ## Development Commands
 
 ```bash
-# Frontend
-cd frontend && npm run dev       # dev server :5173
-npm run build                    # builds to frontend/dist/
+# Backend (Rust)
+cargo run                    # Run locally (requires local Postgres)
+cargo build --release        # Build release binary
+cargo check                  # Check compilation
+cargo test                   # Run tests
 
-# Backend (все команды через docker)
-docker compose up -d --build     # запуск
-docker compose logs -f backend   # логи бэкенда
-docker compose exec backend alembic upgrade head  # применить миграции
+# Docker
+docker compose up -d --build # Run with Docker
+docker compose logs -f app   # View app logs
+docker compose down          # Stop services
 
 # Database
-docker compose exec db psql -U Kin -d tracker    # psql консоль
+docker compose exec db psql -U Kin -d tracker    # psql console
 ```
 
 ## Architecture
 
-- **Frontend**: React 19, Vite, TailwindCSS 4, shadcn/ui
-- **Backend**: FastAPI, SQLAlchemy 2.0, Alembic, PostgreSQL
+- **Backend**: Rust, Axum, SQLx, Askama, Tokio
+- **Frontend**: Askama templates, HTMX, Alpine.js, Custom CSS
+- **Database**: PostgreSQL 17
 - **Entry points**:
-  - Frontend: `frontend/src/main.tsx`
-  - Backend: `backend/main.py`
-- **Routers**: `backend/routers/` — auth, media, tracking, search
-- **Services**: `backend/services/` — anilist, shikimori, tmdb, rawg, books, mangaupdates
+  - Backend: `src/main.rs`
+  - Templates: `templates/`
+  - Static: `static/`
+- **Routers**: `src/routes/` — auth, media, tracking, search, stats
+- **Services**: `src/services/` — shikimori, mangaupdates, tmdb, rawg, auth, tracking, stats
 
 ## Key Conventions
 
-- FastAPI: `redirect_slashes=False`
+- Axum: Router-based, middleware for auth
 - CORS: `localhost:5173` и `mediatracker.web-socket-test-bench.site:2053`
 - Health: `GET /health` → `{"status":"ok"}`
 - Media items: composite unique `(provider, external_id)`
+- Auth: Session-based (PostgreSQL), cookie `session_id`
+- API: `/api/v1/` reserved for future mobile apps
 
 ## Deployment
 
 - GitHub Actions на push в `main`
 - Deploy: git pull → `docker compose up --build -d` → healthcheck `:2053/health`
+
+## Stack Versions
+
+- Rust: 1.88+
+- Axum: 0.8
+- SQLx: 0.8
+- Askama: 0.13
+- PostgreSQL: 17
+- Docker Compose: v2+

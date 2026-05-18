@@ -9,33 +9,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Build frontend
-        run: |
-          cd frontend
-          npm ci
-          npm run build
-
-      - name: Copy dist to server
-        uses: appleboy/scp-action@v1
-        with:
-          host: ${{ secrets.HOST_IP }}
-          username: ${{ secrets.USERNAME }}
-          key: ${{ secrets.SSH_KEY }}
-          port: ${{ secrets.SSH_PORT }}
-          source: "frontend/dist/*"
-          target: "${{ secrets.TARGET_DIR }}/frontend/dist"
-          strip_components: 2
-          overwrite: true
-          
-
       - name: Deploy to VPS
         uses: appleboy/ssh-action@master
         with:
@@ -47,7 +20,6 @@ jobs:
             cd ${{ secrets.TARGET_DIR }}
             git pull origin main
             docker compose up --build -d
-            docker compose restart nginx
 
             echo "⏳ Ждём запуска сервиса..."
             sleep 15
@@ -60,6 +32,6 @@ jobs:
               echo "✅ Деплой успешен!"
             else
               echo "❌ Healthcheck провалился!"
-              docker compose logs --tail=50
+              docker compose logs --tail=50 app
               exit 1
             fi
