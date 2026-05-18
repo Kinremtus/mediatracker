@@ -16,6 +16,7 @@ jobs:
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT }}
+          command_timeout: 60m
           script: |
             cd ${{ secrets.TARGET_DIR }}
             git pull origin main
