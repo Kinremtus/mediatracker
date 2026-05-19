@@ -86,7 +86,7 @@ impl AuthService {
         let expires_at = Utc::now() + Duration::days(30);
 
         sqlx::query(
-            "INSERT INTO sessions (user_id, token_hash, user_agent, ip, expires_at) VALUES ($1, $2, $3, $4, $5)",
+            "INSERT INTO sessions (user_id, token_hash, user_agent, ip, expires_at) VALUES ($1, $2, $3, $4::inet, $5)",
         )
         .bind(user.id)
         .bind(&token_hash)
