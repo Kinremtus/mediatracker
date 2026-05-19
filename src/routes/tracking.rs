@@ -1,7 +1,6 @@
 use askama::Template;
 use axum::{
     extract::{Form, Path, Query, State},
-    http::{header::SET_COOKIE, HeaderValue},
     response::{Html, IntoResponse, Redirect, Response},
 };
 use serde::Deserialize;
@@ -10,11 +9,14 @@ use uuid::Uuid;
 use crate::app_state::AppState;
 use crate::middleware::CurrentUser;
 use crate::models::tracking_entry::{TrackingEntryWithMedia, UpdateTracking};
+use super::home::SidebarStats;
 
 #[derive(Template)]
 #[template(path = "tracking_list.html")]
 struct TrackingListTemplate {
     username: String,
+    stats: SidebarStats,
+    active_page: String,
     entries: Vec<TrackingEntryWithMedia>,
     current_status: String,
 }
@@ -31,9 +33,12 @@ pub async fn get_tracking_list(
 ) -> Html<String> {
     let status = params.status.as_deref();
     let entries = state.tracking.get_user_entries(user.id, status).await.unwrap_or_default();
+    let stats = get_sidebar_stats(&state, user.id).await;
 
     TrackingListTemplate {
         username: user.username,
+        stats,
+        active_page: "tracking".to_string(),
         entries,
         current_status: params.status.unwrap_or_default(),
     }
@@ -88,7 +93,6 @@ pub async fn post_add_to_tracking(
     match state.tracking.add_to_list(user.id, &media, status).await {
         Ok(_) => Redirect::to("/tracking").into_response(),
         Err(e) => {
-            // In a real app, we'd show an error. For now, redirect back.
             eprintln!("Error adding to tracking: {}", e);
             Redirect::to("/tracking").into_response()
         }
@@ -135,4 +139,21 @@ pub async fn post_delete_tracking(
             Redirect::to("/tracking").into_response()
         }
     }
+}
+
+async fn get_sidebar_stats(state: &AppState, user_id: uuid::Uuid) -> SidebarStats {
+    let mut stats = SidebarStats::default();
+    if let Ok(entries) = state.tracking.get_user_entries(user_id, None).await {
+        for e in entries {
+            match e.entry.status.as_str() {
+                "watching" => stats.watching += 1,
+                "reading" => stats.reading += 1,
+                "completed" => stats.completed += 1,
+                "planned" => stats.planned += 1,
+                "dropped" => stats.dropped += 1,
+                _ => {}
+            }
+        }
+    }
+    stats
 }

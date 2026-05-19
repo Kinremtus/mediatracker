@@ -1,11 +1,57 @@
-{% extends "base.html" %}
+{% extends "app_shell.html" %}
+
+{% block title %}Поиск - MediaTracker{% endblock %}
 
 {% block content %}
-<div class="container">
-    <h1>Поиск</h1>
-    <form action="/search" method="get">
-        <input type="text" name="q" placeholder="Введите запрос...">
-        <button type="submit">Найти</button>
-    </form>
+<h1 class="content-title">Поиск</h1>
+
+<form action="/search" method="get" style="margin-bottom: 1.5rem;">
+    <input type="text" name="q" value="{{ query }}" placeholder="Введите запрос..." style="width: 100%; max-width: 500px; height: 40px; padding: 0 1rem; background: var(--secondary); border: 1px solid var(--border); border-radius: var(--radius); color: var(--foreground); font-size: 14px;">
+    <button type="submit" class="btn btn-primary" style="margin-left: 0.5rem;">Найти</button>
+</form>
+
+{% if !results.is_empty() %}
+<div class="cards-grid">
+    {% for item in results %}
+    <a href="/media/{{ item.provider }}/{{ item.external_id }}?media_type={{ item.media_type }}" class="media-card">
+        <div class="media-card-poster">
+            {% if item.poster_url.is_some() %}
+            <img src="{{ item.poster_url.as_ref().unwrap() }}" alt="{{ item.title }}" loading="lazy">
+            {% else %}
+            <div class="poster-placeholder">🎬</div>
+            {% endif %}
+            {% if item.score.is_some() %}
+            <span class="media-card-score">{{ "{:.1}"|format(item.score.unwrap()) }}</span>
+            {% endif %}
+        </div>
+        <div class="media-card-body">
+            <div class="media-card-title">{{ item.title }}</div>
+            <div class="media-card-meta">{{ item.media_type }} · {{ item.provider }}</div>
+            <form method="POST" action="/tracking" onclick="event.stopPropagation();">
+                <input type="hidden" name="provider" value="{{ item.provider }}">
+                <input type="hidden" name="external_id" value="{{ item.external_id }}">
+                <input type="hidden" name="media_type" value="{{ item.media_type }}">
+                <input type="hidden" name="title" value="{{ item.title }}">
+                {% if item.title_english.is_some() %}<input type="hidden" name="title_english" value="{{ item.title_english.as_ref().unwrap() }}">{% endif %}
+                {% if item.title_native.is_some() %}<input type="hidden" name="title_native" value="{{ item.title_native.as_ref().unwrap() }}">{% endif %}
+                {% if item.title_russian.is_some() %}<input type="hidden" name="title_russian" value="{{ item.title_russian.as_ref().unwrap() }}">{% endif %}
+                {% if item.poster_url.is_some() %}<input type="hidden" name="poster_url" value="{{ item.poster_url.as_ref().unwrap() }}">{% endif %}
+                {% if item.episodes.is_some() %}<input type="hidden" name="episodes" value="{{ item.episodes.unwrap() }}">{% endif %}
+                {% if item.description.is_some() %}<input type="hidden" name="description" value="{{ item.description.as_ref().unwrap() }}">{% endif %}
+                {% if item.status.is_some() %}<input type="hidden" name="status" value="{{ item.status.as_ref().unwrap() }}">{% endif %}
+                {% if item.score.is_some() %}<input type="hidden" name="score" value="{{ item.score.unwrap() }}">{% endif %}
+                <input type="hidden" name="tracking_status" value="planned">
+                <button type="submit" class="btn btn-secondary" style="width: 100%; height: 32px; font-size: 12px;">+ В список</button>
+            </form>
+        </div>
+    </a>
+    {% endfor %}
 </div>
+{% else if !query.is_empty() %}
+<div class="empty-state">
+    <div class="empty-state-icon">🔍</div>
+    <p class="empty-state-text">Ничего не найдено</p>
+    <p class="empty-state-sub">Попробуйте другой запрос</p>
+</div>
+{% endif %}
 {% endblock %}
