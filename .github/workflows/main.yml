@@ -33,6 +33,9 @@ jobs:
               echo "✅ Деплой успешен!"
             else
               echo "❌ Healthcheck провалился!"
+              echo "=== APP LOGS ==="
               docker compose logs --tail=50 app
+              echo "=== NGINX LOGS ==="
+              docker compose logs --tail=50 nginx
               exit 1
             fi
