@@ -5,7 +5,6 @@ use url::Url;
 use crate::models::media_item::CreateMediaItem;
 
 const BASE_URL: &str = "https://api.themoviedb.org/3";
-const IMAGE_BASE: &str = "https://image.tmdb.org/t/p/w500";
 
 #[derive(Debug, Deserialize)]
 struct TmdbSearchResult {
@@ -16,6 +15,7 @@ struct TmdbSearchResult {
     media_type: Option<String>,
     vote_average: Option<f64>,
     overview: Option<String>,
+    genre_ids: Option<Vec<i64>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -68,7 +68,7 @@ impl TmdbService {
                 let id = r["id"].as_i64()?;
                 let title = r["title"].as_str().or(r["name"].as_str())?.to_string();
                 let poster_path = r["poster_path"].as_str();
-                let poster_url = poster_path.map(|p| format!("{}{}", IMAGE_BASE, p));
+                let poster_url = poster_path.map(|p| format!("/tmdb-image/{}", p));
                 let score = r["vote_average"].as_f64();
                 let description = r["overview"].as_str().map(String::from);
 
@@ -80,6 +80,130 @@ impl TmdbService {
                     } else {
                         "series".to_string()
                     },
+                    title,
+                    title_english: None,
+                    title_native: None,
+                    title_russian: None,
+                    poster_url,
+                    episodes: None,
+                    description,
+                    status: None,
+                    score,
+                })
+            })
+            .collect();
+
+        Ok(items)
+    }
+
+    pub async fn search_movies(
+        &self,
+        query: &str,
+        genre_id: Option<i64>,
+    ) -> Result<Vec<CreateMediaItem>, anyhow::Error> {
+        let mut url = Url::parse(&format!("{}/search/movie", BASE_URL))?;
+        url.query_pairs_mut()
+            .append_pair("api_key", &self.api_key)
+            .append_pair("query", query)
+            .append_pair("language", "ru-RU");
+
+        if let Some(gid) = genre_id {
+            url.query_pairs_mut().append_pair("with_genres", &gid.to_string());
+        }
+
+        let response = self.client.get(url.as_str()).send().await?;
+        let results: serde_json::Value = response.json().await?;
+
+        let items = results["results"]
+            .as_array()
+            .unwrap_or(&vec![])
+            .iter()
+            .filter_map(|r| {
+                // Post-filter by genre_ids if genre_id was specified
+                if let Some(gid) = genre_id {
+                    let genre_ids = r["genre_ids"].as_array();
+                    if let Some(ids) = genre_ids {
+                        if !ids.iter().any(|id| id.as_i64() == Some(gid)) {
+                            return None;
+                        }
+                    } else {
+                        return None;
+                    }
+                }
+
+                let id = r["id"].as_i64()?;
+                let title = r["title"].as_str()?.to_string();
+                let poster_path = r["poster_path"].as_str();
+                let poster_url = poster_path.map(|p| format!("/tmdb-image/{}", p));
+                let score = r["vote_average"].as_f64();
+                let description = r["overview"].as_str().map(String::from);
+
+                Some(CreateMediaItem {
+                    provider: "tmdb".to_string(),
+                    external_id: id.to_string(),
+                    media_type: "movie".to_string(),
+                    title,
+                    title_english: None,
+                    title_native: None,
+                    title_russian: None,
+                    poster_url,
+                    episodes: None,
+                    description,
+                    status: None,
+                    score,
+                })
+            })
+            .collect();
+
+        Ok(items)
+    }
+
+    pub async fn search_tv(
+        &self,
+        query: &str,
+        genre_id: Option<i64>,
+    ) -> Result<Vec<CreateMediaItem>, anyhow::Error> {
+        let mut url = Url::parse(&format!("{}/search/tv", BASE_URL))?;
+        url.query_pairs_mut()
+            .append_pair("api_key", &self.api_key)
+            .append_pair("query", query)
+            .append_pair("language", "ru-RU");
+
+        if let Some(gid) = genre_id {
+            url.query_pairs_mut().append_pair("with_genres", &gid.to_string());
+        }
+
+        let response = self.client.get(url.as_str()).send().await?;
+        let results: serde_json::Value = response.json().await?;
+
+        let items = results["results"]
+            .as_array()
+            .unwrap_or(&vec![])
+            .iter()
+            .filter_map(|r| {
+                // Post-filter by genre_ids if genre_id was specified
+                if let Some(gid) = genre_id {
+                    let genre_ids = r["genre_ids"].as_array();
+                    if let Some(ids) = genre_ids {
+                        if !ids.iter().any(|id| id.as_i64() == Some(gid)) {
+                            return None;
+                        }
+                    } else {
+                        return None;
+                    }
+                }
+
+                let id = r["id"].as_i64()?;
+                let title = r["name"].as_str()?.to_string();
+                let poster_path = r["poster_path"].as_str();
+                let poster_url = poster_path.map(|p| format!("/tmdb-image/{}", p));
+                let score = r["vote_average"].as_f64();
+                let description = r["overview"].as_str().map(String::from);
+
+                Some(CreateMediaItem {
+                    provider: "tmdb".to_string(),
+                    external_id: id.to_string(),
+                    media_type: "series".to_string(),
                     title,
                     title_english: None,
                     title_native: None,
@@ -109,7 +233,7 @@ impl TmdbService {
         let response = self.client.get(url.as_str()).send().await?;
 
         let r: TmdbDetails = response.json().await?;
-        let poster_url = r.poster_path.map(|p| format!("{}{}", IMAGE_BASE, p));
+        let poster_url = r.poster_path.map(|p| format!("/tmdb-image/{}", p));
         let title = r.title.unwrap_or(r.name.unwrap_or_default());
 
         Ok(CreateMediaItem {
