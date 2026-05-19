@@ -48,12 +48,18 @@ pub async fn auth_middleware(
 
     let token = match cookie {
         Some(t) => t,
-        None => return Redirect::to("/login").into_response(),
+        None => {
+            tracing::warn!("No session_id cookie found");
+            return Redirect::to("/login").into_response();
+        }
     };
+
+    tracing::info!("Extracted token: {}", token);
 
     // Validate session
     match state.auth.get_session(&token).await {
         Ok(session) => {
+            tracing::info!("Session valid for user: {}", session.user_id);
             // Get user details
             match state.auth.get_user_by_id(session.user_id).await {
                 Ok(user) => {
@@ -64,9 +70,15 @@ pub async fn auth_middleware(
                     req.extensions_mut().insert(current_user);
                     next.run(req).await
                 }
-                Err(_) => Redirect::to("/login").into_response(),
+                Err(e) => {
+                    tracing::warn!("User lookup failed: {}", e);
+                    Redirect::to("/login").into_response()
+                }
             }
         }
-        Err(_) => Redirect::to("/login").into_response(),
+        Err(e) => {
+            tracing::warn!("Session validation failed: {}", e);
+            Redirect::to("/login").into_response()
+        }
     }
 }
