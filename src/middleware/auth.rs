@@ -36,6 +36,9 @@ pub async fn auth_middleware(
     next: Next,
 ) -> Response {
     // Extract session cookie
+    let cookie_header = req.headers().get(axum::http::header::COOKIE);
+    tracing::info!("Cookie header: {:?}", cookie_header);
+
     let cookie = req
         .headers()
         .get(axum::http::header::COOKIE)
