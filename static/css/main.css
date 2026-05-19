@@ -1117,6 +1117,12 @@ img {
 
 /* --- Theme Toggle --- */
 .theme-toggle {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.theme-toggle-btn {
     width: 36px;
     height: 36px;
     display: flex;
@@ -1126,7 +1132,37 @@ img {
     transition: background 0.15s ease;
 }
 
-.theme-toggle:hover {
+.theme-toggle-btn:hover {
+    background: var(--secondary);
+}
+
+.theme-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 0.5rem;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 0.25rem;
+    min-width: 140px;
+    z-index: 100;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.theme-dropdown button {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 13px;
+    border-radius: var(--radius);
+    transition: background 0.15s ease;
+    text-align: left;
+}
+
+.theme-dropdown button:hover {
     background: var(--secondary);
 }
 

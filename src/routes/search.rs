@@ -17,12 +17,15 @@ struct SearchTemplate {
     stats: SidebarStats,
     active_page: String,
     query: String,
+    current_type: String,
     results: Vec<CreateMediaItem>,
 }
 
 #[derive(Deserialize)]
 pub struct SearchQuery {
     q: Option<String>,
+    #[serde(rename = "type")]
+    search_type: Option<String>,
 }
 
 pub async fn get_search(
@@ -31,29 +34,38 @@ pub async fn get_search(
     Query(params): Query<SearchQuery>,
 ) -> Html<String> {
     let query = params.q.unwrap_or_default();
+    let search_type = params.search_type.unwrap_or_default();
     let mut results = Vec::new();
 
     if !query.is_empty() {
-        // Search in Shikimori
-        if let Ok(shikimori_results) = state.shikimori.search(&query).await {
-            results.extend(shikimori_results);
-        }
-        // Search in MangaUpdates
-        if let Ok(mangaupdates_results) = state.mangaupdates.search(&query).await {
-            results.extend(mangaupdates_results);
-        }
-        // Search in TMDB
-        if !state.tmdb.api_key.is_empty() {
-            if let Ok(tmdb_results) = state.tmdb.search(&query).await {
-                results.extend(tmdb_results);
+        results = match search_type.as_str() {
+            "anime" => state.shikimori.search(&query).await.unwrap_or_default(),
+            "manga" => state.mangaupdates.search_by_type(&query, &["Manga"]).await.unwrap_or_default(),
+            "manhwa" => state.mangaupdates.search_by_type(&query, &["Manhwa"]).await.unwrap_or_default(),
+            "manhua" => state.mangaupdates.search_by_type(&query, &["Manhua"]).await.unwrap_or_default(),
+            "novels" => state.mangaupdates.search_by_type(&query, &["novel"]).await.unwrap_or_default(),
+            "other-comics" => state.mangaupdates.search_by_type(&query, &["OEL", "Doujinshi", "Filipino", "Indonesian", "Thai", "Vietnamese", "Malaysian"]).await.unwrap_or_default(),
+            "movies" => state.tmdb.search_movies(&query, None).await.unwrap_or_default(),
+            "tv" => state.tmdb.search_tv(&query, None).await.unwrap_or_default(),
+            "dramas" => state.tmdb.search_tv(&query, Some(18)).await.unwrap_or_default(),
+            "cartoons" => state.tmdb.search_tv(&query, Some(16)).await.unwrap_or_default(),
+            "animated-movies" => state.tmdb.search_movies(&query, Some(16)).await.unwrap_or_default(),
+            "games" => state.rawg.search(&query).await.unwrap_or_default(),
+            "books" => state.google_books.search(&query).await.unwrap_or_default(),
+            _ => {
+                // Default: search all providers
+                let mut all = Vec::new();
+                if let Ok(r) = state.shikimori.search(&query).await { all.extend(r); }
+                if let Ok(r) = state.mangaupdates.search(&query).await { all.extend(r); }
+                if !state.tmdb.api_key.is_empty() {
+                    if let Ok(r) = state.tmdb.search(&query).await { all.extend(r); }
+                }
+                if !state.rawg.api_key.is_empty() {
+                    if let Ok(r) = state.rawg.search(&query).await { all.extend(r); }
+                }
+                all
             }
-        }
-        // Search in RAWG
-        if !state.rawg.api_key.is_empty() {
-            if let Ok(rawg_results) = state.rawg.search(&query).await {
-                results.extend(rawg_results);
-            }
-        }
+        };
     }
 
     let stats = get_sidebar_stats(&state, user.id).await;
@@ -63,6 +75,7 @@ pub async fn get_search(
         stats,
         active_page: "search".to_string(),
         query,
+        current_type: search_type,
         results,
     }
     .render()

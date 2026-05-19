@@ -23,6 +23,16 @@ struct ShikimoriImage {
     original: Option<String>,
 }
 
+fn poster_url(original: Option<String>) -> Option<String> {
+    original.map(|url| {
+        if url.starts_with("http") {
+            url
+        } else {
+            format!("https://shikimori.one{}", url)
+        }
+    })
+}
+
 #[derive(Clone)]
 pub struct ShikimoriService {
     client: Client,
@@ -54,7 +64,7 @@ impl ShikimoriService {
                 title_english: r.name_en,
                 title_native: None,
                 title_russian: None,
-                poster_url: r.image.and_then(|img| img.original),
+                poster_url: poster_url(r.image.and_then(|img| img.original)),
                 episodes: r.episodes,
                 description: r.description,
                 status: r.status,
@@ -82,7 +92,7 @@ impl ShikimoriService {
             title_english: r.name_en,
             title_native: None,
             title_russian: None,
-            poster_url: r.image.and_then(|img| img.original),
+            poster_url: poster_url(r.image.and_then(|img| img.original)),
             episodes: r.episodes,
             description: r.description,
             status: r.status,

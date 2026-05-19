@@ -1,6 +1,7 @@
 use sqlx::PgPool;
 
 use crate::services::auth::AuthService;
+use crate::services::external::google_books::GoogleBooksService;
 use crate::services::external::mangaupdates::MangaUpdatesService;
 use crate::services::external::rawg::RawgService;
 use crate::services::external::shikimori::ShikimoriService;
@@ -16,6 +17,7 @@ pub struct AppState {
     pub mangaupdates: MangaUpdatesService,
     pub tmdb: TmdbService,
     pub rawg: RawgService,
+    pub google_books: GoogleBooksService,
     pub tracking: TrackingService,
     pub stats: StatsService,
 }
@@ -33,6 +35,7 @@ impl AppState {
         let mangaupdates = MangaUpdatesService::new();
         let tmdb = TmdbService::new(tmdb_api_key.to_string());
         let rawg = RawgService::new(rawg_api_key.to_string());
+        let google_books = GoogleBooksService::new();
         let tracking = TrackingService::new(db.clone());
         let stats = StatsService::new(db.clone());
         Ok(Self {
@@ -42,6 +45,7 @@ impl AppState {
             mangaupdates,
             tmdb,
             rawg,
+            google_books,
             tracking,
             stats,
         })

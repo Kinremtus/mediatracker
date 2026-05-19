@@ -5,10 +5,27 @@
 {% block content %}
 <h1 class="content-title">Поиск</h1>
 
-<form action="/search" method="get" style="margin-bottom: 1.5rem;">
-    <input type="text" name="q" value="{{ query }}" placeholder="Введите запрос..." style="width: 100%; max-width: 500px; height: 40px; padding: 0 1rem; background: var(--secondary); border: 1px solid var(--border); border-radius: var(--radius); color: var(--foreground); font-size: 14px;">
-    <button type="submit" class="btn btn-primary" style="margin-left: 0.5rem;">Найти</button>
+<form action="/search" method="get" style="margin-bottom: 1.5rem; display: flex; gap: 0.5rem;">
+    <input type="text" name="q" value="{{ query }}" placeholder="Введите запрос..." style="flex: 1; max-width: 500px; height: 40px; padding: 0 1rem; background: var(--secondary); border: 1px solid var(--border); border-radius: var(--radius); color: var(--foreground); font-size: 14px;">
+    <input type="hidden" name="type" value="{{ current_type }}">
+    <button type="submit" class="btn btn-primary">Найти</button>
 </form>
+
+<div class="type-selector">
+    <a href="?q={{ query }}&type=anime" class="type-btn {% if current_type == "anime" %}active{% endif %}">▶ Аниме</a>
+    <a href="?q={{ query }}&type=manga" class="type-btn {% if current_type == "manga" %}active{% endif %}">📚 Манга</a>
+    <a href="?q={{ query }}&type=manhwa" class="type-btn {% if current_type == "manhwa" %}active{% endif %}">📚 Манхва</a>
+    <a href="?q={{ query }}&type=manhua" class="type-btn {% if current_type == "manhua" %}active{% endif %}">📚 Маньхуа</a>
+    <a href="?q={{ query }}&type=novels" class="type-btn {% if current_type == "novels" %}active{% endif %}">📝 Новеллы</a>
+    <a href="?q={{ query }}&type=other-comics" class="type-btn {% if current_type == "other-comics" %}active{% endif %}">📚 Другие комиксы</a>
+    <a href="?q={{ query }}&type=movies" class="type-btn {% if current_type == "movies" %}active{% endif %}">🎥 Фильмы</a>
+    <a href="?q={{ query }}&type=tv" class="type-btn {% if current_type == "tv" %}active{% endif %}">📺 Сериалы</a>
+    <a href="?q={{ query }}&type=dramas" class="type-btn {% if current_type == "dramas" %}active{% endif %}">🎬 Дорамы</a>
+    <a href="?q={{ query }}&type=cartoons" class="type-btn {% if current_type == "cartoons" %}active{% endif %}">📺 Мультсериалы</a>
+    <a href="?q={{ query }}&type=animated-movies" class="type-btn {% if current_type == "animated-movies" %}active{% endif %}">🎞 Мультфильмы</a>
+    <a href="?q={{ query }}&type=games" class="type-btn {% if current_type == "games" %}active{% endif %}">🎮 Игры</a>
+    <a href="?q={{ query }}&type=books" class="type-btn {% if current_type == "books" %}active{% endif %}">📖 Книги</a>
+</div>
 
 {% if !results.is_empty() %}
 <div class="cards-grid">
@@ -18,7 +35,7 @@
             {% if item.poster_url.is_some() %}
             <img src="{{ item.poster_url.as_ref().unwrap() }}" alt="{{ item.title }}" loading="lazy">
             {% else %}
-            <div class="poster-placeholder">🎬</div>
+            <div class="poster-placeholder"></div>
             {% endif %}
             {% if item.score.is_some() %}
             <span class="media-card-score">{{ "{:.1}"|format(item.score.unwrap()) }}</span>
@@ -51,7 +68,7 @@
 <div class="empty-state">
     <div class="empty-state-icon">🔍</div>
     <p class="empty-state-text">Ничего не найдено</p>
-    <p class="empty-state-sub">Попробуйте другой запрос</p>
+    <p class="empty-state-sub">Попробуйте другой запрос или тип</p>
 </div>
 {% endif %}
 {% endblock %}
