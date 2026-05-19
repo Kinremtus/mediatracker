@@ -2,7 +2,8 @@ use mediatracker::app_state::AppState;
 use mediatracker::config::Config;
 use mediatracker::middleware::auth_middleware;
 use mediatracker::routes::{auth, home, media, search, stats, tracking};
-use axum::{middleware::from_fn_with_state, routing::get, Router};
+use axum::{middleware::from_fn_with_state, routing::get, Router, Json};
+use serde_json::json;
 use tower_http::services::ServeDir;
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -59,6 +60,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn health_check() -> &'static str {
-    "ok"
+async fn health_check() -> Json<serde_json::Value> {
+    Json(json!({"status": "ok"}))
 }
