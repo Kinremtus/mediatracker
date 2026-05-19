@@ -26,7 +26,7 @@ jobs:
             sleep 15
 
             echo "🔍 Проверяем healthcheck..."
-            RESPONSE=$(curl -sk https://localhost:2053/health)
+            RESPONSE=$(curl -s http://localhost:8080/health)
             echo "Ответ сервера: $RESPONSE"
 
             if echo "$RESPONSE" | grep -q '"status":"ok"'; then
