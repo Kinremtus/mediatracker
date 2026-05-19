@@ -102,7 +102,7 @@ impl AuthService {
     pub async fn get_session(&self, token: &str) -> Result<Session, anyhow::Error> {
         let token_hash = sha256(token);
         let session = sqlx::query_as::<_, Session>(
-            "SELECT * FROM sessions WHERE token_hash = $1 AND expires_at > NOW()",
+            "SELECT id, user_id, token_hash, device_name, user_agent, ip::text as ip, expires_at, created_at, last_seen_at FROM sessions WHERE token_hash = $1 AND expires_at > NOW()",
         )
         .bind(token_hash)
         .fetch_optional(&self.db)
