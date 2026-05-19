@@ -8,11 +8,14 @@ use askama::filters::Safe;
 use crate::app_state::AppState;
 use crate::middleware::CurrentUser;
 use crate::models::stats::{StatsOverview, TitleProgress};
+use super::home::SidebarStats;
 
 #[derive(Template)]
 #[template(path = "stats.html")]
 struct StatsTemplate {
     username: String,
+    stats: SidebarStats,
+    active_page: String,
     overview: StatsOverview,
     activity_count: usize,
     progress: Vec<TitleProgress>,
@@ -27,17 +30,18 @@ pub async fn get_stats(
     let mut overview = state.stats.get_overview(user.id).await.unwrap_or_default();
     let activity = state.stats.get_activity(user.id).await.unwrap_or_default();
     let progress = state.stats.get_title_progress(user.id).await.unwrap_or_default();
-    
+    let sidebar_stats = get_sidebar_stats(&state, user.id).await;
+
     let activity_count = activity.len();
     let progress_count = progress.len();
-    
+
     // Calculate percentages for status counts
     for sc in &mut overview.status_counts {
         if overview.total_titles > 0 {
             sc.percentage = (sc.count as f64 / overview.total_titles as f64 * 100.0) as i32;
         }
     }
-    
+
     // Generate calendar HTML
     let mut calendar_html = String::from("<div class=\"calendar-grid\">");
     for i in 0..53 {
@@ -57,6 +61,8 @@ pub async fn get_stats(
 
     StatsTemplate {
         username: user.username,
+        stats: sidebar_stats,
+        active_page: "stats".to_string(),
         overview,
         activity_count,
         progress,
@@ -66,4 +72,21 @@ pub async fn get_stats(
     .render()
     .unwrap()
     .into()
+}
+
+async fn get_sidebar_stats(state: &AppState, user_id: uuid::Uuid) -> SidebarStats {
+    let mut stats = SidebarStats::default();
+    if let Ok(entries) = state.tracking.get_user_entries(user_id, None).await {
+        for e in entries {
+            match e.entry.status.as_str() {
+                "watching" => stats.watching += 1,
+                "reading" => stats.reading += 1,
+                "completed" => stats.completed += 1,
+                "planned" => stats.planned += 1,
+                "dropped" => stats.dropped += 1,
+                _ => {}
+            }
+        }
+    }
+    stats
 }

@@ -1,14 +1,77 @@
-{% extends "base.html" %}
+{% extends "app_shell.html" %}
+
+{% block title %}Мои списки - MediaTracker{% endblock %}
 
 {% block content %}
-<div class="container">
-    <h1>Мои списки ({{ current_status }})</h1>
-    <ul>
-        {% for entry in entries %}
-        <li>{{ entry.media.title }} - {{ entry.entry.status }}</li>
-        {% else %}
-        <li>Список пуст</li>
-        {% endfor %}
-    </ul>
+<h1 class="content-title">Мои списки</h1>
+
+<div class="filter-tabs">
+    <a href="/tracking" class="filter-tab {% if current_status.is_empty() %}active{% endif %}">Все</a>
+    <a href="/tracking?status=watching" class="filter-tab {% if current_status == "watching" %}active{% endif %}">
+        Смотрю
+        {% if stats.watching > 0 %}<span class="filter-tab-count">{{ stats.watching }}</span>{% endif %}
+    </a>
+    <a href="/tracking?status=reading" class="filter-tab {% if current_status == "reading" %}active{% endif %}">
+        Читаю
+        {% if stats.reading > 0 %}<span class="filter-tab-count">{{ stats.reading }}</span>{% endif %}
+    </a>
+    <a href="/tracking?status=completed" class="filter-tab {% if current_status == "completed" %}active{% endif %}">
+        Просмотрено
+        {% if stats.completed > 0 %}<span class="filter-tab-count">{{ stats.completed }}</span>{% endif %}
+    </a>
+    <a href="/tracking?status=planned" class="filter-tab {% if current_status == "planned" %}active{% endif %}">
+        Запланировано
+        {% if stats.planned > 0 %}<span class="filter-tab-count">{{ stats.planned }}</span>{% endif %}
+    </a>
+    <a href="/tracking?status=dropped" class="filter-tab {% if current_status == "dropped" %}active{% endif %}">
+        Дропнуто
+        {% if stats.dropped > 0 %}<span class="filter-tab-count">{{ stats.dropped }}</span>{% endif %}
+    </a>
 </div>
+
+{% if !entries.is_empty() %}
+<div class="tracking-grid">
+    {% for entry_with_media in entries %}
+    <div class="tracking-card">
+        <div class="tracking-header">
+            <a href="/media/{{ entry_with_media.media.provider }}/{{ entry_with_media.media.external_id }}" class="tracking-title">
+                {{ entry_with_media.media.title }}
+            </a>
+            <span class="tracking-status {{ entry_with_media.entry.status }}">{{ entry_with_media.entry.status }}</span>
+        </div>
+        <div class="tracking-progress">
+            <form method="POST" action="/tracking/{{ entry_with_media.entry.id }}" style="margin: 0; display: contents;">
+                <input type="hidden" name="status" value="{{ entry_with_media.entry.status }}">
+                <input type="hidden" name="rating" value="{% if let Some(r) = entry_with_media.entry.rating %}{{ r }}{% endif %}">
+                <input type="hidden" name="progress" value="{{ entry_with_media.entry.progress - 1 }}">
+                <button type="submit" class="tracking-progress-btn" {% if entry_with_media.entry.progress <= 0 %}disabled{% endif %}>−</button>
+            </form>
+            <span class="tracking-progress-value">{{ entry_with_media.entry.progress }}{% if entry_with_media.media.episodes.is_some() %} / {{ entry_with_media.media.episodes.unwrap() }}{% endif %}</span>
+            <form method="POST" action="/tracking/{{ entry_with_media.entry.id }}" style="margin: 0; display: contents;">
+                <input type="hidden" name="status" value="{{ entry_with_media.entry.status }}">
+                <input type="hidden" name="rating" value="{% if let Some(r) = entry_with_media.entry.rating %}{{ r }}{% endif %}">
+                <input type="hidden" name="progress" value="{{ entry_with_media.entry.progress + 1 }}">
+                <button type="submit" class="tracking-progress-btn" {% if entry_with_media.media.episodes.is_some() %}{% if entry_with_media.entry.progress >= entry_with_media.media.episodes.unwrap() %}disabled{% endif %}{% endif %}>+</button>
+            </form>
+        </div>
+        <div class="tracking-actions">
+            <form method="POST" action="/tracking/{{ entry_with_media.entry.id }}" style="margin: 0; flex: 1; display: contents;">
+                <input type="hidden" name="status" value="completed">
+                <input type="hidden" name="progress" value="{% if entry_with_media.media.episodes.is_some() %}{{ entry_with_media.media.episodes.unwrap() }}{% else %}{{ entry_with_media.entry.progress }}{% endif %}">
+                <button type="submit" class="tracking-btn tracking-btn-edit">✓ Завершить</button>
+            </form>
+            <form method="DELETE" action="/tracking/{{ entry_with_media.entry.id }}" style="margin: 0;">
+                <button type="submit" class="tracking-btn tracking-btn-delete">✕</button>
+            </form>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+    <div class="empty-state-icon">📋</div>
+    <p class="empty-state-text">Список пуст</p>
+    <p class="empty-state-sub">Добавьте тайтлы через <a href="/search" style="color: var(--watching);">поиск</a></p>
+</div>
+{% endif %}
 {% endblock %}

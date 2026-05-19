@@ -1,9 +1,46 @@
-{% extends "base.html" %}
+{% extends "app_shell.html" %}
+
+{% block title %}Главная - MediaTracker{% endblock %}
 
 {% block content %}
-<div class="container">
-    <h1>Добро пожаловать, {{ username }}!</h1>
-    <p>Это главная страница MediaTracker.</p>
-    <a href="/tracking">Мои списки</a> | <a href="/search">Поиск</a> | <a href="/stats">Статистика</a>
+<h1 class="content-title">Добро пожаловать, {{ username }}!</h1>
+
+{% if stats.watching == 0 && stats.reading == 0 && stats.completed == 0 && stats.planned == 0 && stats.dropped == 0 %}
+<div class="empty-state">
+    <div class="empty-state-icon">📺</div>
+    <p class="empty-state-text">Пока ничего нет</p>
+    <p class="empty-state-sub">Начни добавлять тайтлы в свой список через <a href="/search" style="color: var(--watching);">поиск</a></p>
 </div>
+{% else %}
+<div class="stats-grid">
+    {% if stats.watching > 0 %}
+    <a href="/tracking?status=watching" class="stat-card">
+        <div class="stat-card-icon watching">▶</div>
+        <div class="stat-card-value">{{ stats.watching }}</div>
+        <div class="stat-card-label">Смотрю</div>
+    </a>
+    {% endif %}
+    {% if stats.reading > 0 %}
+    <a href="/tracking?status=reading" class="stat-card">
+        <div class="stat-card-icon reading">📖</div>
+        <div class="stat-card-value">{{ stats.reading }}</div>
+        <div class="stat-card-label">Читаю</div>
+    </a>
+    {% endif %}
+    {% if stats.completed > 0 %}
+    <a href="/tracking?status=completed" class="stat-card">
+        <div class="stat-card-icon completed">✓</div>
+        <div class="stat-card-value">{{ stats.completed }}</div>
+        <div class="stat-card-label">Просмотрено</div>
+    </a>
+    {% endif %}
+    {% if stats.planned > 0 %}
+    <a href="/tracking?status=planned" class="stat-card">
+        <div class="stat-card-icon planned">⏰</div>
+        <div class="stat-card-value">{{ stats.planned }}</div>
+        <div class="stat-card-label">Запланировано</div>
+    </a>
+    {% endif %}
+</div>
+{% endif %}
 {% endblock %}

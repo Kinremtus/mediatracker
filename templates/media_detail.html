@@ -1,8 +1,77 @@
-{% extends "base.html" %}
+{% extends "app_shell.html" %}
+
+{% block title %}{{ item.title }} - MediaTracker{% endblock %}
 
 {% block content %}
-<div class="container">
-    <h1>Детали медиа</h1>
-    <p>Здесь будет информация о тайтле.</p>
+<div class="media-detail">
+    <!-- Poster -->
+    <div class="media-detail-poster">
+        {% if item.poster_url.is_some() %}
+        <img src="{{ item.poster_url.as_ref().unwrap() }}" alt="{{ item.title }}">
+        {% else %}
+        <div class="poster-placeholder" style="aspect-ratio: 2/3; border-radius: var(--radius-lg);">🎬</div>
+        {% endif %}
+    </div>
+
+    <!-- Info -->
+    <div class="media-detail-info">
+        <h1>{{ item.title }}</h1>
+        {% if item.status.is_some() %}
+        <span class="media-detail-status">{{ item.status.as_ref().unwrap() }}</span>
+        {% endif %}
+
+        <!-- Meta Grid -->
+        <div class="meta-grid">
+            <div class="meta-item">
+                <div class="meta-item-label">Тип</div>
+                <div class="meta-item-value">{{ item.media_type }}</div>
+            </div>
+            <div class="meta-item">
+                <div class="meta-item-label">Источник</div>
+                <div class="meta-item-value">{{ item.provider }}</div>
+            </div>
+            {% if let Some(ep) = item.episodes %}
+            <div class="meta-item">
+                <div class="meta-item-label">Эпизоды</div>
+                <div class="meta-item-value">{{ ep }}</div>
+            </div>
+            {% endif %}
+            {% if item.score.is_some() %}
+            <div class="meta-item">
+                <div class="meta-item-label">Оценка</div>
+                <div class="meta-item-value" style="color: #fbbf24;">{{ "{:.1}"|format(item.score.unwrap()) }}</div>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Description -->
+        {% if item.description.is_some() %}
+        <div class="media-detail-description">
+            <h3>Описание</h3>
+            <p>{{ item.description.as_ref().unwrap() }}</p>
+        </div>
+        {% endif %}
+
+        <!-- Actions -->
+        <div class="media-detail-actions">
+            <form method="POST" action="/tracking">
+                <input type="hidden" name="provider" value="{{ item.provider }}">
+                <input type="hidden" name="external_id" value="{{ item.external_id }}">
+                <input type="hidden" name="media_type" value="{{ item.media_type }}">
+                <input type="hidden" name="title" value="{{ item.title }}">
+                {% if item.title_english.is_some() %}<input type="hidden" name="title_english" value="{{ item.title_english.as_ref().unwrap() }}">{% endif %}
+                {% if item.title_native.is_some() %}<input type="hidden" name="title_native" value="{{ item.title_native.as_ref().unwrap() }}">{% endif %}
+                {% if item.title_russian.is_some() %}<input type="hidden" name="title_russian" value="{{ item.title_russian.as_ref().unwrap() }}">{% endif %}
+                {% if item.poster_url.is_some() %}<input type="hidden" name="poster_url" value="{{ item.poster_url.as_ref().unwrap() }}">{% endif %}
+                {% if item.episodes.is_some() %}<input type="hidden" name="episodes" value="{{ item.episodes.unwrap() }}">{% endif %}
+                {% if item.description.is_some() %}<input type="hidden" name="description" value="{{ item.description.as_ref().unwrap() }}">{% endif %}
+                {% if item.status.is_some() %}<input type="hidden" name="status" value="{{ item.status.as_ref().unwrap() }}">{% endif %}
+                {% if item.score.is_some() %}<input type="hidden" name="score" value="{{ item.score.unwrap() }}">{% endif %}
+                <input type="hidden" name="tracking_status" value="planned">
+                <button type="submit" class="btn btn-primary">+ В список</button>
+            </form>
+            <a href="/search" class="btn btn-secondary">← Назад к поиску</a>
+        </div>
+    </div>
 </div>
 {% endblock %}

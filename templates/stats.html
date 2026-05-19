@@ -1,8 +1,64 @@
-{% extends "base.html" %}
+{% extends "app_shell.html" %}
+
+{% block title %}Статистика - MediaTracker{% endblock %}
 
 {% block content %}
-<div class="container">
-    <h1>Статистика</h1>
-    <p>Здесь будет статистика пользователя.</p>
+<h1 class="content-title">Статистика</h1>
+
+<!-- Stats Cards -->
+<div class="stats-grid">
+    {% for sc in overview.status_counts %}
+    <div class="stat-card">
+        <div class="stat-card-icon {{ sc.status }}">{{ sc.status }}</div>
+        <div class="stat-card-value">{{ sc.count }}</div>
+        <div class="stat-card-label">{{ sc.status }}</div>
+    </div>
+    {% endfor %}
 </div>
+
+<!-- Status Breakdown -->
+{% if !overview.status_counts.is_empty() %}
+<div class="card" style="padding: 1.5rem; border-radius: var(--radius-xl); border: 1px solid var(--border); background: var(--card); margin-bottom: 2rem;">
+    <h3 style="font-size: 16px; font-weight: 600; margin-bottom: 1rem;">Распределение по статусам</h3>
+    <div class="status-breakdown">
+        {% for sc in overview.status_counts %}
+        <div class="status-row">
+            <span class="status-name status-{{ sc.status }}">{{ sc.status }}</span>
+            <div class="status-bar-bg">
+                <div class="status-bar {{ sc.status }}" style="width: {{ sc.percentage }}%;"></div>
+            </div>
+            <span class="status-count">{{ sc.count }}</span>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Activity Calendar -->
+<div class="card" style="padding: 1.5rem; border-radius: var(--radius-xl); border: 1px solid var(--border); background: var(--card); margin-bottom: 2rem;">
+    <h3 style="font-size: 16px; font-weight: 600; margin-bottom: 1rem;">Активность</h3>
+    <div class="activity-calendar">
+        {{ calendar_html|safe }}
+    </div>
+</div>
+
+<!-- Title Progress -->
+{% if !progress.is_empty() %}
+<div class="card" style="padding: 1.5rem; border-radius: var(--radius-xl); border: 1px solid var(--border); background: var(--card);">
+    <h3 style="font-size: 16px; font-weight: 600; margin-bottom: 1rem;">Прогресс тайтлов</h3>
+    <div class="progress-list">
+        {% for p in progress %}
+        <div class="progress-item">
+            <div class="progress-info">
+                <span class="progress-title">{{ p.title }}</span>
+                <span class="progress-episodes">{{ p.progress }}{% if p.episodes.is_some() %} / {{ p.episodes.unwrap() }}{% endif %}</span>
+            </div>
+            <div class="progress-bar-bg">
+                <div class="progress-bar" style="width: {% if p.percentage > 100 %}100{% else %}{{ p.percentage }}{% endif %}%;"></div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
 {% endblock %}
