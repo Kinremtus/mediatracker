@@ -46,7 +46,7 @@ pub async fn post_login(
 
     match state.auth.login(&form.username, &form.password, Some(user_agent), Some(ip)).await {
         Ok(token) => {
-            let cookie = format!("session_id={}; Path=/; HttpOnly; Max-Age=2592000", token);
+            let cookie = format!("session_id={}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000", token);
             let mut response = Redirect::to("/").into_response();
             response.headers_mut().insert(
                 SET_COOKIE,
