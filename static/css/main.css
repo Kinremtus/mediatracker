@@ -1168,18 +1168,74 @@ img {
 
 /* --- User Menu --- */
 .user-menu {
+    position: relative;
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.25rem 0.75rem;
-    border-radius: var(--radius);
-    font-size: 14px;
-    cursor: pointer;
-    transition: background 0.15s ease;
 }
 
-.user-menu:hover {
+.user-menu-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    display: flex;
+    align-items: center;
+}
+
+.user-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 0.5rem;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    min-width: 200px;
+    z-index: 100;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    overflow: hidden;
+}
+
+.user-dropdown-header {
+    padding: 0.75rem 1rem;
+}
+
+.user-dropdown-name {
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.user-dropdown-separator {
+    height: 1px;
+    background: var(--border);
+}
+
+.user-dropdown-item {
+    width: 100%;
+    padding: 0.6rem 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-size: 13px;
+    transition: background 0.15s ease;
+    text-decoration: none;
+    color: inherit;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.user-dropdown-item:hover {
     background: var(--secondary);
+}
+
+.user-dropdown-logout {
+    color: var(--destructive);
+}
+
+.user-dropdown-logout:hover {
+    background: color-mix(in srgb, var(--destructive) 10%, transparent);
 }
 
 .user-avatar {
@@ -1194,3 +1250,205 @@ img {
     font-size: 12px;
     font-weight: 600;
 }
+
+/* --- Sidebar Collapsed (Desktop) --- */
+.sidebar.collapsed {
+    width: 64px;
+}
+
+.sidebar.collapsed .sidebar-title,
+.sidebar.collapsed .sidebar-section-title,
+.sidebar.collapsed .sidebar-badge,
+.sidebar.collapsed .sidebar-separator {
+    display: none;
+}
+
+.sidebar.collapsed .sidebar-link {
+    justify-content: center;
+    padding: 0.75rem;
+    margin: 0 0.25rem;
+}
+
+.sidebar.collapsed .sidebar-link span {
+    display: none;
+}
+
+.sidebar.collapsed .sidebar-link-icon {
+    margin: 0;
+}
+
+/* --- Sidebar Overlay (Mobile) --- */
+.sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 40;
+}
+
+/* --- Settings Page --- */
+.settings-section {
+    margin-bottom: 2rem;
+}
+
+.settings-section-title {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    color: var(--foreground);
+}
+
+.settings-card {
+    padding: 1.5rem;
+    border-radius: var(--radius-xl);
+    border: 1px solid var(--border);
+    background: var(--card);
+}
+
+.settings-field {
+    margin-bottom: 1rem;
+}
+
+.settings-field:last-child {
+    margin-bottom: 0;
+}
+
+.settings-field-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.settings-label {
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+}
+
+.settings-description {
+    font-size: 13px;
+    color: var(--muted-foreground);
+}
+
+.settings-input {
+    width: 100%;
+    max-width: 400px;
+    height: 40px;
+    padding: 0 0.75rem;
+    background: var(--secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--foreground);
+    font-size: 14px;
+    transition: border-color 0.15s ease;
+}
+
+.settings-input:focus {
+    outline: none;
+    border-color: var(--ring);
+}
+
+.settings-message {
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius);
+    font-size: 14px;
+    margin-bottom: 1.5rem;
+}
+
+.settings-message-success {
+    background: color-mix(in srgb, var(--completed) 15%, transparent);
+    color: var(--completed);
+    border: 1px solid color-mix(in srgb, var(--completed) 30%, transparent);
+}
+
+.settings-message-error {
+    background: color-mix(in srgb, var(--destructive) 15%, transparent);
+    color: var(--destructive);
+    border: 1px solid color-mix(in srgb, var(--destructive) 30%, transparent);
+}
+
+/* Settings Danger Zone */
+.settings-section-danger .settings-section-title {
+    color: var(--destructive);
+}
+
+.settings-card-danger {
+    border-color: color-mix(in srgb, var(--destructive) 30%, transparent);
+    background: color-mix(in srgb, var(--destructive) 5%, transparent);
+}
+
+.settings-danger-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1.5rem;
+}
+
+.settings-label-danger {
+    color: var(--destructive);
+}
+
+.btn-danger {
+    height: 40px;
+    padding: 0 1.25rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-lg);
+    font-size: 14px;
+    font-weight: 500;
+    background: var(--destructive);
+    color: var(--destructive-foreground);
+    transition: opacity 0.15s ease;
+    white-space: nowrap;
+}
+
+.btn-danger:hover {
+    opacity: 0.9;
+}
+
+/* Toggle Switch */
+.settings-toggle {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+    flex-shrink: 0;
+}
+
+.settings-toggle input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.settings-toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    inset: 0;
+    background: var(--muted);
+    border-radius: 24px;
+    transition: background 0.2s ease;
+}
+
+.settings-toggle-slider::before {
+    content: "";
+    position: absolute;
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background: var(--foreground);
+    border-radius: 50%;
+    transition: transform 0.2s ease;
+}
+
+.settings-toggle input:checked + .settings-toggle-slider {
+    background: var(--primary);
+}
+
+.settings-toggle input:checked + .settings-toggle-slider::before {
+    transform: translateX(20px);
+}
+
+/* Alpine.js x-cloak */
+[x-cloak] { display: none !important; }

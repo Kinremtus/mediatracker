@@ -2,63 +2,69 @@
 
 {% block body %}
 <div class="app-shell">
+    <!-- Sidebar Overlay (mobile) -->
+    <div class="sidebar-overlay" x-show="sidebarOpen && isMobile" @click="sidebarOpen = false" x-cloak></div>
+
     <!-- Sidebar -->
-    <aside class="sidebar" x-data="{ open: false }" :class="{ 'open': open }">
+    <aside class="sidebar"
+           x-data="{ sidebarOpen: typeof window !== 'undefined' && window.innerWidth > 768 }"
+           x-init="$watch('sidebarOpen', v => { if (v && isMobile) document.body.style.overflow = 'hidden'; else document.body.style.overflow = ''; })"
+           :class="{ 'collapsed': !sidebarOpen && !isMobile, 'open': sidebarOpen && isMobile }">
         <div class="sidebar-header">
             <div class="sidebar-logo">M</div>
-            <span class="sidebar-title">MediaTracker</span>
+            <span class="sidebar-title" x-show="sidebarOpen || isMobile">MediaTracker</span>
         </div>
         <nav class="sidebar-nav">
             <div class="sidebar-section">
-                <div class="sidebar-section-title">Навигация</div>
+                <div class="sidebar-section-title" x-show="sidebarOpen || isMobile">Навигация</div>
                 <a href="/" class="sidebar-link {% if active_page == "home" %}active{% endif %}">
                     <svg class="sidebar-link-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-                    Главная
+                    <span x-show="sidebarOpen || isMobile">Главная</span>
                 </a>
                 <a href="/search" class="sidebar-link {% if active_page == "search" %}active{% endif %}">
                     <svg class="sidebar-link-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                    Поиск
+                    <span x-show="sidebarOpen || isMobile">Поиск</span>
                 </a>
             </div>
-            <div class="sidebar-separator"></div>
+            <div class="sidebar-separator" x-show="sidebarOpen || isMobile"></div>
             <div class="sidebar-section">
-                <div class="sidebar-section-title">Медиа</div>
+                <div class="sidebar-section-title" x-show="sidebarOpen || isMobile">Медиа</div>
                 <a href="/tracking" class="sidebar-link {% if active_page == "tracking" %}active{% endif %}">
                     <svg class="sidebar-link-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                    Мои списки
+                    <span x-show="sidebarOpen || isMobile">Мои списки</span>
                 </a>
                 <a href="/tracking?status=watching" class="sidebar-link">
                     <svg class="sidebar-link-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                    Смотрю
-                    {% if stats.watching > 0 %}<span class="sidebar-badge">{{ stats.watching }}</span>{% endif %}
+                    <span x-show="sidebarOpen || isMobile">Смотрю</span>
+                    <span class="sidebar-badge" x-show="sidebarOpen || isMobile">{% if stats.watching > 0 %}{{ stats.watching }}{% endif %}</span>
                 </a>
                 <a href="/tracking?status=reading" class="sidebar-link">
                     <svg class="sidebar-link-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
-                    Читаю
-                    {% if stats.reading > 0 %}<span class="sidebar-badge">{{ stats.reading }}</span>{% endif %}
+                    <span x-show="sidebarOpen || isMobile">Читаю</span>
+                    <span class="sidebar-badge" x-show="sidebarOpen || isMobile">{% if stats.reading > 0 %}{{ stats.reading }}{% endif %}</span>
                 </a>
                 <a href="/tracking?status=completed" class="sidebar-link">
                     <svg class="sidebar-link-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                    Просмотрено
-                    {% if stats.completed > 0 %}<span class="sidebar-badge">{{ stats.completed }}</span>{% endif %}
+                    <span x-show="sidebarOpen || isMobile">Просмотрено</span>
+                    <span class="sidebar-badge" x-show="sidebarOpen || isMobile">{% if stats.completed > 0 %}{{ stats.completed }}{% endif %}</span>
                 </a>
                 <a href="/tracking?status=planned" class="sidebar-link">
                     <svg class="sidebar-link-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                    Запланировано
-                    {% if stats.planned > 0 %}<span class="sidebar-badge">{{ stats.planned }}</span>{% endif %}
+                    <span x-show="sidebarOpen || isMobile">Запланировано</span>
+                    <span class="sidebar-badge" x-show="sidebarOpen || isMobile">{% if stats.planned > 0 %}{{ stats.planned }}{% endif %}</span>
                 </a>
                 <a href="/tracking?status=dropped" class="sidebar-link">
                     <svg class="sidebar-link-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
-                    Дропнуто
-                    {% if stats.dropped > 0 %}<span class="sidebar-badge">{{ stats.dropped }}</span>{% endif %}
+                    <span x-show="sidebarOpen || isMobile">Дропнуто</span>
+                    <span class="sidebar-badge" x-show="sidebarOpen || isMobile">{% if stats.dropped > 0 %}{{ stats.dropped }}{% endif %}</span>
                 </a>
             </div>
-            <div class="sidebar-separator"></div>
+            <div class="sidebar-separator" x-show="sidebarOpen || isMobile"></div>
             <div class="sidebar-section">
-                <div class="sidebar-section-title">Аналитика</div>
+                <div class="sidebar-section-title" x-show="sidebarOpen || isMobile">Аналитика</div>
                 <a href="/stats" class="sidebar-link {% if active_page == "stats" %}active{% endif %}">
                     <svg class="sidebar-link-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-                    Статистика
+                    <span x-show="sidebarOpen || isMobile">Статистика</span>
                 </a>
             </div>
         </nav>
@@ -68,7 +74,7 @@
     <main class="main-content">
         <!-- Header -->
         <header class="header">
-            <button class="sidebar-toggle" @click="open = !open">
+            <button class="sidebar-toggle" @click="sidebarOpen = !sidebarOpen">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
             </button>
             <div class="header-search">
@@ -79,26 +85,42 @@
             </div>
             <div class="header-actions">
                 <!-- Theme Dropdown -->
-                <div class="theme-toggle" x-data="{ open: false }" @click.outside="open = false">
+                <div class="theme-toggle"
+                     x-data="{ open: false, theme: localStorage.getItem('mediatracker-theme') || 'graphite' }"
+                     @click.outside="open = false">
                     <button @click="open = !open" class="theme-toggle-btn" title="Сменить тему">
-                        <svg x-show="!theme || theme === 'graphite' || theme === 'dark'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
                         <svg x-show="theme === 'light'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                        <svg x-show="theme !== 'light'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
                     </button>
                     <div x-show="open" x-transition class="theme-dropdown">
                         <button @click="setTheme('light'); open = false">☀️ Светлая</button>
-                        <button @click="setTheme('graphite'); open = false">🌑 Графит</button>
+                        <button @click="setTheme('graphite'); open = false"> Графит</button>
                         <button @click="setTheme('dark'); open = false">🌙 Тёмная</button>
                     </div>
                 </div>
-                <!-- User Menu -->
-                <div class="user-menu">
-                    <div class="user-avatar">{{ username.chars().next().unwrap_or('M') }}</div>
-                    <form method="POST" action="/logout" style="margin:0">
-                        <button type="submit" class="header-btn">
-                            <svg class="header-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-                            Выйти
-                        </button>
-                    </form>
+
+                <!-- User Dropdown -->
+                <div class="user-menu" x-data="{ open: false }" @click.outside="open = false">
+                    <button @click="open = !open" class="user-menu-btn">
+                        <div class="user-avatar">{{ username.chars().next().unwrap_or('M') }}</div>
+                    </button>
+                    <div x-show="open" x-transition class="user-dropdown">
+                        <div class="user-dropdown-header">
+                            <div class="user-dropdown-name">{{ username }}</div>
+                        </div>
+                        <div class="user-dropdown-separator"></div>
+                        <a href="/settings" class="user-dropdown-item">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                            Настройки
+                        </a>
+                        <div class="user-dropdown-separator"></div>
+                        <form method="POST" action="/logout" style="margin: 0;">
+                            <button type="submit" class="user-dropdown-item user-dropdown-logout">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                                Выйти
+                            </button>
+                        </form>
+                    </div>
                 </div>
             </div>
         </header>
@@ -111,11 +133,13 @@
 </div>
 
 <script>
-// Alpine.js theme state
-document.addEventListener('alpine:init', () => {
-    Alpine.data('theme', () => ({
-        theme: localStorage.getItem('mediatracker-theme') || 'graphite',
-    }));
-});
+// Detect mobile
+window.isMobile = window.innerWidth <= 768;
+window.addEventListener('resize', () => { window.isMobile = window.innerWidth <= 768; });
+
+function setTheme(t) {
+    localStorage.setItem('mediatracker-theme', t);
+    document.documentElement.className = t;
+}
 </script>
 {% endblock %}
