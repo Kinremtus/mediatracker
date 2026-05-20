@@ -74,7 +74,7 @@ impl StatsService {
 
     pub async fn get_title_progress(&self, user_id: Uuid) -> Result<Vec<TitleProgress>, anyhow::Error> {
         let mut progress: Vec<TitleProgress> = sqlx::query_as(
-            "SELECT t.id, m.title, t.progress, m.episodes, t.status, 0 as percentage FROM tracking_entries t JOIN media_items m ON t.media_id = m.id WHERE t.user_id = $1 AND m.episodes IS NOT NULL AND m.episodes > 0 ORDER BY t.updated_at DESC LIMIT 10",
+            "SELECT t.id, m.title, t.progress, m.episodes, t.status, 0 as percentage FROM tracking_entries t JOIN media_items m ON t.media_id = m.id WHERE t.user_id = $1 ORDER BY t.updated_at DESC LIMIT 10",
         )
         .bind(user_id)
         .fetch_all(&self.db)

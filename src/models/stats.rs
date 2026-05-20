@@ -10,6 +10,14 @@ pub struct StatusCount {
     pub percentage: i32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StatusCountDisplay {
+    pub status: String,
+    pub label: String,
+    pub count: i32,
+    pub percentage: i32,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct StatsOverview {
     pub total_titles: i32,
