@@ -19,6 +19,7 @@ struct SearchTemplate {
     query: String,
     current_type: String,
     results: Vec<CreateMediaItem>,
+    current_status: String,
 }
 
 #[derive(Deserialize)]
@@ -77,6 +78,7 @@ pub async fn get_search(
         query,
         current_type: search_type,
         results,
+        current_status: String::new(),
     }
     .render()
     .unwrap()

@@ -17,6 +17,7 @@ struct MediaDetailTemplate {
     stats: SidebarStats,
     active_page: String,
     item: CreateMediaItem,
+    current_status: String,
 }
 
 #[derive(Deserialize)]
@@ -50,6 +51,7 @@ pub async fn get_media_detail(
                 stats,
                 active_page: "search".to_string(),
                 item,
+                current_status: String::new(),
             }
             .render()
             .unwrap(),

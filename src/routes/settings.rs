@@ -21,6 +21,7 @@ struct SettingsTemplate {
     error: Option<String>,
     email_notifications: bool,
     weekly_digest: bool,
+    current_status: String,
 }
 
 #[derive(Deserialize)]
@@ -59,6 +60,7 @@ pub async fn get_settings(
         error: None,
         email_notifications: false,
         weekly_digest: false,
+        current_status: String::new(),
     }
     .render()
     .unwrap()
@@ -99,6 +101,7 @@ pub async fn post_profile(
                 error: None,
                 email_notifications: false,
                 weekly_digest: false,
+                current_status: String::new(),
             }.render().unwrap()).into_response()
         }
         Err(e) => {
@@ -112,6 +115,7 @@ pub async fn post_profile(
                 error: Some(format!("Ошибка: {}", e)),
                 email_notifications: false,
                 weekly_digest: false,
+                current_status: String::new(),
             }.render().unwrap()).into_response()
         }
     }
@@ -133,6 +137,7 @@ pub async fn post_password(
             error: Some("Новые пароли не совпадают".to_string()),
             email_notifications: false,
             weekly_digest: false,
+            current_status: String::new(),
         }.render().unwrap()).into_response();
     }
 
@@ -147,6 +152,7 @@ pub async fn post_password(
             error: Some("Пароль должен быть не менее 6 символов".to_string()),
             email_notifications: false,
             weekly_digest: false,
+            current_status: String::new(),
         }.render().unwrap()).into_response();
     }
 
@@ -180,6 +186,7 @@ pub async fn post_password(
                 error: Some("Ошибка проверки пароля".to_string()),
                 email_notifications: false,
                 weekly_digest: false,
+                current_status: String::new(),
             }.render().unwrap()).into_response();
         }
     };
@@ -195,6 +202,7 @@ pub async fn post_password(
             error: Some("Текущий пароль неверен".to_string()),
             email_notifications: false,
             weekly_digest: false,
+            current_status: String::new(),
         }.render().unwrap()).into_response();
     }
 
@@ -214,6 +222,7 @@ pub async fn post_password(
                 error: Some("Ошибка хеширования пароля".to_string()),
                 email_notifications: false,
                 weekly_digest: false,
+                current_status: String::new(),
             }.render().unwrap()).into_response();
         }
     };
@@ -238,6 +247,7 @@ pub async fn post_password(
                 error: None,
                 email_notifications: false,
                 weekly_digest: false,
+                current_status: String::new(),
             }.render().unwrap()).into_response()
         }
         Err(e) => {
@@ -251,6 +261,7 @@ pub async fn post_password(
                 error: Some(format!("Ошибка: {}", e)),
                 email_notifications: false,
                 weekly_digest: false,
+                current_status: String::new(),
             }.render().unwrap()).into_response()
         }
     }
