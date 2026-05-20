@@ -1,0 +1,98 @@
+{% extends "app_shell.html" %}
+
+{% block title %}Настройки - MediaTracker{% endblock %}
+
+{% block content %}
+<h1 class="content-title">Настройки</h1>
+
+{% if let Some(message) = message %}
+<div class="settings-message settings-message-success">{{ message }}</div>
+{% endif %}
+{% if let Some(error) = error %}
+<div class="settings-message settings-message-error">{{ error }}</div>
+{% endif %}
+
+<!-- Profile Section -->
+<div class="settings-section">
+    <h2 class="settings-section-title">Профиль</h2>
+    <div class="settings-card">
+        <form method="POST" action="/settings/profile">
+            <div class="settings-field">
+                <label class="settings-label">Имя пользователя</label>
+                <input type="text" name="username" value="{{ username }}" class="settings-input" required>
+            </div>
+            <div class="settings-field">
+                <label class="settings-label">Email</label>
+                <input type="email" name="email" value="{{ email }}" class="settings-input" required>
+            </div>
+            <button type="submit" class="btn btn-primary">Сохранить</button>
+        </form>
+    </div>
+</div>
+
+<!-- Password Section -->
+<div class="settings-section">
+    <h2 class="settings-section-title">Безопасность</h2>
+    <div class="settings-card">
+        <form method="POST" action="/settings/password">
+            <div class="settings-field">
+                <label class="settings-label">Текущий пароль</label>
+                <input type="password" name="current_password" class="settings-input" required>
+            </div>
+            <div class="settings-field">
+                <label class="settings-label">Новый пароль</label>
+                <input type="password" name="new_password" class="settings-input" required minlength="6">
+            </div>
+            <div class="settings-field">
+                <label class="settings-label">Подтвердите новый пароль</label>
+                <input type="password" name="confirm_password" class="settings-input" required minlength="6">
+            </div>
+            <button type="submit" class="btn btn-primary">Сменить пароль</button>
+        </form>
+    </div>
+</div>
+
+<!-- Notifications Section -->
+<div class="settings-section">
+    <h2 class="settings-section-title">Уведомления</h2>
+    <div class="settings-card">
+        <div class="settings-field settings-field-row">
+            <div>
+                <div class="settings-label">Email-уведомления</div>
+                <div class="settings-description">Получать уведомления о новых эпизодах и обновлениях</div>
+            </div>
+            <label class="settings-toggle">
+                <input type="checkbox" name="email_notifications" {% if email_notifications %}checked{% endif %}>
+                <span class="settings-toggle-slider"></span>
+            </label>
+        </div>
+        <div class="settings-field settings-field-row">
+            <div>
+                <div class="settings-label">Еженедельный дайджест</div>
+                <div class="settings-description">Получать сводку активности за неделю</div>
+            </div>
+            <label class="settings-toggle">
+                <input type="checkbox" name="weekly_digest" {% if weekly_digest %}checked{% endif %}>
+                <span class="settings-toggle-slider"></span>
+            </label>
+        </div>
+        <button type="button" class="btn btn-primary" onclick="this.closest('form').submit()">Сохранить</button>
+    </div>
+</div>
+
+<!-- Danger Zone -->
+<div class="settings-section settings-section-danger">
+    <h2 class="settings-section-title">Опасная зона</h2>
+    <div class="settings-card settings-card-danger">
+        <div class="settings-danger-content">
+            <div>
+                <div class="settings-label settings-label-danger">Удалить аккаунт</div>
+                <div class="settings-description">Это действие необратимо. Все ваши данные, списки и статистика будут удалены навсегда.</div>
+            </div>
+            <form method="POST" action="/settings/delete-account" onsubmit="return confirm('Вы уверены? Это действие необратимо. Все ваши данные будут удалены.');">
+                <button type="submit" class="btn btn-danger">Удалить аккаунт</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

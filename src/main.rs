@@ -1,7 +1,7 @@
 use mediatracker::app_state::AppState;
 use mediatracker::config::Config;
 use mediatracker::middleware::auth_middleware;
-use mediatracker::routes::{auth, home, media, search, stats, tracking};
+use mediatracker::routes::{auth, home, media, search, settings, stats, tracking};
 use axum::{middleware::from_fn_with_state, routing::get, Router, Json};
 use serde_json::json;
 use tower_http::services::ServeDir;
@@ -42,6 +42,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/tracking", get(tracking::get_tracking_list).post(tracking::post_add_to_tracking))
         .route("/tracking/{id}", axum::routing::post(tracking::post_update_tracking).delete(tracking::post_delete_tracking))
         .route("/stats", get(stats::get_stats))
+        .route("/settings", get(settings::get_settings))
+        .route("/settings/profile", axum::routing::post(settings::post_profile))
+        .route("/settings/password", axum::routing::post(settings::post_password))
+        .route("/settings/delete-account", axum::routing::post(settings::post_delete_account))
         .layer(from_fn_with_state(state.clone(), auth_middleware));
 
     // Combine routes
