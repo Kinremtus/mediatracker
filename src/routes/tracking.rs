@@ -5,7 +5,6 @@ use axum::{
 };
 use serde::Deserialize;
 use uuid::Uuid;
-use std::collections::HashMap;
 
 use crate::app_state::AppState;
 use crate::middleware::CurrentUser;
@@ -18,21 +17,14 @@ struct TrackingListTemplate {
     username: String,
     stats: SidebarStats,
     active_page: String,
-    categories: Vec<CategoryGroup>,
+    entries: Vec<TrackingEntryWithMedia>,
     type_buttons: Vec<TypeButton>,
+    status_label: String,
     current_status: String,
     current_media_type: String,
 }
 
-struct CategoryGroup {
-    media_type: String,
-    icon: String,
-    label: String,
-    entries: Vec<TrackingEntryWithMedia>,
-}
-
 struct TypeButton {
-    media_type: String,
     icon: String,
     label: String,
     url: String,
@@ -42,22 +34,19 @@ struct TypeButton {
 fn get_type_buttons(current_status: &str, current_media_type: &str) -> Vec<TypeButton> {
     let all_types = get_all_media_types();
     let mut buttons = Vec::new();
-    
-    // "Все" button
+
     let all_url = if current_status.is_empty() {
         "/tracking".to_string()
     } else {
         format!("/tracking?status={}", current_status)
     };
     buttons.push(TypeButton {
-        media_type: String::new(),
-        icon: "📦".to_string(),
+        icon: "".to_string(),
         label: "Все".to_string(),
         url: all_url,
         is_active: current_media_type.is_empty(),
     });
-    
-    // Type buttons
+
     for (mt, icon, label) in all_types {
         let url = if current_status.is_empty() {
             format!("/tracking?type={}", mt)
@@ -65,14 +54,13 @@ fn get_type_buttons(current_status: &str, current_media_type: &str) -> Vec<TypeB
             format!("/tracking?status={}&type={}", current_status, mt)
         };
         buttons.push(TypeButton {
-            media_type: mt.to_string(),
             icon: icon.to_string(),
             label: label.to_string(),
             url,
             is_active: current_media_type == mt,
         });
     }
-    
+
     buttons
 }
 
@@ -87,45 +75,22 @@ fn get_all_media_types() -> Vec<(&'static str, &'static str, &'static str)> {
         ("movies", "", "Фильмы"),
         ("tv", "📺", "Сериалы"),
         ("dramas", "🎬", "Дорамы"),
-        ("cartoons", "📺", "Мультсериалы"),
+        ("cartoons", "", "Мультсериалы"),
         ("animated-movies", "", "Мультфильмы"),
         ("games", "🎮", "Игры"),
         ("books", "📖", "Книги"),
     ]
 }
 
-fn group_entries_by_type(entries: Vec<TrackingEntryWithMedia>, filter_type: Option<&str>) -> Vec<CategoryGroup> {
-    let all_types = get_all_media_types();
-    
-    if let Some(mt) = filter_type {
-        // Filtered: only one category
-        let (icon, label) = all_types.iter()
-            .find(|(t, _, _)| *t == mt)
-            .map(|(_, i, l)| (i.to_string(), l.to_string()))
-            .unwrap_or_else(|| ("📦".to_string(), mt.to_string()));
-        
-        vec![CategoryGroup {
-            media_type: mt.to_string(),
-            icon,
-            label,
-            entries,
-        }]
-    } else {
-        // All types: group entries
-        let mut grouped: HashMap<String, Vec<TrackingEntryWithMedia>> = HashMap::new();
-        for entry in entries {
-            grouped.entry(entry.media.media_type.clone()).or_default().push(entry);
-        }
-        
-        all_types.iter().map(|(mt, icon, label)| {
-            CategoryGroup {
-                media_type: mt.to_string(),
-                icon: icon.to_string(),
-                label: label.to_string(),
-                entries: grouped.remove(*mt).unwrap_or_default(),
-            }
-        }).collect()
-    }
+fn get_status_label(status: &str) -> String {
+    match status {
+        "watching" => "Смотрю",
+        "reading" => "Читаю",
+        "completed" => "Просмотрено",
+        "planned" => "Запланировано",
+        "dropped" => "Брошено",
+        _ => "Все списки",
+    }.to_string()
 }
 
 #[derive(Deserialize)]
@@ -144,17 +109,18 @@ pub async fn get_tracking_list(
     let media_type = params.media_type.as_deref();
     let entries = state.tracking.get_user_entries(user.id, status, media_type).await.unwrap_or_default();
     let stats = get_sidebar_stats(&state, user.id).await;
-    let categories = group_entries_by_type(entries, media_type);
     let current_status = params.status.unwrap_or_default();
     let current_media_type = params.media_type.unwrap_or_default();
     let type_buttons = get_type_buttons(&current_status, &current_media_type);
+    let status_label = get_status_label(&current_status);
 
     TrackingListTemplate {
         username: user.username,
         stats,
         active_page: "tracking".to_string(),
-        categories,
+        entries,
         type_buttons,
+        status_label,
         current_status,
         current_media_type,
     }
