@@ -5,35 +5,6 @@
 {% block content %}
 <h1 class="content-title">Статистика</h1>
 
-<!-- Stats Cards -->
-<div class="stats-grid">
-    {% for sc in status_display %}
-    <div class="stat-card">
-        <div class="stat-card-icon {{ sc.status }}">{{ sc.label }}</div>
-        <div class="stat-card-value">{{ sc.count }}</div>
-        <div class="stat-card-label">{{ sc.label }}</div>
-    </div>
-    {% endfor %}
-</div>
-
-<!-- Status Breakdown -->
-{% if !status_display.is_empty() %}
-<div class="card" style="padding: 1.5rem; border-radius: var(--radius-xl); border: 1px solid var(--border); background: var(--card); margin-bottom: 2rem;">
-    <h3 style="font-size: 16px; font-weight: 600; margin-bottom: 1rem;">Распределение по статусам</h3>
-    <div class="status-breakdown">
-        {% for sc in status_display %}
-        <div class="status-row">
-            <span class="status-name status-{{ sc.status }}">{{ sc.label }}</span>
-            <div class="status-bar-bg">
-                <div class="status-bar {{ sc.status }}" style="width: {{ sc.percentage }}%;"></div>
-            </div>
-            <span class="status-count">{{ sc.count }}</span>
-        </div>
-        {% endfor %}
-    </div>
-</div>
-{% endif %}
-
 <!-- Activity Calendar -->
 <div class="card" style="padding: 1.5rem; border-radius: var(--radius-xl); border: 1px solid var(--border); background: var(--card); margin-bottom: 2rem;">
     <h3 style="font-size: 16px; font-weight: 600; margin-bottom: 1rem;">Активность</h3>
@@ -41,6 +12,59 @@
         {{ calendar_html|safe }}
     </div>
 </div>
+
+<!-- Header Stats -->
+<div class="stats-grid" style="margin-bottom: 2rem;">
+    <div class="stat-card">
+        <div class="stat-card-icon" style="background: color-mix(in srgb, var(--planned) 15%, transparent); color: var(--planned);">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        </div>
+        <div class="stat-card-value">{{ overview.total_titles }}</div>
+        <div class="stat-card-label">Всего тайтлов</div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-card-icon" style="background: color-mix(in srgb, var(--completed) 15%, transparent); color: var(--completed);">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        </div>
+        <div class="stat-card-value">{{ overview.completion_rate.round() as i32 }}%</div>
+        <div class="stat-card-label">Доля завершенных</div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-card-icon" style="background: color-mix(in srgb, var(--watching) 15%, transparent); color: var(--watching);">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        </div>
+        <div class="stat-card-value">{{ top_category_label }}</div>
+        <div class="stat-card-label">Топ категория</div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-card-icon" style="background: color-mix(in srgb, var(--dropped) 15%, transparent); color: var(--dropped);">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        </div>
+        <div class="stat-card-value">—</div>
+        <div class="stat-card-label">Время (скоро)</div>
+    </div>
+</div>
+
+<!-- Status Breakdown -->
+{% if !status_labels.is_empty() %}
+<div class="card" style="padding: 1.5rem; border-radius: var(--radius-xl); border: 1px solid var(--border); background: var(--card); margin-bottom: 2rem;">
+    <h3 style="font-size: 16px; font-weight: 600; margin-bottom: 1rem;">По статусу</h3>
+    <div class="status-breakdown">
+        {% for sl in status_labels %}
+        <div class="status-row">
+            <span class="status-name status-{{ sl.0 }}">{{ sl.1 }}</span>
+            <div class="status-bar-bg">
+                <div class="status-bar {{ sl.0 }}" style="width: {{ sl.3 }}%;"></div>
+            </div>
+            <span class="status-count">{{ sl.2 }}</span>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
 
 <!-- Title Progress -->
 {% if !progress.is_empty() %}

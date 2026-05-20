@@ -22,13 +22,20 @@ impl StatsService {
         .fetch_one(&self.db)
         .await?;
 
-        // Count by status
-        let status_counts: Vec<StatusCount> = sqlx::query_as(
-            "SELECT status, COUNT(*)::int as count, 0 as percentage FROM tracking_entries WHERE user_id = $1 GROUP BY status",
+        // Completed count
+        let completed: (i32,) = sqlx::query_as(
+            "SELECT COUNT(*)::int FROM tracking_entries WHERE user_id = $1 AND status = 'completed'",
         )
         .bind(user_id)
-        .fetch_all(&self.db)
+        .fetch_one(&self.db)
         .await?;
+
+        // Completion rate
+        let completion_rate = if total.0 > 0 {
+            (completed.0 as f64 / total.0 as f64) * 100.0
+        } else {
+            0.0
+        };
 
         // Top category (media_type)
         let top_category: Option<(String, i32)> = sqlx::query_as(
@@ -38,25 +45,20 @@ impl StatsService {
         .fetch_optional(&self.db)
         .await?;
 
-        // Completion rate
-        let completed: (i32,) = sqlx::query_as(
-            "SELECT COUNT(*)::int FROM tracking_entries WHERE user_id = $1 AND status = 'completed'",
+        // Count by status
+        let status_counts: Vec<StatusCount> = sqlx::query_as(
+            "SELECT status, COUNT(*)::int as count, 0 as percentage FROM tracking_entries WHERE user_id = $1 GROUP BY status",
         )
         .bind(user_id)
-        .fetch_one(&self.db)
+        .fetch_all(&self.db)
         .await?;
-
-        let completion_rate = if total.0 > 0 {
-            (completed.0 as f64 / total.0 as f64) * 100.0
-        } else {
-            0.0
-        };
 
         Ok(StatsOverview {
             total_titles: total.0,
-            status_counts,
-            top_category: top_category.map(|(t, _)| t),
+            completed_count: completed.0,
             completion_rate,
+            top_category: top_category.map(|(t, _)| t),
+            status_counts,
         })
     }
 
