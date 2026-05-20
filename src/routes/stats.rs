@@ -7,7 +7,7 @@ use askama::filters::Safe;
 
 use crate::app_state::AppState;
 use crate::middleware::CurrentUser;
-use crate::models::stats::{StatsOverview, StatusCountDisplay, TitleProgress};
+use crate::models::stats::{StatsOverview, TitleProgress};
 use super::home::SidebarStats;
 
 fn translate_status(status: &str) -> String {
@@ -21,6 +21,25 @@ fn translate_status(status: &str) -> String {
     }
 }
 
+fn translate_media_type(media_type: &str) -> String {
+    match media_type {
+        "anime" => "Аниме".to_string(),
+        "manga" => "Манга".to_string(),
+        "manhwa" => "Манхва".to_string(),
+        "manhua" => "Маньхуа".to_string(),
+        "novels" => "Новеллы".to_string(),
+        "other-comics" => "Другие комиксы".to_string(),
+        "movies" => "Фильмы".to_string(),
+        "tv" => "Сериалы".to_string(),
+        "dramas" => "Дорамы".to_string(),
+        "cartoons" => "Мультсериалы".to_string(),
+        "animated-movies" => "Мультфильмы".to_string(),
+        "games" => "Игры".to_string(),
+        "books" => "Книги".to_string(),
+        _ => media_type.to_string(),
+    }
+}
+
 #[derive(Template)]
 #[template(path = "stats.html")]
 struct StatsTemplate {
@@ -28,7 +47,8 @@ struct StatsTemplate {
     stats: SidebarStats,
     active_page: String,
     overview: StatsOverview,
-    status_display: Vec<StatusCountDisplay>,
+    status_labels: Vec<(String, String, i32, i32)>,
+    top_category_label: String,
     activity_count: usize,
     progress: Vec<TitleProgress>,
     progress_count: usize,
@@ -55,13 +75,13 @@ pub async fn get_stats(
         }
     }
 
-    // Translate status labels
-    let status_display: Vec<StatusCountDisplay> = overview.status_counts.iter().map(|sc| StatusCountDisplay {
-        status: sc.status.clone(),
-        label: translate_status(&sc.status),
-        count: sc.count,
-        percentage: sc.percentage,
+    // Create status labels (status_key, label, count, percentage)
+    let status_labels: Vec<(String, String, i32, i32)> = overview.status_counts.iter().map(|sc| {
+        (sc.status.clone(), translate_status(&sc.status), sc.count, sc.percentage)
     }).collect();
+
+    // Translate top category
+    let top_category_label = overview.top_category.as_ref().map(|t| translate_media_type(t)).unwrap_or_else(|| "—".to_string());
 
     // Generate calendar HTML
     let mut calendar_html = String::from("<div class=\"calendar-grid\">");
@@ -85,7 +105,8 @@ pub async fn get_stats(
         stats: sidebar_stats,
         active_page: "stats".to_string(),
         overview,
-        status_display,
+        status_labels,
+        top_category_label,
         activity_count,
         progress,
         progress_count,

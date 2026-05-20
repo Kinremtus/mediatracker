@@ -41,3 +41,20 @@ pub struct CreateMediaItem {
     pub status: Option<String>,
     pub score: Option<f64>,
 }
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct MediaItemSlim {
+    pub provider: String,
+    pub external_id: String,
+    pub media_type: String,
+    pub title: String,
+    pub title_english: Option<String>,
+    pub title_native: Option<String>,
+    pub title_russian: Option<String>,
+    pub poster_url: Option<String>,
+    pub episodes: Option<i32>,
+    pub description: Option<String>,
+    #[sqlx(rename = "media_status")]
+    pub status: Option<String>,
+    pub score: Option<f64>,
+}

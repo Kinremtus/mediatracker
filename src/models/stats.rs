@@ -21,9 +21,10 @@ pub struct StatusCountDisplay {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct StatsOverview {
     pub total_titles: i32,
-    pub status_counts: Vec<StatusCount>,
-    pub top_category: Option<String>,
+    pub completed_count: i32,
     pub completion_rate: f64,
+    pub top_category: Option<String>,
+    pub status_counts: Vec<StatusCount>,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]

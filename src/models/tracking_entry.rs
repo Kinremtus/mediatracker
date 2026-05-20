@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
 
-use super::media_item::MediaItem;
+use super::media_item::MediaItemSlim;
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct TrackingEntry {
@@ -22,7 +22,7 @@ pub struct TrackingEntryWithMedia {
     #[sqlx(flatten)]
     pub entry: TrackingEntry,
     #[sqlx(flatten)]
-    pub media: MediaItem,
+    pub media: MediaItemSlim,
 }
 
 #[derive(Debug, Deserialize)]
