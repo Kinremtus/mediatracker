@@ -7,23 +7,23 @@
 
 <!-- Stats Cards -->
 <div class="stats-grid">
-    {% for sc in overview.status_counts %}
+    {% for sc in status_display %}
     <div class="stat-card">
-        <div class="stat-card-icon {{ sc.status }}">{{ sc.status }}</div>
+        <div class="stat-card-icon {{ sc.status }}">{{ sc.label }}</div>
         <div class="stat-card-value">{{ sc.count }}</div>
-        <div class="stat-card-label">{{ sc.status }}</div>
+        <div class="stat-card-label">{{ sc.label }}</div>
     </div>
     {% endfor %}
 </div>
 
 <!-- Status Breakdown -->
-{% if !overview.status_counts.is_empty() %}
+{% if !status_display.is_empty() %}
 <div class="card" style="padding: 1.5rem; border-radius: var(--radius-xl); border: 1px solid var(--border); background: var(--card); margin-bottom: 2rem;">
     <h3 style="font-size: 16px; font-weight: 600; margin-bottom: 1rem;">Распределение по статусам</h3>
     <div class="status-breakdown">
-        {% for sc in overview.status_counts %}
+        {% for sc in status_display %}
         <div class="status-row">
-            <span class="status-name status-{{ sc.status }}">{{ sc.status }}</span>
+            <span class="status-name status-{{ sc.status }}">{{ sc.label }}</span>
             <div class="status-bar-bg">
                 <div class="status-bar {{ sc.status }}" style="width: {{ sc.percentage }}%;"></div>
             </div>
@@ -51,10 +51,10 @@
         <div class="progress-item">
             <div class="progress-info">
                 <span class="progress-title">{{ p.title }}</span>
-                <span class="progress-episodes">{{ p.progress }}{% if p.episodes.is_some() %} / {{ p.episodes.unwrap() }}{% endif %}</span>
+                <span class="progress-episodes">{% if p.episodes.is_some() %}{{ p.progress }} / {{ p.episodes.unwrap() }}{% else %}{{ p.progress }}{% endif %}</span>
             </div>
             <div class="progress-bar-bg">
-                <div class="progress-bar" style="width: {% if p.percentage > 100 %}100{% else %}{{ p.percentage }}{% endif %}%;"></div>
+                <div class="progress-bar" style="width: {% if p.episodes.is_some() %}{% if p.percentage > 100 %}100{% else %}{{ p.percentage }}{% endif %}{% else %}100{% endif %}%;"></div>
             </div>
         </div>
         {% endfor %}

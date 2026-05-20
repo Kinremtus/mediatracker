@@ -5,6 +5,7 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct MediaItem {
+    #[sqlx(rename = "media_id")]
     pub id: Uuid,
     pub provider: String,
     pub external_id: String,
@@ -19,7 +20,9 @@ pub struct MediaItem {
     pub description: Option<String>,
     pub status: Option<String>,
     pub score: Option<f64>,
+    #[sqlx(rename = "media_created_at")]
     pub created_at: DateTime<Utc>,
+    #[sqlx(rename = "media_updated_at")]
     pub updated_at: DateTime<Utc>,
 }
 

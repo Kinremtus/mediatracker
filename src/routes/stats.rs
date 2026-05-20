@@ -7,8 +7,19 @@ use askama::filters::Safe;
 
 use crate::app_state::AppState;
 use crate::middleware::CurrentUser;
-use crate::models::stats::{StatsOverview, TitleProgress};
+use crate::models::stats::{StatsOverview, StatusCountDisplay, TitleProgress};
 use super::home::SidebarStats;
+
+fn translate_status(status: &str) -> String {
+    match status {
+        "watching" => "Смотрю".to_string(),
+        "reading" => "Читаю".to_string(),
+        "completed" => "Просмотрено".to_string(),
+        "planned" => "Запланировано".to_string(),
+        "dropped" => "Брошено".to_string(),
+        _ => status.to_string(),
+    }
+}
 
 #[derive(Template)]
 #[template(path = "stats.html")]
@@ -17,6 +28,7 @@ struct StatsTemplate {
     stats: SidebarStats,
     active_page: String,
     overview: StatsOverview,
+    status_display: Vec<StatusCountDisplay>,
     activity_count: usize,
     progress: Vec<TitleProgress>,
     progress_count: usize,
@@ -43,6 +55,14 @@ pub async fn get_stats(
         }
     }
 
+    // Translate status labels
+    let status_display: Vec<StatusCountDisplay> = overview.status_counts.iter().map(|sc| StatusCountDisplay {
+        status: sc.status.clone(),
+        label: translate_status(&sc.status),
+        count: sc.count,
+        percentage: sc.percentage,
+    }).collect();
+
     // Generate calendar HTML
     let mut calendar_html = String::from("<div class=\"calendar-grid\">");
     for i in 0..53 {
@@ -65,6 +85,7 @@ pub async fn get_stats(
         stats: sidebar_stats,
         active_page: "stats".to_string(),
         overview,
+        status_display,
         activity_count,
         progress,
         progress_count,
