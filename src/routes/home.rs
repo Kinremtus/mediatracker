@@ -15,6 +15,7 @@ struct HomeTemplate {
     username: String,
     stats: SidebarStats,
     active_page: String,
+    current_status: String,
 }
 
 #[derive(Serialize, Clone, Default)]
@@ -36,6 +37,7 @@ pub async fn get_home(
         username: user.username,
         stats,
         active_page: "home".to_string(),
+        current_status: String::new(),
     }
     .render()
     .unwrap()

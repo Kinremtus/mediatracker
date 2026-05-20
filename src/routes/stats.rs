@@ -21,6 +21,7 @@ struct StatsTemplate {
     progress: Vec<TitleProgress>,
     progress_count: usize,
     calendar_html: Safe<String>,
+    current_status: String,
 }
 
 pub async fn get_stats(
@@ -68,6 +69,7 @@ pub async fn get_stats(
         progress,
         progress_count,
         calendar_html: Safe(calendar_html),
+        current_status: String::new(),
     }
     .render()
     .unwrap()
