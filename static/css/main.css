@@ -258,6 +258,11 @@ img {
     display: flex;
     flex-direction: column;
     min-height: 100vh;
+    transition: margin-left 0.3s ease;
+}
+
+.app-shell:has(.sidebar.collapsed) .main-content {
+    margin-left: 64px;
 }
 
 /* --- Header --- */
@@ -1151,7 +1156,7 @@ img {
     }
 
     .main-content {
-        margin-left: 0;
+        margin-left: 0 !important;
     }
 
     .sidebar-toggle {
