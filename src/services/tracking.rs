@@ -130,16 +130,28 @@ impl TrackingService {
         &self,
         user_id: Uuid,
         status: Option<&str>,
+        media_type: Option<&str>,
     ) -> Result<Vec<TrackingEntryWithMedia>, anyhow::Error> {
-        let query = if let Some(s) = status {
-            "SELECT tracking_entries.*, media_items.* FROM tracking_entries JOIN media_items ON tracking_entries.media_id = media_items.id WHERE tracking_entries.user_id = $1 AND tracking_entries.status = $2 ORDER BY tracking_entries.updated_at DESC"
-        } else {
-            "SELECT tracking_entries.*, media_items.* FROM tracking_entries JOIN media_items ON tracking_entries.media_id = media_items.id WHERE tracking_entries.user_id = $1 ORDER BY tracking_entries.updated_at DESC"
-        };
+        let mut query = "SELECT tracking_entries.*, media_items.* FROM tracking_entries JOIN media_items ON tracking_entries.media_id = media_items.id WHERE tracking_entries.user_id = $1".to_string();
+        let mut param_idx = 2;
 
-        let mut q = sqlx::query_as::<_, TrackingEntryWithMedia>(query).bind(user_id);
+        if let Some(s) = status {
+            query.push_str(&format!(" AND tracking_entries.status = ${}", param_idx));
+            param_idx += 1;
+        }
+        if let Some(mt) = media_type {
+            query.push_str(&format!(" AND media_items.media_type = ${}", param_idx));
+            param_idx += 1;
+        }
+
+        query.push_str(" ORDER BY tracking_entries.updated_at DESC");
+
+        let mut q = sqlx::query_as::<_, TrackingEntryWithMedia>(&query).bind(user_id);
         if let Some(s) = status {
             q = q.bind(s);
+        }
+        if let Some(mt) = media_type {
+            q = q.bind(mt);
         }
 
         let entries = q.fetch_all(&self.db).await?;

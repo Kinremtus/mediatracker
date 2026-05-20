@@ -278,7 +278,7 @@ pub async fn post_delete_account(
 
 async fn get_sidebar_stats(state: &AppState, user_id: uuid::Uuid) -> SidebarStats {
     let mut stats = SidebarStats::default();
-    if let Ok(entries) = state.tracking.get_user_entries(user_id, None).await {
+    if let Ok(entries) = state.tracking.get_user_entries(user_id, None, None).await {
         for e in entries {
             match e.entry.status.as_str() {
                 "watching" => stats.watching += 1,
