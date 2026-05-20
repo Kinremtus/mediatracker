@@ -32,7 +32,7 @@ Workflow:
 
 ## Project Overview
 
-Full-stack media tracking app: **Rust (Axum) backend**, **Askama + HTMX frontend**, PostgreSQL, nginx reverse proxy.
+Full-stack media tracking app: **Rust (Axum) backend**, **Askama + Alpine.js frontend**, PostgreSQL, nginx reverse proxy.
 
 ## Project Structure
 ```text
@@ -48,14 +48,15 @@ mediatracker/
 │   ├── config.rs                       # Загрузка конфигурации
 │   ├── app_state.rs                    # Состояние приложения (БД + сервисы)
 │   ├── lib.rs                          # Экспорт модулей
-│   ├── routes/                         # HTTP эндпоинты (auth, home, media, search, stats, tracking)
+│   ├── routes/                         # HTTP эндпоинты (auth, home, media, search, stats, tracking, settings)
 │   ├── services/                       # Бизнес-логика (auth, tracking, stats, external providers)
-│   ├── models/                         # Структуры данных (user, session, media, tracking)
-│   ├── middleware/                     # Middleware (auth, logging)
+│   ├── models/                         # Структуры данных (user, session, media, tracking, stats)
+│   ├── middleware/                     # Middleware (auth)
 │   ├── templates/                      # Askama шаблоны
-│   ├── static/                         # CSS, JS, images
+│   ├── static/                         # CSS, JS
 │   └── utils/                          # Вспомогательные функции
-├── docs/                               # Документация
+├── tests/                              # Интеграционные тесты
+── docs/                               # Документация
 ├── infra/                              # Terraform (будущее)
 └── k8s/                                # Kubernetes (будущее)
 ```
@@ -68,18 +69,31 @@ mediatracker/
 - [x] Базовый сервер (`main.rs`)
 - [x] AppState и сервисы
 - [x] Middleware аутентификации (`auth_middleware`, `CurrentUser`)
-- [x] Базовые шаблоны (home, search, media, stats, tracking)
-- [x] Модель `TrackingEntryWithMedia` для отображения списков
-- [ ] Реализация поиска (Shikimori, MangaUpdates)
-- [ ] Реализация деталей медиа
-- [x] Удаление legacy-кода (`backend/`)
-- [ ] Тестирование через Docker Compose
+- [x] Auth (login, register, logout) с Argon2 хешированием
+- [x] Сессии в PostgreSQL, cookie `session_id`
+- [x] Sidebar с навигацией (collapsible на десктопе, overlay на мобильных)
+- [x] Header с поиском, dropdown тем, dropdown пользователя
+- [x] 3 темы: light, graphite (default), dark (localStorage)
+- [x] Главная страница со статистикой пользователя
+- [x] Поиск с 13 типами (аниме, манга, манхва, маньхуа, новеллы, другие комиксы, фильмы, сериалы, дорамы, мультсериалы, мультфильмы, игры, книги)
+- [x] 5 внешних провайдеров: Shikimori, MangaUpdates, TMDB, RAWG, Google Books
+- [x] Постеры: Shikimori (полный URL), MangaUpdates (полный URL), TMDB (через nginx-прокси `/tmdb-image/`)
+- [x] Детали медиа (poster, meta, description, "В список")
+- [x] Трекинг CRUD (add, update progress, complete, delete)
+- [x] Фильтры трекинга через sidebar (watching, reading, completed, planned, dropped)
+- [x] Страница статистики (status cards, breakdown bars, activity calendar, progress list)
+- [x] Страница настроек (профиль, смена пароля, уведомления, удаление аккаунта)
+- [x] GitHub Actions workflow с кэшированием Cargo, timeout 60m, healthcheck
+- [x] Dockerfile с multi-stage build и cache mounts
+- [x] Nginx: SSL, proxy to app:8080, TMDB image proxy, DNS resolver
+- [x] Удаление legacy-кода (`backend/`, `frontend/`)
 
 ## Next Steps
-1. Удалить папку `backend/` (legacy Python код).
-2. Реализовать `src/middleware/auth.rs`.
-3. Заполнить роуты и шаблоны для Фазы 1 (Auth, Home).
-4. Протестировать запуск через Docker Compose.
+1. Реализовать MAL OAuth импорт/экспорт
+2. Добавить Telegram бота для уведомлений
+3. Реализовать HTMX-интерактивность (обновление прогресса без перезагрузки)
+4. Добавить пагинацию для поиска и трекинга
+5. Реализовать кэширование внешних API запросов (Redis)
 
 ## Development Commands
 
@@ -102,34 +116,54 @@ docker compose exec db psql -U Kin -d tracker    # psql console
 ## Architecture
 
 - **Backend**: Rust, Axum, SQLx, Askama, Tokio
-- **Frontend**: Askama templates, HTMX, Alpine.js, Custom CSS
+- **Frontend**: Askama templates, Alpine.js, Custom CSS (3 темы)
 - **Database**: PostgreSQL 17
 - **Entry points**:
   - Backend: `src/main.rs`
   - Templates: `templates/`
   - Static: `static/`
-- **Routers**: `src/routes/` — auth, media, tracking, search, stats
-- **Services**: `src/services/` — shikimori, mangaupdates, tmdb, rawg, auth, tracking, stats
+- **Routers**: `src/routes/` — auth, home, media, search, stats, tracking, settings
+- **Services**: `src/services/` — shikimori, mangaupdates, tmdb, rawg, google_books, auth, tracking, stats
+- **External Providers**:
+  - `anime` → Shikimori
+  - `manga/manhwa/manhua/novels/other-comics` → MangaUpdates (фильтрация по типу)
+  - `movies/tv/dramas/cartoons/animated-movies` → TMDB (фильтрация по жанрам + пост-фильтрация)
+  - `games` → RAWG
+  - `books` → Google Books
 
 ## Key Conventions
 
 - Axum: Router-based, middleware for auth
-- CORS: `localhost:5173` и `mediatracker.web-socket-test-bench.site:2053`
 - Health: `GET /health` → `{"status":"ok"}`
 - Media items: composite unique `(provider, external_id)`
-- Auth: Session-based (PostgreSQL), cookie `session_id`
-- API: `/api/v1/` reserved for future mobile apps
+- Auth: Session-based (PostgreSQL), cookie `session_id` (HttpOnly, Secure, SameSite=Lax)
+- Password hashing: Argon2
+- Session token: UUID + SHA256 hash stored in DB
+- IP column: PostgreSQL `INET` type, Rust `Option<String>` с кастом `ip::text` в SELECT
+- TMDB images: проксируются через nginx `/tmdb-image/` (VPN не нужен)
+- Shikimori images: относительные URL дополняются `https://shikimori.one`
+- Sidebar: collapsible на десктопе (64px иконки / 260px полный), overlay на мобильных
+- Themes: light, graphite (default), dark — сохраняются в `localStorage['mediatracker-theme']`
+- Deploy port: 8443 (nginx), Cloudflare custom port
 
 ## Deployment
 
 - GitHub Actions на push в `main`
-- Deploy: git pull → `docker compose up --build -d` → healthcheck `:2053/health`
+- Workflow: `git pull` → `docker compose down` → `docker compose up --build -d --remove-orphans` → healthcheck
+- Healthcheck: `curl -s http://localhost:8080/health` → `{"status":"ok"}`
+- Timeout: 60m (Rust compilation)
+- Cargo cache: `~/.cargo/registry` и `~/.cargo/git` через BuildKit mounts
+- Nginx: порт 8443, SSL через Cloudflare Origin CA, DNS resolver `127.0.0.11`
 
 ## Stack Versions
 
-- Rust: 1.88+
+- Rust: 1.95
 - Axum: 0.8
 - SQLx: 0.8
 - Askama: 0.16
 - PostgreSQL: 17
 - Docker Compose: v2+
+- reqwest: 0.13
+- sha2: 0.11
+- hex: 0.4
+- url: 2
