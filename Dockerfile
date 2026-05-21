@@ -7,8 +7,8 @@ COPY Cargo.toml Cargo.lock ./
 
 # Create a dummy main.rs to build dependencies only
 RUN mkdir src && echo "fn main() {}" > src/main.rs
-RUN --mount=type=cache,target=/root/.cargo/registry \
-    --mount=type=cache,target=/root/.cargo/git \
+RUN --mount=type=cache,target=/root/.cargo/registry,id=cargo-registry \
+    --mount=type=cache,target=/root/.cargo/git,id=cargo-git \
     cargo build --release
 RUN rm -f target/release/deps/mediatracker*
 
@@ -16,8 +16,8 @@ RUN rm -f target/release/deps/mediatracker*
 COPY . .
 
 # Build the real application (dependencies already cached)
-RUN --mount=type=cache,target=/root/.cargo/registry \
-    --mount=type=cache,target=/root/.cargo/git \
+RUN --mount=type=cache,target=/root/.cargo/registry,id=cargo-registry \
+    --mount=type=cache,target=/root/.cargo/git,id=cargo-git \
     cargo build --release
 
 # Runtime stage

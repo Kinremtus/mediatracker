@@ -9,16 +9,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Cache Cargo dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
-
       - name: Deploy to VPS
         uses: appleboy/ssh-action@master
         with:
@@ -30,6 +20,11 @@ jobs:
           script: |
             cd ${{ secrets.TARGET_DIR }}
             git pull origin main
+
+            # Создаём volumes для кэша Cargo (если ещё нет)
+            docker volume create cargo-registry 2>/dev/null || true
+            docker volume create cargo-git 2>/dev/null || true
+
             docker compose down
             DOCKER_BUILDKIT=1 docker compose up --build -d
 
@@ -43,7 +38,7 @@ jobs:
             if echo "$RESPONSE" | grep -q '"status":"ok"'; then
               echo "✅ Деплой успешен!"
             else
-              echo " Healthcheck провалился!"
+              echo "❌ Healthcheck провалился!"
               echo "=== APP LOGS ==="
               docker compose logs --tail=50 app
               echo "=== NGINX LOGS ==="
