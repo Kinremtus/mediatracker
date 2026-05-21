@@ -13,18 +13,18 @@
 
 <div class="type-selector">
     <a href="?q={{ query }}&type=anime" class="type-btn {% if current_type == "anime" %}active{% endif %}">▶ Аниме</a>
-    <a href="?q={{ query }}&type=manga" class="type-btn {% if current_type == "manga" %}active{% endif %}">📚 Манга</a>
-    <a href="?q={{ query }}&type=manhwa" class="type-btn {% if current_type == "manhwa" %}active{% endif %}">📚 Манхва</a>
+    <a href="?q={{ query }}&type=manga" class="type-btn {% if current_type == "manga" %}active{% endif %}"> Манга</a>
+    <a href="?q={{ query }}&type=manhwa" class="type-btn {% if current_type == "manhwa" %}active{% endif %}"> Манхва</a>
     <a href="?q={{ query }}&type=manhua" class="type-btn {% if current_type == "manhua" %}active{% endif %}">📚 Маньхуа</a>
-    <a href="?q={{ query }}&type=novels" class="type-btn {% if current_type == "novels" %}active{% endif %}">📝 Новеллы</a>
+    <a href="?q={{ query }}&type=novel" class="type-btn {% if current_type == "novel" %}active{% endif %}">📝 Новеллы</a>
     <a href="?q={{ query }}&type=other-comics" class="type-btn {% if current_type == "other-comics" %}active{% endif %}">📚 Другие комиксы</a>
-    <a href="?q={{ query }}&type=movies" class="type-btn {% if current_type == "movies" %}active{% endif %}">🎥 Фильмы</a>
-    <a href="?q={{ query }}&type=tv" class="type-btn {% if current_type == "tv" %}active{% endif %}">📺 Сериалы</a>
-    <a href="?q={{ query }}&type=dramas" class="type-btn {% if current_type == "dramas" %}active{% endif %}">🎬 Дорамы</a>
+    <a href="?q={{ query }}&type=movie" class="type-btn {% if current_type == "movie" %}active{% endif %}">🎥 Фильмы</a>
+    <a href="?q={{ query }}&type=series" class="type-btn {% if current_type == "series" %}active{% endif %}"> Сериалы</a>
+    <a href="?q={{ query }}&type=dramas" class="type-btn {% if current_type == "dramas" %}active{% endif %}"> Дорамы</a>
     <a href="?q={{ query }}&type=cartoons" class="type-btn {% if current_type == "cartoons" %}active{% endif %}">📺 Мультсериалы</a>
     <a href="?q={{ query }}&type=animated-movies" class="type-btn {% if current_type == "animated-movies" %}active{% endif %}">🎞 Мультфильмы</a>
-    <a href="?q={{ query }}&type=games" class="type-btn {% if current_type == "games" %}active{% endif %}">🎮 Игры</a>
-    <a href="?q={{ query }}&type=books" class="type-btn {% if current_type == "books" %}active{% endif %}">📖 Книги</a>
+    <a href="?q={{ query }}&type=game" class="type-btn {% if current_type == "game" %}active{% endif %}">🎮 Игры</a>
+    <a href="?q={{ query }}&type=book" class="type-btn {% if current_type == "book" %}active{% endif %}">📖 Книги</a>
 </div>
 
 {% if !results.is_empty() %}

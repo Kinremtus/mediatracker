@@ -44,15 +44,15 @@ pub async fn get_search(
             "manga" => state.mangaupdates.search_by_type(&query, &["Manga"]).await.unwrap_or_default(),
             "manhwa" => state.mangaupdates.search_by_type(&query, &["Manhwa"]).await.unwrap_or_default(),
             "manhua" => state.mangaupdates.search_by_type(&query, &["Manhua"]).await.unwrap_or_default(),
-            "novels" => state.mangaupdates.search_by_type(&query, &["novel"]).await.unwrap_or_default(),
+            "novel" => state.mangaupdates.search_by_type(&query, &["novel"]).await.unwrap_or_default(),
             "other-comics" => state.mangaupdates.search_by_type(&query, &["OEL", "Doujinshi", "Filipino", "Indonesian", "Thai", "Vietnamese", "Malaysian"]).await.unwrap_or_default(),
-            "movies" => state.tmdb.search_movies(&query, None).await.unwrap_or_default(),
-            "tv" => state.tmdb.search_tv(&query, None).await.unwrap_or_default(),
+            "movie" => state.tmdb.search_movies(&query, None).await.unwrap_or_default(),
+            "series" => state.tmdb.search_tv(&query, None).await.unwrap_or_default(),
             "dramas" => state.tmdb.search_tv(&query, Some(18)).await.unwrap_or_default(),
             "cartoons" => state.tmdb.search_tv(&query, Some(16)).await.unwrap_or_default(),
             "animated-movies" => state.tmdb.search_movies(&query, Some(16)).await.unwrap_or_default(),
-            "games" => state.rawg.search(&query).await.unwrap_or_default(),
-            "books" => state.google_books.search(&query).await.unwrap_or_default(),
+            "game" => state.rawg.search(&query).await.unwrap_or_default(),
+            "book" => state.google_books.search(&query).await.unwrap_or_default(),
             _ => {
                 // Default: search all providers
                 let mut all = Vec::new();
