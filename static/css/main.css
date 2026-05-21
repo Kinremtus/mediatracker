@@ -822,6 +822,202 @@ img {
 }
 
 /* --- Tracking List --- */
+.tracking-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+}
+
+@media (min-width: 640px) {
+    .tracking-grid { grid-template-columns: repeat(3, 1fr); }
+}
+@media (min-width: 768px) {
+    .tracking-grid { grid-template-columns: repeat(4, 1fr); }
+}
+@media (min-width: 1024px) {
+    .tracking-grid { grid-template-columns: repeat(5, 1fr); }
+}
+@media (min-width: 1280px) {
+    .tracking-grid { grid-template-columns: repeat(6, 1fr); }
+}
+
+.tracking-card {
+    position: relative;
+    border-radius: var(--radius-xl);
+    border: 1px solid var(--border);
+    background: var(--card);
+    overflow: hidden;
+    transition: border-color 0.2s ease;
+    display: flex;
+    flex-direction: column;
+}
+
+.tracking-card:hover {
+    border-color: color-mix(in srgb, var(--muted-foreground) 30%, transparent);
+}
+
+.tracking-card-delete {
+    position: absolute;
+    right: 8px;
+    top: 8px;
+    z-index: 10;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.6);
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 12px;
+    opacity: 0;
+    transition: all 0.2s ease;
+}
+
+.tracking-card:hover .tracking-card-delete {
+    opacity: 1;
+}
+
+.tracking-card-delete:hover {
+    background: rgba(0, 0, 0, 0.8);
+    color: #f87171;
+}
+
+.tracking-card-poster {
+    position: relative;
+    aspect-ratio: 2 / 3;
+    overflow: hidden;
+    display: block;
+}
+
+.tracking-card-poster img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.3s ease;
+}
+
+.tracking-card:hover .tracking-card-poster img {
+    transform: scale(1.05);
+}
+
+.tracking-card-info {
+    padding: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    flex: 1;
+}
+
+.tracking-card-title {
+    font-size: 14px;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--foreground);
+}
+
+.tracking-card-title:hover {
+    color: var(--muted-foreground);
+}
+
+.tracking-card-progress {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 12px;
+    color: var(--muted-foreground);
+}
+
+.tracking-progress-btn {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    background: var(--secondary);
+    font-size: 12px;
+    font-weight: 600;
+    transition: background 0.15s ease;
+    color: var(--foreground);
+}
+
+.tracking-progress-btn:hover {
+    background: var(--muted);
+}
+
+.tracking-progress-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+.tracking-progress-value {
+    min-width: 1.5ch;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    color: var(--foreground);
+}
+
+.tracking-progress-total {
+    opacity: 0.7;
+}
+
+.tracking-card-status {
+    position: relative;
+    margin-top: auto;
+}
+
+.tracking-status-btn {
+    font-size: 12px;
+    font-weight: 500;
+    background: none;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0;
+    font-family: inherit;
+    transition: opacity 0.15s ease;
+}
+
+.tracking-status-btn:hover {
+    opacity: 0.8;
+}
+
+.tracking-status-dropdown {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    margin-bottom: 0.5rem;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    z-index: 50;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    min-width: 140px;
+}
+
+.tracking-status-option {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    font-size: 12px;
+    text-align: left;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--foreground);
+    font-family: inherit;
+    transition: background 0.15s ease;
+}
+
+.tracking-status-option:hover {
+    background: var(--secondary);
+}
+
 .category-section {
     margin-bottom: 2rem;
 }
@@ -868,119 +1064,6 @@ img {
 .category-placeholder a {
     color: var(--watching);
     font-weight: 500;
-}
-
-.tracking-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 1rem;
-}
-
-.tracking-card {
-    padding: 1rem;
-    border-radius: var(--radius-xl);
-    border: 1px solid var(--border);
-    background: var(--card);
-}
-
-.tracking-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 0.75rem;
-}
-
-.tracking-title {
-    font-size: 14px;
-    font-weight: 500;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    flex: 1;
-    margin-right: 0.5rem;
-}
-
-.tracking-status {
-    padding: 0.2rem 0.6rem;
-    border-radius: 9999px;
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.02em;
-    white-space: nowrap;
-}
-
-.tracking-status.watching { background: color-mix(in srgb, var(--watching) 20%, transparent); color: var(--watching); }
-.tracking-status.completed { background: color-mix(in srgb, var(--completed) 20%, transparent); color: var(--completed); }
-.tracking-status.dropped { background: color-mix(in srgb, var(--dropped) 20%, transparent); color: var(--dropped); }
-.tracking-status.planned { background: color-mix(in srgb, var(--planned) 20%, transparent); color: var(--planned); }
-.tracking-status.reading { background: color-mix(in srgb, var(--reading) 20%, transparent); color: var(--reading); }
-.tracking-status.paused { background: color-mix(in srgb, var(--paused) 20%, transparent); color: var(--paused); }
-
-.tracking-progress {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 0.75rem;
-}
-
-.tracking-progress-btn {
-    width: 28px;
-    height: 28px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: var(--radius-sm);
-    background: var(--secondary);
-    font-size: 14px;
-    font-weight: 600;
-    transition: background 0.15s ease;
-}
-
-.tracking-progress-btn:hover {
-    background: var(--muted);
-}
-
-.tracking-progress-value {
-    flex: 1;
-    text-align: center;
-    font-size: 14px;
-    font-weight: 500;
-    font-variant-numeric: tabular-nums;
-}
-
-.tracking-actions {
-    display: flex;
-    gap: 0.5rem;
-}
-
-.tracking-btn {
-    flex: 1;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: var(--radius);
-    font-size: 12px;
-    font-weight: 500;
-    transition: background 0.15s ease;
-}
-
-.tracking-btn-edit {
-    background: var(--secondary);
-}
-
-.tracking-btn-edit:hover {
-    background: var(--muted);
-}
-
-.tracking-btn-delete {
-    background: color-mix(in srgb, var(--destructive) 10%, transparent);
-    color: var(--destructive);
-}
-
-.tracking-btn-delete:hover {
-    background: color-mix(in srgb, var(--destructive) 20%, transparent);
 }
 
 /* --- Media Detail --- */
