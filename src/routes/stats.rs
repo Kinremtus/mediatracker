@@ -17,9 +17,8 @@ use super::home::SidebarStats;
 
 fn translate_status(status: &str) -> String {
     match status {
-        "watching" => "Смотрю".to_string(),
-        "reading" => "Читаю".to_string(),
-        "completed" => "Просмотрено".to_string(),
+        "in_progress" => "В процессе".to_string(),
+        "completed" => "Завершено".to_string(),
         "planned" => "Запланировано".to_string(),
         "dropped" => "Брошено".to_string(),
         _ => status.to_string(),
@@ -117,8 +116,7 @@ async fn get_sidebar_stats(state: &AppState, user_id: uuid::Uuid) -> SidebarStat
     if let Ok(entries) = state.tracking.get_user_entries(user_id, None, None).await {
         for e in entries {
             match e.entry.status.as_str() {
-                "watching" => stats.watching += 1,
-                "reading" => stats.reading += 1,
+                "in_progress" => stats.in_progress += 1,
                 "completed" => stats.completed += 1,
                 "planned" => stats.planned += 1,
                 "dropped" => stats.dropped += 1,

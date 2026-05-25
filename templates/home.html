@@ -5,33 +5,26 @@
 {% block content %}
 <h1 class="content-title">Добро пожаловать, {{ username }}!</h1>
 
-{% if stats.watching == 0 && stats.reading == 0 && stats.completed == 0 && stats.planned == 0 && stats.dropped == 0 %}
+{% if stats.in_progress == 0 && stats.completed == 0 && stats.planned == 0 && stats.dropped == 0 %}
 <div class="empty-state">
     <div class="empty-state-icon">📺</div>
     <p class="empty-state-text">Пока ничего нет</p>
-    <p class="empty-state-sub">Начни добавлять тайтлы в свой список через <a href="/search" style="color: var(--watching);">поиск</a></p>
+    <p class="empty-state-sub">Начни добавлять тайтлы в свой список через <a href="/search" style="color: var(--in_progress);">поиск</a></p>
 </div>
 {% else %}
 <div class="stats-grid">
-    {% if stats.watching > 0 %}
-    <a href="/tracking?status=watching" class="stat-card">
-        <div class="stat-card-icon watching">▶</div>
-        <div class="stat-card-value">{{ stats.watching }}</div>
-        <div class="stat-card-label">Смотрю</div>
-    </a>
-    {% endif %}
-    {% if stats.reading > 0 %}
-    <a href="/tracking?status=reading" class="stat-card">
-        <div class="stat-card-icon reading">📖</div>
-        <div class="stat-card-value">{{ stats.reading }}</div>
-        <div class="stat-card-label">Читаю</div>
+    {% if stats.in_progress > 0 %}
+    <a href="/tracking?status=in_progress" class="stat-card">
+        <div class="stat-card-icon in_progress">▶</div>
+        <div class="stat-card-value">{{ stats.in_progress }}</div>
+        <div class="stat-card-label">В процессе</div>
     </a>
     {% endif %}
     {% if stats.completed > 0 %}
     <a href="/tracking?status=completed" class="stat-card">
         <div class="stat-card-icon completed">✓</div>
         <div class="stat-card-value">{{ stats.completed }}</div>
-        <div class="stat-card-label">Просмотрено</div>
+        <div class="stat-card-label">Завершено</div>
     </a>
     {% endif %}
     {% if stats.planned > 0 %}
