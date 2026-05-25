@@ -42,7 +42,10 @@ mediatracker/
 ├── nginx.conf                          # Настройки веб-сервера
 ├── .env                                # Переменные окружения
 ├── migrations/
-│   └── 001_init.sql                    # Схема БД (users, sessions, media, tracking)
+│   ├── 001_init.sql                    # Схема БД (users, sessions, media, tracking)
+│   ├── 002_add_media_types.sql         # Новые media_type для трекинга
+│   ├── 003_backfill_activity_log.sql   # Заполнение activity_log
+│   └── 004_status_rename.sql           # watching/reading → in_progress
 ├── src/
 │   ├── main.rs                         # Точка входа, запуск сервера
 │   ├── config.rs                       # Загрузка конфигурации
@@ -80,7 +83,9 @@ mediatracker/
 - [x] Постеры: Shikimori (полный URL), MangaUpdates (полный URL), TMDB (через nginx-прокси `/tmdb-image/`)
 - [x] Детали медиа (poster, meta, description, "В список")
 - [x] Трекинг CRUD (add, update progress, complete, delete)
-- [x] Фильтры трекинга через sidebar (watching, reading, completed, planned, dropped)
+- [x] Фильтры трекинга: два Alpine.js dropdown на странице (категория + статус)
+- [x] Статус-фильтры через sidebar (Смотрю/Читаю → В процессе, Просмотрено → Завершено)
+- [x] Единый статус `in_progress` вместо раздельных `watching`/`reading`
 - [x] Страница статистики (status cards, breakdown bars, activity calendar, progress list)
 - [x] Страница настроек (профиль, смена пароля, уведомления, удаление аккаунта)
 - [x] GitHub Actions workflow с кэшированием Cargo, timeout 60m, healthcheck
@@ -144,6 +149,10 @@ docker compose exec db psql -U Kin -d tracker    # psql console
 - Shikimori images: относительные URL дополняются `https://shikimori.one`
 - Sidebar: collapsible на десктопе (64px иконки / 260px полный), overlay на мобильных
 - Themes: light, graphite (default), dark — сохраняются в `localStorage['mediatracker-theme']`
+- Status system: `in_progress` (В процессе), `completed` (Завершено), `planned` (Запланировано), `dropped` (Брошено), `paused` (на схеме, не в UI)
+- Status CSS: переменная `--in_progress`, классы `.status-in_progress`, `.status-bar.in_progress`, `.stat-card-icon.in_progress`
+- Tracking filters: два Alpine.js dropdown (`x-data="{ typeOpen: false, statusOpen: false }"`) на странице `/tracking`
+- Sidebar: без статус-фильтров, только ссылка «Отслеживаемое» → `/tracking?status=in_progress`
 - Deploy port: 8443 (nginx), Cloudflare custom port
 
 ## Deployment
