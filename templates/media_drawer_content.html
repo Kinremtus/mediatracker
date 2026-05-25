@@ -8,6 +8,28 @@
         {% endif %}
     </div>
 
+    <!-- Status Chips (under poster, horizontal) -->
+    {% if let Some(tid) = tracking_id %}
+    <div class="drawer-status-chips">
+        <button class="drawer-status-chip {% if current_status.as_deref() == Some("planned") %}active{% endif %}"
+                onclick="updateTrackingStatus('{{ tid }}', 'planned', this)">
+            📋 Запланировано
+        </button>
+        <button class="drawer-status-chip {% if current_status.as_deref() == Some("in_progress") %}active{% endif %}"
+                onclick="updateTrackingStatus('{{ tid }}', 'in_progress', this)">
+            ▶ В процессе
+        </button>
+        <button class="drawer-status-chip {% if current_status.as_deref() == Some("completed") %}active{% endif %}"
+                onclick="updateTrackingStatus('{{ tid }}', 'completed', this)">
+            ✅ Завершено
+        </button>
+        <button class="drawer-status-chip {% if current_status.as_deref() == Some("dropped") %}active{% endif %}"
+                onclick="updateTrackingStatus('{{ tid }}', 'dropped', this)">
+            ❌ Брошено
+        </button>
+    </div>
+    {% endif %}
+
     <!-- Info -->
     <div class="media-detail-info">
         <h1 style="font-size: 20px;">{{ item.title }}</h1>
@@ -44,29 +66,6 @@
         <div class="media-detail-description">
             <h3>Описание</h3>
             <p>{{ item.description.as_ref().unwrap() }}</p>
-        </div>
-        {% endif %}
-
-        <!-- Status Chips (only if already tracked) -->
-        {% if let Some(tid) = tracking_id %}
-        <div class="drawer-status-label">Мой статус</div>
-        <div class="drawer-status-chips">
-            <button class="drawer-status-chip {% if current_status.as_deref() == Some("planned") %}active{% endif %}"
-                    onclick="updateTrackingStatus('{{ tid }}', 'planned', this)">
-                📋 Запланировано
-            </button>
-            <button class="drawer-status-chip {% if current_status.as_deref() == Some("in_progress") %}active{% endif %}"
-                    onclick="updateTrackingStatus('{{ tid }}', 'in_progress', this)">
-                ▶ В процессе
-            </button>
-            <button class="drawer-status-chip {% if current_status.as_deref() == Some("completed") %}active{% endif %}"
-                    onclick="updateTrackingStatus('{{ tid }}', 'completed', this)">
-                ✅ Завершено
-            </button>
-            <button class="drawer-status-chip {% if current_status.as_deref() == Some("dropped") %}active{% endif %}"
-                    onclick="updateTrackingStatus('{{ tid }}', 'dropped', this)">
-                ❌ Брошено
-            </button>
         </div>
         {% endif %}
     </div>
