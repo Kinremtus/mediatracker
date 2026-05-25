@@ -1,0 +1,19 @@
+{% if upcoming_releases.is_empty() %}
+  <p class="empty-state">Нет ближайших релизов</p>
+{% else %}
+  <ul class="release-list">
+    {% for r in upcoming_releases %}
+      <li class="release-item">
+        <div class="release-date">
+          <span class="release-day">{{ r.day() }}</span>
+          <span class="release-month">{{ r.month() }}</span>
+        </div>
+        <img src="{{ r.poster_or_placeholder() }}" alt="" class="release-poster" loading="lazy">
+        <div class="release-info">
+          <a href="/media/{{ r.provider }}/{{ r.external_id }}" class="release-title">{{ r.title }}</a>
+          <div class="release-meta">эп. {{ r.episode_number }}</div>
+        </div>
+      </li>
+    {% endfor %}
+  </ul>
+{% endif %}

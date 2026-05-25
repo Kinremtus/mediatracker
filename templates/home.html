@@ -3,37 +3,54 @@
 {% block title %}Главная - MediaTracker{% endblock %}
 
 {% block content %}
-<h1 class="content-title">Добро пожаловать, {{ username }}!</h1>
+<div class="home-container">
+  <div class="home-greeting">
+    <h1>{{ greeting }}, {{ username }}! 👋</h1>
+    <p class="home-date">{{ today }}</p>
+  </div>
 
-{% if stats.in_progress == 0 && stats.completed == 0 && stats.planned == 0 && stats.dropped == 0 %}
-<div class="empty-state">
-    <div class="empty-state-icon">📺</div>
-    <p class="empty-state-text">Пока ничего нет</p>
-    <p class="empty-state-sub">Начни добавлять тайтлы в свой список через <a href="/search" style="color: var(--in_progress);">поиск</a></p>
+  {# === Сейчас смотрю === #}
+  <section class="home-section">
+    <header class="section-header">
+      <h2>Сейчас смотрю</h2>
+      <a href="/tracking?status=in_progress" class="see-all">Все →</a>
+    </header>
+
+    {% if in_progress.is_empty() %}
+      <p class="empty-state">
+        Ничего не смотришь. <a href="/search">Найти что-то →</a>
+      </p>
+    {% else %}
+      <div class="cards-row">
+        {% for item in in_progress %}
+          <a href="/media/{{ item.provider }}/{{ item.external_id }}"
+             class="media-card">
+            <img src="{{ item.poster_url }}" alt="{{ item.title }}" loading="lazy">
+            <div class="card-body">
+              <h3 class="card-title">{{ item.title }}</h3>
+              {% if item.progress_total.is_some() %}
+                <div class="progress-info">
+                  {{ item.progress_current }} / {{ item.progress_total.unwrap() }}
+                </div>
+                <div class="progress-bar">
+                  <div class="progress-fill"
+                       style="width: {{ item.progress_percent }}%"></div>
+                </div>
+              {% endif %}
+            </div>
+          </a>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </section>
+
+  {# === Календарь релизов === #}
+  <section class="home-section">
+    <header class="section-header">
+      <h2>Календарь релизов</h2>
+      <a href="/calendar" class="see-all">Открыть календарь →</a>
+    </header>
+    {% include "partials/calendar_widget.html" %}
+  </section>
 </div>
-{% else %}
-<div class="stats-grid">
-    {% if stats.in_progress > 0 %}
-    <a href="/tracking?status=in_progress" class="stat-card">
-        <div class="stat-card-icon in_progress">▶</div>
-        <div class="stat-card-value">{{ stats.in_progress }}</div>
-        <div class="stat-card-label">В процессе</div>
-    </a>
-    {% endif %}
-    {% if stats.completed > 0 %}
-    <a href="/tracking?status=completed" class="stat-card">
-        <div class="stat-card-icon completed">✓</div>
-        <div class="stat-card-value">{{ stats.completed }}</div>
-        <div class="stat-card-label">Завершено</div>
-    </a>
-    {% endif %}
-    {% if stats.planned > 0 %}
-    <a href="/tracking?status=planned" class="stat-card">
-        <div class="stat-card-icon planned">⏰</div>
-        <div class="stat-card-value">{{ stats.planned }}</div>
-        <div class="stat-card-label">Запланировано</div>
-    </a>
-    {% endif %}
-</div>
-{% endif %}
 {% endblock %}

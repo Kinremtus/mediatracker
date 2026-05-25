@@ -1,0 +1,40 @@
+{% extends "app_shell.html" %}
+
+{% block title %}Календарь - MediaTracker{% endblock %}
+
+{% block content %}
+<div class="calendar-page">
+  <header class="calendar-header">
+    <a href="{{ prev_month_url }}" class="calendar-nav">←</a>
+    <h2>{{ month_name }} {{ year }}</h2>
+    <a href="{{ next_month_url }}" class="calendar-nav">→</a>
+  </header>
+
+  <div class="calendar-grid">
+    <div class="weekday">Пн</div>
+    <div class="weekday">Вт</div>
+    <div class="weekday">Ср</div>
+    <div class="weekday">Чт</div>
+    <div class="weekday">Пт</div>
+    <div class="weekday">Сб</div>
+    <div class="weekday">Вс</div>
+
+    {% for week in weeks %}
+      {% for day in week %}
+        <div class="day-cell
+                    {% if !day.is_current_month %}other-month{% endif %}
+                    {% if day.is_today %}today{% endif %}">
+          <span class="day-num">{{ day.day_num }}</span>
+          {% for r in day.releases %}
+            <a href="/media/{{ r.provider }}/{{ r.external_id }}"
+               class="release-dot"
+               title="{{ r.title }} — эп. {{ r.episode_number }}">
+              {{ r.title }}
+            </a>
+          {% endfor %}
+        </div>
+      {% endfor %}
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

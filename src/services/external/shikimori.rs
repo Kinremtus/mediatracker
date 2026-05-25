@@ -42,8 +42,23 @@ where
 }
 
 #[derive(Debug, Deserialize)]
-struct ShikimoriImage {
-    original: Option<String>,
+pub struct ShikimoriImage {
+    pub original: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ShikiCalendarEntry {
+    pub next_episode: i32,
+    pub next_episode_at: chrono::DateTime<chrono::Utc>,
+    pub anime: ShikiCalendarAnime,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ShikiCalendarAnime {
+    pub id: i64,
+    pub name: String,
+    pub russian: Option<String>,
+    pub image: ShikimoriImage,
 }
 
 fn poster_url(original: Option<String>) -> Option<String> {
@@ -100,6 +115,13 @@ impl ShikimoriService {
             .collect();
 
         Ok(items)
+    }
+
+    pub async fn fetch_calendar(&self) -> Result<Vec<ShikiCalendarEntry>, anyhow::Error> {
+        let url = format!("{}/calendar", BASE_URL);
+        let response = self.client.get(&url).send().await?;
+        let entries: Vec<ShikiCalendarEntry> = response.json().await?;
+        Ok(entries)
     }
 
     pub async fn get_details(&self, id: &str) -> Result<CreateMediaItem, anyhow::Error> {
