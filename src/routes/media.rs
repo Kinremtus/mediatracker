@@ -11,6 +11,12 @@ use crate::models::media_item::CreateMediaItem;
 use super::home::SidebarStats;
 
 #[derive(Template)]
+#[template(path = "media_drawer_content.html")]
+struct MediaDrawerTemplate {
+    item: CreateMediaItem,
+}
+
+#[derive(Template)]
 #[template(path = "media_detail.html")]
 struct MediaDetailTemplate {
     username: String,
@@ -57,6 +63,34 @@ pub async fn get_media_detail(
             }
             .render()
             .unwrap(),
+        )
+        .into_response(),
+        Err(_) => Html("Not found".to_string()).into_response(),
+    }
+}
+
+pub async fn get_media_drawer_content(
+    _user: CurrentUser,
+    State(state): State<AppState>,
+    Path((provider, external_id)): Path<(String, String)>,
+    Query(params): Query<MediaDetailQuery>,
+) -> impl IntoResponse {
+    let item = match provider.as_str() {
+        "shikimori" => state.shikimori.get_details(&external_id).await,
+        "mal" => state.mal.get_details(&external_id).await,
+        "mangaupdates" => state.mangaupdates.get_details(&external_id).await,
+        "tmdb" => {
+            let media_type = params.media_type.as_deref().unwrap_or("movie");
+            state.tmdb.get_details(&external_id, media_type).await
+        }
+        "rawg" => state.rawg.get_details(&external_id).await,
+        "google_books" => state.google_books.get_details(&external_id).await,
+        _ => Err(anyhow::anyhow!("Unknown provider")),
+    };
+
+    match item {
+        Ok(item) => Html(
+            MediaDrawerTemplate { item }.render().unwrap()
         )
         .into_response(),
         Err(_) => Html("Not found".to_string()).into_response(),

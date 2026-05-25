@@ -39,6 +39,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/logout", axum::routing::post(home::post_logout))
         .route("/search", get(search::get_search))
         .route("/media/{provider}/{external_id}", get(media::get_media_detail))
+        .route("/api/media/{provider}/{external_id}", get(media::get_media_drawer_content))
         .route("/tracking", get(tracking::get_tracking_list).post(tracking::post_add_to_tracking))
         .route("/tracking/{id}", axum::routing::post(tracking::post_update_tracking))
         .route("/tracking/{id}/delete", axum::routing::post(tracking::post_delete_tracking))

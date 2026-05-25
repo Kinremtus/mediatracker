@@ -23,7 +23,7 @@
     {% else %}
       <div class="cards-grid">
         {% for item in in_progress %}
-          <a href="/media/{{ item.provider }}/{{ item.external_id }}"
+          <a @click.prevent="openMediaDrawer('{{ item.provider }}', '{{ item.external_id }}')" href="#"
              class="media-card">
             <div class="media-card-poster">
               <img src="{{ item.poster_url }}" alt="{{ item.title }}" loading="lazy">
