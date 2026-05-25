@@ -71,32 +71,33 @@ pub fn build_activity_calendar(counts: &HashMap<NaiveDate, i32>) -> ActivityCale
 
     let total_actions: i32 = counts.values().sum();
 
-    let month_labels: Vec<Option<&str>> = weeks
-        .iter()
-        .map(|week| {
-            week.iter()
-                .find_map(|day| day.map(|(date, _)| date))
-                .filter(|date| date.day() == 1)
-                .and_then(|date| MONTHS_SHORT.get((date.month() as usize).saturating_sub(1)).copied())
-        })
-        .collect();
-
     let num_weeks = weeks.len();
     let mut html = String::with_capacity(num_weeks * 7 * 80 + 512);
+
+    // All 12 months always visible (aligned to week columns where the 1st falls)
+    html.push_str(&format!(
+        r#"<div class="activity-months-row" style="grid-template-columns: auto repeat({num_weeks}, minmax(0, 1fr));"><div class="calendar-corner"></div><div class="activity-months-track" style="grid-column: 2 / -1; grid-template-columns: repeat({num_weeks}, minmax(0, 1fr));">"#
+    ));
+    for month in 1..=12 {
+        let first = NaiveDate::from_ymd_opt(year, month, 1).expect("valid month");
+        let week_idx = weeks.iter().position(|week| {
+            week.iter()
+                .any(|day| matches!(day, Some((date, _)) if *date == first))
+        });
+        if let Some(idx) = week_idx {
+            let label = MONTHS_SHORT[(month - 1) as usize];
+            html.push_str(&format!(
+                r#"<span class="calendar-month-label" style="grid-column-start:{}">{label}</span>"#,
+                idx + 1
+            ));
+        }
+    }
+    html.push_str("</div></div>");
+
     html.push_str(&format!(
         "<div class=\"activity-calendar-grid\" style=\"grid-template-columns: auto repeat({}, minmax(0, 1fr));\">",
         num_weeks
     ));
-
-    // Month labels row
-    html.push_str("<div class=\"calendar-corner\"></div>");
-    for (i, label) in month_labels.iter().enumerate() {
-        html.push_str(&format!("<div class=\"calendar-month-cell\" data-week=\"{i}\">"));
-        if let Some(l) = label {
-            html.push_str(&format!("<span class=\"calendar-month-label\">{l}</span>"));
-        }
-        html.push_str("</div>");
-    }
 
     // Day rows (Mon–Sun)
     for day_idx in 0..7 {
@@ -161,7 +162,12 @@ mod tests {
         counts.insert(day, 3);
 
         let cal = build_activity_calendar(&counts);
-        assert!(cal.html.contains("calendar-month-label"));
+        for month in MONTHS_SHORT {
+            assert!(
+                cal.html.contains(month),
+                "missing month label: {month}"
+            );
+        }
         assert!(cal.html.contains("level-3"));
         assert_eq!(cal.total_actions, 3);
     }

@@ -592,6 +592,32 @@ img {
     padding-bottom: 0.25rem;
 }
 
+.activity-months-row {
+    display: grid;
+    gap: 2px;
+    width: 100%;
+    min-width: 720px;
+    margin-bottom: 4px;
+}
+
+@media (min-width: 640px) {
+    .activity-months-row {
+        gap: 3px;
+        min-width: 0;
+    }
+}
+
+.activity-months-track {
+    display: grid;
+    position: relative;
+    min-height: 1rem;
+}
+
+.activity-months-track .calendar-month-label {
+    justify-self: start;
+    position: static;
+}
+
 .activity-calendar-grid {
     display: grid;
     gap: 2px;
@@ -618,15 +644,7 @@ img {
     height: 1rem;
 }
 
-.calendar-month-cell {
-    position: relative;
-    height: 1rem;
-}
-
 .calendar-month-label {
-    position: absolute;
-    bottom: 2px;
-    left: 0;
     white-space: nowrap;
     font-size: 9px;
     color: var(--muted-foreground);
