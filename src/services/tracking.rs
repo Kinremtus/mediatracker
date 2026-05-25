@@ -81,44 +81,38 @@ impl TrackingService {
         user_id: Uuid,
         data: &UpdateTracking,
     ) -> Result<TrackingEntry, anyhow::Error> {
-        let mut query = "UPDATE tracking_entries SET ".to_string();
-        let mut params = vec![];
-        let mut idx = 1;
-
-        if let Some(status) = &data.status {
-            query.push_str(&format!("status = ${}, ", idx));
-            params.push(status.clone());
-            idx += 1;
+        let mut qb = sqlx::QueryBuilder::new("UPDATE tracking_entries SET ");
+        {
+            let mut sep = qb.separated(", ");
+            let mut has_field = false;
+            if let Some(status) = &data.status {
+                sep.push("status = ");
+                sep.push_bind_unseparated(status);
+                has_field = true;
+            }
+            if let Some(rating) = data.rating {
+                sep.push("rating = ");
+                sep.push_bind_unseparated(rating);
+                has_field = true;
+            }
+            if let Some(progress) = data.progress {
+                sep.push("progress = ");
+                sep.push_bind_unseparated(progress);
+                has_field = true;
+            }
+            if !has_field {
+                return Err(anyhow::anyhow!("No fields to update"));
+            }
+            sep.push("updated_at = NOW()");
         }
-        if let Some(rating) = data.rating {
-            query.push_str(&format!("rating = ${}, ", idx));
-            params.push(rating.to_string());
-            idx += 1;
-        }
-        if let Some(progress) = data.progress {
-            query.push_str(&format!("progress = ${}, ", idx));
-            params.push(progress.to_string());
-            idx += 1;
-        }
+        qb.push(" WHERE id = ");
+        qb.push_bind(entry_id);
+        qb.push(" AND user_id = ");
+        qb.push_bind(user_id);
+        qb.push(" RETURNING *");
 
-        if params.is_empty() {
-            return Err(anyhow::anyhow!("No fields to update"));
-        }
-
-        // Remove trailing comma and space
-        query.pop();
-        query.pop();
-
-        query.push_str(&format!(
-            ", updated_at = NOW() WHERE id = ${} AND user_id = ${} RETURNING *",
-            idx,
-            idx + 1
-        ));
-
-        let entry = sqlx::query_as::<_, TrackingEntry>(&query)
-            .bind(params)
-            .bind(entry_id)
-            .bind(user_id)
+        let entry = qb
+            .build_query_as::<TrackingEntry>()
             .fetch_one(&self.db)
             .await?;
 
