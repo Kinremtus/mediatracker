@@ -501,6 +501,35 @@ img {
     opacity: 0.6;
 }
 
+/* --- Type Selector (Search) --- */
+.type-selector {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+}
+
+.type-btn {
+    padding: 0.5rem 1rem;
+    border-radius: var(--radius-xl);
+    font-size: 13px;
+    font-weight: 500;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--muted-foreground);
+    transition: all 0.15s ease;
+}
+
+.type-btn:hover {
+    border-color: var(--muted-foreground);
+}
+
+.type-btn.active {
+    background: var(--foreground);
+    color: var(--background);
+    border-color: var(--foreground);
+}
+
 /* --- Filter Bar (Dropdowns) --- */
 .filter-bar {
     display: flex;
