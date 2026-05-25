@@ -128,11 +128,30 @@ impl TrackingService {
     }
 
     pub async fn delete_entry(&self, entry_id: Uuid, user_id: Uuid) -> Result<(), anyhow::Error> {
-        sqlx::query("DELETE FROM tracking_entries WHERE id = $1 AND user_id = $2")
-            .bind(entry_id)
+        let media_id: Option<Uuid> = sqlx::query_scalar(
+            "SELECT media_id FROM tracking_entries WHERE id = $1 AND user_id = $2",
+        )
+        .bind(entry_id)
+        .bind(user_id)
+        .fetch_optional(&self.db)
+        .await?;
+
+        if let Some(media_id) = media_id {
+            let _ = sqlx::query(
+                "INSERT INTO activity_log (user_id, action, media_id) VALUES ($1, 'deleted', $2)",
+            )
             .bind(user_id)
+            .bind(media_id)
             .execute(&self.db)
-            .await?;
+            .await;
+
+            sqlx::query("DELETE FROM tracking_entries WHERE id = $1 AND user_id = $2")
+                .bind(entry_id)
+                .bind(user_id)
+                .execute(&self.db)
+                .await?;
+        }
+
         Ok(())
     }
 
