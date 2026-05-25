@@ -31,19 +31,14 @@
                     <svg class="sidebar-link-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
                     <span x-show="sidebarOpen || isMobile">Все списки</span>
                 </a>
-                <a href="/tracking?status=watching" class="sidebar-link {% if current_status == "watching" %}active{% endif %}">
+                <a href="/tracking?status=in_progress" class="sidebar-link {% if current_status == "in_progress" %}active{% endif %}">
                     <svg class="sidebar-link-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                    <span x-show="sidebarOpen || isMobile">Смотрю</span>
-                    <span class="sidebar-badge" x-show="sidebarOpen || isMobile">{% if stats.watching > 0 %}{{ stats.watching }}{% endif %}</span>
-                </a>
-                <a href="/tracking?status=reading" class="sidebar-link {% if current_status == "reading" %}active{% endif %}">
-                    <svg class="sidebar-link-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
-                    <span x-show="sidebarOpen || isMobile">Читаю</span>
-                    <span class="sidebar-badge" x-show="sidebarOpen || isMobile">{% if stats.reading > 0 %}{{ stats.reading }}{% endif %}</span>
+                    <span x-show="sidebarOpen || isMobile">В процессе</span>
+                    <span class="sidebar-badge" x-show="sidebarOpen || isMobile">{% if stats.in_progress > 0 %}{{ stats.in_progress }}{% endif %}</span>
                 </a>
                 <a href="/tracking?status=completed" class="sidebar-link {% if current_status == "completed" %}active{% endif %}">
                     <svg class="sidebar-link-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                    <span x-show="sidebarOpen || isMobile">Просмотрено</span>
+                    <span x-show="sidebarOpen || isMobile">Завершено</span>
                     <span class="sidebar-badge" x-show="sidebarOpen || isMobile">{% if stats.completed > 0 %}{{ stats.completed }}{% endif %}</span>
                 </a>
                 <a href="/tracking?status=planned" class="sidebar-link {% if current_status == "planned" %}active{% endif %}">

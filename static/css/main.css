@@ -18,11 +18,10 @@
     --radius-4xl: calc(var(--radius) * 2.6);
 
     /* Status colors (retro palette) */
-    --watching: #E8C49A;
+    --in_progress: #E8C49A;
     --completed: #7EC89B;
     --dropped: #C47D7D;
     --planned: #6B9DAD;
-    --reading: #B8A9E8;
     --paused: #D4A574;
 
     /* Light theme (default) */
@@ -462,11 +461,10 @@ img {
 }
 
 /* --- Status Colors --- */
-.status-watching { color: var(--watching); }
+.status-in_progress { color: var(--in_progress); }
 .status-completed { color: var(--completed); }
 .status-dropped { color: var(--dropped); }
 .status-planned { color: var(--planned); }
-.status-reading { color: var(--reading); }
 .status-paused { color: var(--paused); }
 
 /* --- Filter Tabs --- */
@@ -562,7 +560,7 @@ img {
     font-size: 16px;
 }
 
-.stat-card-icon.watching { background: color-mix(in srgb, var(--watching) 15%, transparent); color: var(--watching); }
+.stat-card-icon.in_progress { background: color-mix(in srgb, var(--in_progress) 15%, transparent); color: var(--in_progress); }
 .stat-card-icon.completed { background: color-mix(in srgb, var(--completed) 15%, transparent); color: var(--completed); }
 .stat-card-icon.dropped { background: color-mix(in srgb, var(--dropped) 15%, transparent); color: var(--dropped); }
 .stat-card-icon.planned { background: color-mix(in srgb, var(--planned) 15%, transparent); color: var(--planned); }
@@ -755,7 +753,7 @@ img {
 
 .progress-bar {
     height: 100%;
-    background: var(--watching);
+    background: var(--in_progress);
     border-radius: 3px;
     transition: width 0.3s ease;
 }
@@ -791,11 +789,10 @@ img {
     transition: width 0.3s ease;
 }
 
-.status-bar.watching { background: var(--watching); }
+.status-bar.in_progress { background: var(--in_progress); }
 .status-bar.completed { background: var(--completed); }
 .status-bar.dropped { background: var(--dropped); }
 .status-bar.planned { background: var(--planned); }
-.status-bar.reading { background: var(--reading); }
 
 .status-count {
     width: 30px;
@@ -1175,7 +1172,7 @@ img {
 }
 
 .category-placeholder a {
-    color: var(--watching);
+    color: var(--in_progress);
     font-weight: 500;
 }
 

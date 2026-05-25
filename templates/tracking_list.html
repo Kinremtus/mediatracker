@@ -60,9 +60,8 @@
             <div class="tracking-card-status" @click.outside="statusOpen = false">
                 <button @click="statusOpen = !statusOpen" class="tracking-status-btn" style="color: var(--{{ entry_with_media.entry.status }});">
                     {% match entry_with_media.entry.status.as_str() %}
-                    {% when "watching" %}Смотрю
-                    {% when "reading" %}Читаю
-                    {% when "completed" %}Просмотрено
+                    {% when "in_progress" %}В процессе
+                    {% when "completed" %}Завершено
                     {% when "planned" %}Запланировано
                     {% when "dropped" %}Брошено
                     {% else %}{{ entry_with_media.entry.status }}
@@ -74,20 +73,14 @@
                     <form method="POST" action="/tracking/{{ entry_with_media.entry.id }}" style="margin: 0;">
                         {% if let Some(r) = entry_with_media.entry.rating %}<input type="hidden" name="rating" value="{{ r }}">{% endif %}
                         <input type="hidden" name="progress" value="{{ entry_with_media.entry.progress }}">
-                        <input type="hidden" name="status" value="watching">
-                        <button type="submit" class="tracking-status-option">Смотрю</button>
-                    </form>
-                    <form method="POST" action="/tracking/{{ entry_with_media.entry.id }}" style="margin: 0;">
-                        {% if let Some(r) = entry_with_media.entry.rating %}<input type="hidden" name="rating" value="{{ r }}">{% endif %}
-                        <input type="hidden" name="progress" value="{{ entry_with_media.entry.progress }}">
-                        <input type="hidden" name="status" value="reading">
-                        <button type="submit" class="tracking-status-option">Читаю</button>
+                        <input type="hidden" name="status" value="in_progress">
+                        <button type="submit" class="tracking-status-option">В процессе</button>
                     </form>
                     <form method="POST" action="/tracking/{{ entry_with_media.entry.id }}" style="margin: 0;">
                         {% if let Some(r) = entry_with_media.entry.rating %}<input type="hidden" name="rating" value="{{ r }}">{% endif %}
                         <input type="hidden" name="progress" value="{{ entry_with_media.entry.progress }}">
                         <input type="hidden" name="status" value="completed">
-                        <button type="submit" class="tracking-status-option">Просмотрено</button>
+                        <button type="submit" class="tracking-status-option">Завершено</button>
                     </form>
                     <form method="POST" action="/tracking/{{ entry_with_media.entry.id }}" style="margin: 0;">
                         {% if let Some(r) = entry_with_media.entry.rating %}<input type="hidden" name="rating" value="{{ r }}">{% endif %}
@@ -111,7 +104,7 @@
 <div class="empty-state">
     <div class="empty-state-icon"></div>
     <p class="empty-state-text">Список пуст</p>
-    <p class="empty-state-sub">Добавьте тайтлы через <a href="/search" style="color: var(--watching);">поиск</a></p>
+    <p class="empty-state-sub">Добавьте тайтлы через <a href="/search" style="color: var(--in_progress);">поиск</a></p>
 </div>
 {% endif %}
 {% endblock %}
