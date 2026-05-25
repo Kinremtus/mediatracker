@@ -48,7 +48,7 @@
         </form>
 
         <!-- Poster -->
-        <a href="/media/{{ entry_with_media.media.provider }}/{{ entry_with_media.media.external_id }}" class="tracking-card-poster">
+        <a @click.prevent="openMediaDrawer('{{ entry_with_media.media.provider }}', '{{ entry_with_media.media.external_id }}')" href="#" class="tracking-card-poster">
             {% if entry_with_media.media.poster_url.is_some() %}
             <img src="{{ entry_with_media.media.poster_url.as_ref().unwrap() }}" alt="{{ entry_with_media.media.title }}" loading="lazy">
             {% else %}
@@ -61,7 +61,7 @@
 
         <!-- Info -->
         <div class="tracking-card-info">
-            <a href="/media/{{ entry_with_media.media.provider }}/{{ entry_with_media.media.external_id }}" class="tracking-card-title">
+            <a @click.prevent="openMediaDrawer('{{ entry_with_media.media.provider }}', '{{ entry_with_media.media.external_id }}')" href="#" class="tracking-card-title">
                 {{ entry_with_media.media.title }}
             </a>
 

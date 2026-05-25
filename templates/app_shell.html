@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block body %}
-<div class="app-shell" x-data="{ sidebarOpen: typeof window !== 'undefined' && window.innerWidth > 768, isMobile: typeof window !== 'undefined' && window.innerWidth <= 768 }" x-init="$watch('sidebarOpen', v => { if (v && isMobile) document.body.style.overflow = 'hidden'; else document.body.style.overflow = ''; })">
+<div class="app-shell" x-data="{ sidebarOpen: typeof window !== 'undefined' && window.innerWidth > 768, isMobile: typeof window !== 'undefined' && window.innerWidth <= 768, drawerOpen: false, drawerContent: '' }" x-init="$watch('sidebarOpen', v => { if (v && isMobile) document.body.style.overflow = 'hidden'; else document.body.style.overflow = ''; })">
     <!-- Sidebar Overlay (mobile) -->
     <div class="sidebar-overlay" x-show="sidebarOpen && isMobile" @click="sidebarOpen = false" x-cloak></div>
 
@@ -104,6 +104,21 @@
             {% block content %}{% endblock %}
         </div>
     </main>
+
+    <!-- Media Drawer -->
+    <div class="media-drawer-overlay" x-show="drawerOpen" @click="drawerOpen = false; document.body.style.overflow = ''" x-cloak></div>
+    <div class="media-drawer-panel"
+         x-show="drawerOpen"
+         x-transition:enter="media-drawer-enter"
+         x-transition:enter-start="media-drawer-enter-start"
+         x-transition:enter-end="media-drawer-enter-end"
+         x-transition:leave="media-drawer-leave"
+         x-transition:leave-start="media-drawer-leave-start"
+         x-transition:leave-end="media-drawer-leave-end"
+         x-cloak>
+        <button class="media-drawer-close" @click="drawerOpen = false; document.body.style.overflow = ''">✕</button>
+        <div class="media-drawer-content" x-html="drawerContent"></div>
+    </div>
 </div>
 
 <script>
@@ -114,6 +129,21 @@ window.addEventListener('resize', () => { window.isMobile = window.innerWidth <=
 function setTheme(t) {
     localStorage.setItem('mediatracker-theme', t);
     document.documentElement.className = t;
+}
+
+function openMediaDrawer(provider, externalId, mediaType) {
+    let url = `/api/media/${provider}/${externalId}`;
+    if (mediaType) url += `?media_type=${mediaType}`;
+    fetch(url)
+        .then(r => r.text())
+        .then(html => {
+            const appShell = document.querySelector('.app-shell');
+            const data = Alpine.$data(appShell);
+            data.drawerContent = html;
+            data.drawerOpen = true;
+            document.body.style.overflow = 'hidden';
+        })
+        .catch(e => console.error('Failed to load media details', e));
 }
 </script>
 {% endblock %}

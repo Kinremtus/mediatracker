@@ -30,7 +30,7 @@
 {% if !results.is_empty() %}
 <div class="cards-grid">
     {% for item in results %}
-    <a href="/media/{{ item.provider }}/{{ item.external_id }}?media_type={{ item.media_type }}" class="media-card">
+    <a @click.prevent="openMediaDrawer('{{ item.provider }}', '{{ item.external_id }}', '{{ item.media_type }}')" href="#" class="media-card">
         <div class="media-card-poster">
             {% if item.poster_url.is_some() %}
             <img src="{{ item.poster_url.as_ref().unwrap() }}" alt="{{ item.title }}" loading="lazy">
