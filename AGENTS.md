@@ -123,11 +123,11 @@ docker compose exec db psql -U Kin -d tracker    # psql console
   - Templates: `templates/`
   - Static: `static/`
 - **Routers**: `src/routes/` — auth, home, media, search, stats, tracking, settings
-- **Services**: `src/services/` — shikimori, mangaupdates, tmdb, rawg, google_books, auth, tracking, stats
+- **Services**: `src/services/` — shikimori, mal (Jikan), mangaupdates, tmdb, rawg, google_books, auth, tracking, stats
 - **External Providers**:
-  - `anime` → Shikimori
+  - `anime` → Shikimori + MAL (Jikan v4, без ключа)
   - `manga/manhwa/manhua/novels/other-comics` → MangaUpdates (фильтрация по типу)
-  - `movies/tv/dramas/cartoons/animated-movies` → TMDB (фильтрация по жанрам + пост-фильтрация)
+  - `movies/tv/dramas/cartoons/animated-movies` → TMDB (IMDb — позже)
   - `games` → RAWG
   - `books` → Google Books
 

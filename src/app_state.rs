@@ -2,6 +2,7 @@ use sqlx::PgPool;
 
 use crate::services::auth::AuthService;
 use crate::services::external::google_books::GoogleBooksService;
+use crate::services::external::mal::MalService;
 use crate::services::external::mangaupdates::MangaUpdatesService;
 use crate::services::external::rawg::RawgService;
 use crate::services::external::shikimori::ShikimoriService;
@@ -14,6 +15,7 @@ pub struct AppState {
     pub db: PgPool,
     pub auth: AuthService,
     pub shikimori: ShikimoriService,
+    pub mal: MalService,
     pub mangaupdates: MangaUpdatesService,
     pub tmdb: TmdbService,
     pub rawg: RawgService,
@@ -32,6 +34,7 @@ impl AppState {
         sqlx::migrate!("./migrations").run(&db).await?;
         let auth = AuthService::new(db.clone());
         let shikimori = ShikimoriService::new();
+        let mal = MalService::new();
         let mangaupdates = MangaUpdatesService::new();
         let tmdb = TmdbService::new(tmdb_api_key.to_string());
         let rawg = RawgService::new(rawg_api_key.to_string());
@@ -42,6 +45,7 @@ impl AppState {
             db,
             auth,
             shikimori,
+            mal,
             mangaupdates,
             tmdb,
             rawg,

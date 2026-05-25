@@ -6,6 +6,11 @@ use crate::models::media_item::CreateMediaItem;
 const BASE_URL: &str = "https://api.mangaupdates.com/v1";
 
 #[derive(Debug, Deserialize)]
+struct MangaUpdatesSearchResponse {
+    results: Vec<MangaUpdatesSearchResult>,
+}
+
+#[derive(Debug, Deserialize)]
 struct MangaUpdatesSearchResult {
     record: MangaUpdatesRecord,
 }
@@ -63,7 +68,8 @@ impl MangaUpdatesService {
             .send()
             .await?;
 
-        let results: Vec<MangaUpdatesSearchResult> = response.json().await?;
+        let body: MangaUpdatesSearchResponse = response.json().await?;
+        let results = body.results;
 
         let items = results
             .into_iter()
@@ -141,5 +147,18 @@ impl MangaUpdatesService {
             status: None,
             score: r.bayesian_rating,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_search_response_wrapper() {
+        let json = r#"{"total_hits":1,"page":1,"per_page":1,"results":[{"record":{"series_id":1,"title":"One Piece","type":"Manga","bayesian_rating":8.5}}]}"#;
+        let body: MangaUpdatesSearchResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(body.results.len(), 1);
+        assert_eq!(body.results[0].record.title, "One Piece");
     }
 }
