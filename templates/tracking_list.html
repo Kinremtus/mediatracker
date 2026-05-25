@@ -16,7 +16,7 @@
     {% for entry_with_media in entries %}
     <div class="tracking-card" x-data="{ statusOpen: false }">
         <!-- Delete button -->
-        <form method="DELETE" action="/tracking/{{ entry_with_media.entry.id }}" style="margin: 0;">
+        <form method="POST" action="/tracking/{{ entry_with_media.entry.id }}/delete" style="margin: 0;">
             <button type="submit" class="tracking-card-delete" title="Удалить">✕</button>
         </form>
 
