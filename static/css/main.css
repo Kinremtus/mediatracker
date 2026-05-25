@@ -1695,37 +1695,44 @@ body.drawer-open {
 /* --- Drawer Status Chips --- */
 .drawer-status-chips {
     display: flex;
-    flex-wrap: wrap;
     gap: 0.375rem;
     margin-bottom: 1rem;
 }
 
 .drawer-status-chip {
     flex: 1;
-    min-width: calc(50% - 0.375rem);
-    padding: 0.5rem 0.625rem;
-    font-size: 12px;
-    font-weight: 500;
+    padding: 0.25rem 0.375rem;
+    font-size: 11px;
+    font-weight: 600;
     text-align: center;
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
+    background: transparent;
+    border: 1.5px solid var(--border);
+    border-radius: 9999px;
     cursor: pointer;
-    color: var(--foreground);
     font-family: inherit;
     transition: all 0.15s ease;
-    line-height: 1.2;
+    white-space: nowrap;
+    line-height: 1.4;
+    color: var(--chip-color);
+    border-color: color-mix(in srgb, var(--chip-color) 40%, var(--border));
+    opacity: 0.75;
 }
 
+.drawer-status-chip.planned { --chip-color: var(--planned); }
+.drawer-status-chip.in_progress { --chip-color: var(--in_progress); }
+.drawer-status-chip.completed { --chip-color: var(--completed); }
+.drawer-status-chip.dropped { --chip-color: var(--dropped); }
+
 .drawer-status-chip:hover {
-    background: var(--secondary);
-    border-color: var(--ring);
+    opacity: 1;
+    background: color-mix(in srgb, var(--chip-color) 10%, transparent);
 }
 
 .drawer-status-chip.active {
-    background: var(--primary);
-    color: var(--primary-foreground);
-    border-color: var(--primary);
+    opacity: 1;
+    background: var(--chip-color);
+    color: white;
+    border-color: var(--chip-color);
 }
 
 /* --- Settings Page --- */
