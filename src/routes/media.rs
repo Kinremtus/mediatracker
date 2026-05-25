@@ -33,12 +33,14 @@ pub async fn get_media_detail(
 ) -> impl IntoResponse {
     let item = match provider.as_str() {
         "shikimori" => state.shikimori.get_details(&external_id).await,
+        "mal" => state.mal.get_details(&external_id).await,
         "mangaupdates" => state.mangaupdates.get_details(&external_id).await,
         "tmdb" => {
             let media_type = params.media_type.as_deref().unwrap_or("movie");
             state.tmdb.get_details(&external_id, media_type).await
         }
         "rawg" => state.rawg.get_details(&external_id).await,
+        "google_books" => state.google_books.get_details(&external_id).await,
         _ => Err(anyhow::anyhow!("Unknown provider")),
     };
 

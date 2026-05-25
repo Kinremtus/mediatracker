@@ -8,6 +8,7 @@ use serde::Deserialize;
 use crate::app_state::AppState;
 use crate::middleware::CurrentUser;
 use crate::models::media_item::CreateMediaItem;
+use crate::services::search;
 use super::home::SidebarStats;
 
 #[derive(Template)]
@@ -36,38 +37,12 @@ pub async fn get_search(
 ) -> Html<String> {
     let query = params.q.unwrap_or_default();
     let search_type = params.search_type.unwrap_or_default();
-    let mut results = Vec::new();
 
-    if !query.is_empty() {
-        results = match search_type.as_str() {
-            "anime" => state.shikimori.search(&query).await.unwrap_or_default(),
-            "manga" => state.mangaupdates.search_by_type(&query, &["Manga"]).await.unwrap_or_default(),
-            "manhwa" => state.mangaupdates.search_by_type(&query, &["Manhwa"]).await.unwrap_or_default(),
-            "manhua" => state.mangaupdates.search_by_type(&query, &["Manhua"]).await.unwrap_or_default(),
-            "novel" => state.mangaupdates.search_by_type(&query, &["novel"]).await.unwrap_or_default(),
-            "other-comics" => state.mangaupdates.search_by_type(&query, &["OEL", "Doujinshi", "Filipino", "Indonesian", "Thai", "Vietnamese", "Malaysian"]).await.unwrap_or_default(),
-            "movie" => state.tmdb.search_movies(&query, None).await.unwrap_or_default(),
-            "series" => state.tmdb.search_tv(&query, None).await.unwrap_or_default(),
-            "dramas" => state.tmdb.search_tv(&query, Some(18)).await.unwrap_or_default(),
-            "cartoons" => state.tmdb.search_tv(&query, Some(16)).await.unwrap_or_default(),
-            "animated-movies" => state.tmdb.search_movies(&query, Some(16)).await.unwrap_or_default(),
-            "game" => state.rawg.search(&query).await.unwrap_or_default(),
-            "book" => state.google_books.search(&query).await.unwrap_or_default(),
-            _ => {
-                // Default: search all providers
-                let mut all = Vec::new();
-                if let Ok(r) = state.shikimori.search(&query).await { all.extend(r); }
-                if let Ok(r) = state.mangaupdates.search(&query).await { all.extend(r); }
-                if !state.tmdb.api_key.is_empty() {
-                    if let Ok(r) = state.tmdb.search(&query).await { all.extend(r); }
-                }
-                if !state.rawg.api_key.is_empty() {
-                    if let Ok(r) = state.rawg.search(&query).await { all.extend(r); }
-                }
-                all
-            }
-        };
-    }
+    let results = if query.is_empty() {
+        Vec::new()
+    } else {
+        search::by_media_type(&state, &query, &search_type).await
+    };
 
     let stats = get_sidebar_stats(&state, user.id).await;
 

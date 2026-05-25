@@ -1,21 +1,44 @@
 use reqwest::Client;
 use serde::Deserialize;
+use url::Url;
 
 use crate::models::media_item::CreateMediaItem;
 
 const BASE_URL: &str = "https://shikimori.one/api";
+const USER_AGENT: &str = "MediaTracker/0.1 (+https://github.com/Kinremtus/mediatracker)";
 
 #[derive(Debug, Deserialize)]
 struct ShikimoriSearchResult {
     id: i64,
     name: String,
     name_en: Option<String>,
+    russian: Option<String>,
     image: Option<ShikimoriImage>,
     kind: Option<String>,
+    #[serde(deserialize_with = "deserialize_optional_f64")]
     score: Option<f64>,
     status: Option<String>,
     episodes: Option<i32>,
     description: Option<String>,
+}
+
+fn deserialize_optional_f64<'de, D>(deserializer: D) -> Result<Option<f64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value: Option<serde_json::Value> = Option::deserialize(deserializer)?;
+    match value {
+        None | Some(serde_json::Value::Null) => Ok(None),
+        Some(serde_json::Value::Number(n)) => n
+            .as_f64()
+            .map(Some)
+            .ok_or_else(|| serde::de::Error::custom("invalid number")),
+        Some(serde_json::Value::String(s)) => s
+            .parse()
+            .map(Some)
+            .map_err(serde::de::Error::custom),
+        _ => Err(serde::de::Error::custom("expected number or string")),
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -41,13 +64,17 @@ pub struct ShikimoriService {
 impl ShikimoriService {
     pub fn new() -> Self {
         Self {
-            client: Client::new(),
+            client: Client::builder()
+                .user_agent(USER_AGENT)
+                .build()
+                .expect("reqwest client"),
         }
     }
 
     pub async fn search(&self, query: &str) -> Result<Vec<CreateMediaItem>, anyhow::Error> {
-        let url = format!("{}/animes?search={}", BASE_URL, query);
-        let response = self.client.get(&url).send().await?;
+        let mut url = Url::parse(&format!("{}/animes", BASE_URL))?;
+        url.query_pairs_mut().append_pair("search", query);
+        let response = self.client.get(url).send().await?;
         let results: Vec<ShikimoriSearchResult> = response.json().await?;
 
         let items = results
@@ -63,7 +90,7 @@ impl ShikimoriService {
                 title: r.name,
                 title_english: r.name_en,
                 title_native: None,
-                title_russian: None,
+                title_russian: r.russian,
                 poster_url: poster_url(r.image.and_then(|img| img.original)),
                 episodes: r.episodes,
                 description: r.description,
@@ -91,12 +118,25 @@ impl ShikimoriService {
             title: r.name,
             title_english: r.name_en,
             title_native: None,
-            title_russian: None,
+            title_russian: r.russian,
             poster_url: poster_url(r.image.and_then(|img| img.original)),
             episodes: r.episodes,
             description: r.description,
             status: r.status,
             score: r.score,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_search_response_with_string_score() {
+        let json = r#"[{"id":20,"name":"Naruto","russian":"Наруто","kind":"tv","score":"8.02","status":"released","episodes":220}]"#;
+        let results: Vec<ShikimoriSearchResult> = serde_json::from_str(json).unwrap();
+        assert_eq!(results[0].score, Some(8.02));
+        assert_eq!(results[0].russian.as_deref(), Some("Наруто"));
     }
 }
