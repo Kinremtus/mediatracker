@@ -7,6 +7,7 @@ use crate::services::external::mangaupdates::MangaUpdatesService;
 use crate::services::external::rawg::RawgService;
 use crate::services::external::shikimori::ShikimoriService;
 use crate::services::external::tmdb::TmdbService;
+use crate::services::release_schedule::ReleaseScheduleService;
 use crate::services::stats::StatsService;
 use crate::services::tracking::TrackingService;
 
@@ -21,6 +22,7 @@ pub struct AppState {
     pub rawg: RawgService,
     pub google_books: GoogleBooksService,
     pub tracking: TrackingService,
+    pub release_schedule: ReleaseScheduleService,
     pub stats: StatsService,
 }
 
@@ -40,6 +42,7 @@ impl AppState {
         let rawg = RawgService::new(rawg_api_key.to_string());
         let google_books = GoogleBooksService::new();
         let tracking = TrackingService::new(db.clone());
+        let release_schedule = ReleaseScheduleService::new(db.clone());
         let stats = StatsService::new(db.clone());
         Ok(Self {
             db,
@@ -51,6 +54,7 @@ impl AppState {
             rawg,
             google_books,
             tracking,
+            release_schedule,
             stats,
         })
     }

@@ -155,6 +155,30 @@ impl TrackingService {
         Ok(())
     }
 
+    pub async fn get_status_counts(&self, user_id: Uuid) -> Result<(i32, i32, i32, i32), anyhow::Error> {
+        let rows: Vec<(String, i32)> = sqlx::query_as(
+            "SELECT status, COUNT(*)::int as count FROM tracking_entries WHERE user_id = $1 GROUP BY status",
+        )
+        .bind(user_id)
+        .fetch_all(&self.db)
+        .await?;
+
+        let mut in_progress = 0i32;
+        let mut completed = 0i32;
+        let mut planned = 0i32;
+        let mut dropped = 0i32;
+        for (status, count) in rows {
+            match status.as_str() {
+                "in_progress" => in_progress = count,
+                "completed" => completed = count,
+                "planned" => planned = count,
+                "dropped" => dropped = count,
+                _ => {}
+            }
+        }
+        Ok((in_progress, completed, planned, dropped))
+    }
+
     pub async fn get_user_entries(
         &self,
         user_id: Uuid,

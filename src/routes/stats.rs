@@ -112,17 +112,6 @@ pub async fn get_stats(
 }
 
 async fn get_sidebar_stats(state: &AppState, user_id: uuid::Uuid) -> SidebarStats {
-    let mut stats = SidebarStats::default();
-    if let Ok(entries) = state.tracking.get_user_entries(user_id, None, None).await {
-        for e in entries {
-            match e.entry.status.as_str() {
-                "in_progress" => stats.in_progress += 1,
-                "completed" => stats.completed += 1,
-                "planned" => stats.planned += 1,
-                "dropped" => stats.dropped += 1,
-                _ => {}
-            }
-        }
-    }
-    stats
+    let (ip, cp, pp, dp) = state.tracking.get_status_counts(user_id).await.unwrap_or_default();
+    SidebarStats { in_progress: ip, completed: cp, planned: pp, dropped: dp }
 }

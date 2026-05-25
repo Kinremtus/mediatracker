@@ -3,3 +3,4 @@ pub mod session;
 pub mod media_item;
 pub mod tracking_entry;
 pub mod stats;
+pub mod schedule;
