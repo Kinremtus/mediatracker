@@ -18,50 +18,23 @@ struct TrackingListTemplate {
     stats: SidebarStats,
     active_page: String,
     entries: Vec<TrackingEntryWithMedia>,
-    type_buttons: Vec<TypeButton>,
     status_label: String,
     current_status: String,
     current_media_type: String,
+    media_types: Vec<MediaTypeItem>,
+    statuses: Vec<StatusItem>,
+    current_type_label: String,
 }
 
-struct TypeButton {
+struct MediaTypeItem {
+    key: String,
     icon: String,
     label: String,
-    url: String,
-    is_active: bool,
 }
 
-fn get_type_buttons(current_status: &str, current_media_type: &str) -> Vec<TypeButton> {
-    let all_types = get_all_media_types();
-    let mut buttons = Vec::new();
-
-    let all_url = if current_status.is_empty() {
-        "/tracking".to_string()
-    } else {
-        format!("/tracking?status={}", current_status)
-    };
-    buttons.push(TypeButton {
-        icon: "".to_string(),
-        label: "Все".to_string(),
-        url: all_url,
-        is_active: current_media_type.is_empty(),
-    });
-
-    for (mt, icon, label) in all_types {
-        let url = if current_status.is_empty() {
-            format!("/tracking?type={}", mt)
-        } else {
-            format!("/tracking?status={}&type={}", current_status, mt)
-        };
-        buttons.push(TypeButton {
-            icon: icon.to_string(),
-            label: label.to_string(),
-            url,
-            is_active: current_media_type == mt,
-        });
-    }
-
-    buttons
+struct StatusItem {
+    key: String,
+    label: String,
 }
 
 fn get_all_media_types() -> Vec<(&'static str, &'static str, &'static str)> {
@@ -110,18 +83,44 @@ pub async fn get_tracking_list(
     let stats = get_sidebar_stats(&state, user.id).await;
     let current_status = params.status.unwrap_or_default();
     let current_media_type = params.media_type.unwrap_or_default();
-    let type_buttons = get_type_buttons(&current_status, &current_media_type);
     let status_label = get_status_label(&current_status);
+
+    let all_types = get_all_media_types();
+    let current_type_label = if current_media_type.is_empty() {
+        "Все".to_string()
+    } else {
+        all_types.iter()
+            .find(|(k, _, _)| *k == current_media_type)
+            .map(|(_, _, l)| l.to_string())
+            .unwrap_or_default()
+    };
+    let media_types: Vec<MediaTypeItem> = all_types.into_iter().map(|(k, i, l)| MediaTypeItem {
+        key: k.to_string(),
+        icon: i.to_string(),
+        label: l.to_string(),
+    }).collect();
+    let statuses: Vec<StatusItem> = vec![
+        ("", "Все списки"),
+        ("in_progress", "В процессе"),
+        ("completed", "Завершено"),
+        ("planned", "Запланировано"),
+        ("dropped", "Брошено"),
+    ].into_iter().map(|(k, l)| StatusItem {
+        key: k.to_string(),
+        label: l.to_string(),
+    }).collect();
 
     TrackingListTemplate {
         username: user.username,
         stats,
         active_page: "tracking".to_string(),
         entries,
-        type_buttons,
         status_label,
         current_status,
         current_media_type,
+        media_types,
+        statuses,
+        current_type_label,
     }
     .render()
     .unwrap()
