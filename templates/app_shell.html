@@ -23,6 +23,10 @@
                     <svg class="sidebar-link-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                     <span x-show="sidebarOpen || isMobile">Поиск</span>
                 </a>
+                <a href="/tracking?status=in_progress" class="sidebar-link {% if active_page == "tracking" %}active{% endif %}">
+                    <svg class="sidebar-link-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    <span x-show="sidebarOpen || isMobile">Отслеживаемое</span>
+                </a>
             </div>
             <div class="sidebar-separator" x-show="sidebarOpen || isMobile"></div>
             <div class="sidebar-section">
