@@ -5,9 +5,14 @@ use axum::{
 };
 use askama::filters::Safe;
 
+use std::collections::HashMap;
+
+use chrono::NaiveDate;
+
 use crate::app_state::AppState;
 use crate::middleware::CurrentUser;
 use crate::models::stats::{StatsOverview, TitleProgress};
+use crate::utils::activity_calendar::build_activity_calendar;
 use super::home::SidebarStats;
 
 fn translate_status(status: &str) -> String {
@@ -49,7 +54,8 @@ struct StatsTemplate {
     overview: StatsOverview,
     status_labels: Vec<(String, String, i32, i32)>,
     top_category_label: String,
-    activity_count: usize,
+    activity_total: i32,
+    activity_year: i32,
     progress: Vec<TitleProgress>,
     progress_count: usize,
     calendar_html: Safe<String>,
@@ -61,11 +67,15 @@ pub async fn get_stats(
     State(state): State<AppState>,
 ) -> Html<String> {
     let mut overview = state.stats.get_overview(user.id).await.unwrap_or_default();
-    let activity = state.stats.get_activity(user.id).await.unwrap_or_default();
+    let activity_by_day: HashMap<NaiveDate, i32> = state
+        .stats
+        .get_activity_by_day(user.id)
+        .await
+        .unwrap_or_default();
     let progress = state.stats.get_title_progress(user.id).await.unwrap_or_default();
     let sidebar_stats = get_sidebar_stats(&state, user.id).await;
 
-    let activity_count = activity.len();
+    let calendar = build_activity_calendar(&activity_by_day);
     let progress_count = progress.len();
 
     // Calculate percentages for status counts
@@ -83,23 +93,6 @@ pub async fn get_stats(
     // Translate top category
     let top_category_label = overview.top_category.as_ref().map(|t| translate_media_type(t)).unwrap_or_else(|| "—".to_string());
 
-    // Generate calendar HTML
-    let mut calendar_html = String::from("<div class=\"calendar-grid\">");
-    for i in 0..53 {
-        calendar_html.push_str("<div class=\"calendar-week\">");
-        for j in 0..7 {
-            let idx = i * 7 + j;
-            if idx < activity_count {
-                let level = (idx % 4) + 1;
-                calendar_html.push_str(&format!("<div class=\"calendar-day level-{}\"></div>", level));
-            } else {
-                calendar_html.push_str("<div class=\"calendar-day\"></div>");
-            }
-        }
-        calendar_html.push_str("</div>");
-    }
-    calendar_html.push_str("</div>");
-
     StatsTemplate {
         username: user.username,
         stats: sidebar_stats,
@@ -107,10 +100,11 @@ pub async fn get_stats(
         overview,
         status_labels,
         top_category_label,
-        activity_count,
+        activity_total: calendar.total_actions,
+        activity_year: calendar.year,
         progress,
         progress_count,
-        calendar_html: Safe(calendar_html),
+        calendar_html: Safe(calendar.html),
         current_status: String::new(),
     }
     .render()

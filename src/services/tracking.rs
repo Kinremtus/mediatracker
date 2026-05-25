@@ -64,6 +64,14 @@ impl TrackingService {
         .fetch_one(&self.db)
         .await?;
 
+        let _ = sqlx::query(
+            "INSERT INTO activity_log (user_id, action, media_id) VALUES ($1, 'added', $2)",
+        )
+        .bind(user_id)
+        .bind(media_id)
+        .execute(&self.db)
+        .await;
+
         Ok(entry)
     }
 
@@ -113,6 +121,14 @@ impl TrackingService {
             .bind(user_id)
             .fetch_one(&self.db)
             .await?;
+
+        let _ = sqlx::query(
+            "INSERT INTO activity_log (user_id, action, media_id) VALUES ($1, 'updated', $2)",
+        )
+        .bind(user_id)
+        .bind(entry.media_id)
+        .execute(&self.db)
+        .await;
 
         Ok(entry)
     }

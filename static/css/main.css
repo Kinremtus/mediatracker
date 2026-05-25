@@ -579,34 +579,129 @@ img {
     margin-top: 0.25rem;
 }
 
-/* --- Activity Calendar (GitHub-style) --- */
+/* --- Activity Calendar (GitHub-style, legacy ActivityGrid) --- */
+.activity-calendar-subtitle {
+    font-size: 13px;
+    color: var(--muted-foreground);
+    margin-bottom: 1rem;
+}
+
 .activity-calendar {
-    margin-top: 1.5rem;
+    margin-top: 0.5rem;
     overflow-x: auto;
+    padding-bottom: 0.25rem;
 }
 
-.calendar-grid {
+.activity-calendar-grid {
+    display: grid;
+    gap: 2px;
+    width: 100%;
+    min-width: 720px;
+}
+
+@media (min-width: 640px) {
+    .activity-calendar-grid {
+        gap: 3px;
+        min-width: 0;
+    }
+}
+
+.calendar-corner,
+.calendar-month-cell,
+.calendar-day-label,
+.calendar-day,
+.calendar-day-empty {
+    min-width: 0;
+}
+
+.calendar-corner {
+    height: 1rem;
+}
+
+.calendar-month-cell {
+    position: relative;
+    height: 1rem;
+}
+
+.calendar-month-label {
+    position: absolute;
+    bottom: 2px;
+    left: 0;
+    white-space: nowrap;
+    font-size: 9px;
+    color: var(--muted-foreground);
+    line-height: 1;
+}
+
+@media (min-width: 640px) {
+    .calendar-month-label {
+        font-size: 10px;
+    }
+}
+
+.calendar-day-label {
     display: flex;
-    gap: 3px;
+    align-items: center;
+    justify-content: flex-end;
+    padding-right: 0.5rem;
+    font-size: 9px;
+    color: var(--muted-foreground);
 }
 
-.calendar-week {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
+@media (min-width: 640px) {
+    .calendar-day-label {
+        font-size: 10px;
+    }
 }
 
-.calendar-day {
-    width: 12px;
-    height: 12px;
-    background: var(--muted);
+.calendar-day,
+.calendar-day-empty {
+    aspect-ratio: 1;
+    width: 100%;
     border-radius: 2px;
 }
 
-.calendar-day.level-1 { background: oklch(0.35 0.1 280 / 0.5); }
-.calendar-day.level-2 { background: oklch(0.45 0.15 280 / 0.6); }
-.calendar-day.level-3 { background: oklch(0.55 0.2 280 / 0.7); }
-.calendar-day.level-4 { background: oklch(0.65 0.25 280 / 0.8); }
+.calendar-day-empty {
+    background: transparent;
+}
+
+.calendar-day {
+    background: var(--muted);
+    cursor: default;
+    transition: background 0.15s ease;
+}
+
+.calendar-day:hover {
+    outline: 1px solid var(--border);
+    outline-offset: 1px;
+}
+
+.calendar-day.level-1 { background: oklch(0.32 0.12 300); }
+.calendar-day.level-2 { background: oklch(0.42 0.16 300); }
+.calendar-day.level-3 { background: oklch(0.52 0.2 300); }
+.calendar-day.level-4 { background: oklch(0.62 0.22 300); }
+
+.activity-calendar-legend {
+    margin-top: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    font-size: 10px;
+    color: var(--muted-foreground);
+}
+
+.activity-calendar-legend .legend-cells {
+    display: flex;
+    gap: 3px;
+}
+
+.activity-calendar-legend .calendar-day {
+    width: 10px;
+    height: 10px;
+    aspect-ratio: auto;
+    flex-shrink: 0;
+}
 
 /* --- Progress Bars --- */
 .progress-list {
