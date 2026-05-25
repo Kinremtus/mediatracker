@@ -145,5 +145,21 @@ function openMediaDrawer(provider, externalId, mediaType) {
         })
         .catch(e => console.error('Failed to load media details', e));
 }
+
+function updateTrackingStatus(trackingId, newStatus, clickedBtn) {
+    const formData = new FormData();
+    formData.append('status', newStatus);
+    fetch(`/tracking/${trackingId}`, {
+        method: 'POST',
+        body: formData,
+        redirect: 'manual',
+    }).then(() => {
+        const container = clickedBtn.closest('.drawer-status-chips');
+        if (container) {
+            container.querySelectorAll('.drawer-status-chip').forEach(btn => btn.classList.remove('active'));
+            clickedBtn.classList.add('active');
+        }
+    }).catch(() => {});
+}
 </script>
 {% endblock %}

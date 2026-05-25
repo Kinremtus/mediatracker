@@ -5,6 +5,8 @@ use axum::{
 };
 use serde::Deserialize;
 
+use uuid::Uuid;
+
 use crate::app_state::AppState;
 use crate::middleware::CurrentUser;
 use crate::models::media_item::CreateMediaItem;
@@ -14,6 +16,8 @@ use super::home::SidebarStats;
 #[template(path = "media_drawer_content.html")]
 struct MediaDrawerTemplate {
     item: CreateMediaItem,
+    tracking_id: Option<Uuid>,
+    current_status: Option<String>,
 }
 
 #[derive(Template)]
@@ -70,7 +74,7 @@ pub async fn get_media_detail(
 }
 
 pub async fn get_media_drawer_content(
-    _user: CurrentUser,
+    user: CurrentUser,
     State(state): State<AppState>,
     Path((provider, external_id)): Path<(String, String)>,
     Query(params): Query<MediaDetailQuery>,
@@ -89,10 +93,17 @@ pub async fn get_media_drawer_content(
     };
 
     match item {
-        Ok(item) => Html(
-            MediaDrawerTemplate { item }.render().unwrap()
-        )
-        .into_response(),
+        Ok(item) => {
+            let tracking = state.tracking.find_entry_by_media(user.id, &provider, &external_id).await.unwrap_or(None);
+            let (tracking_id, current_status) = match tracking {
+                Some((id, status)) => (Some(id), Some(status)),
+                None => (None, None),
+            };
+            Html(
+                MediaDrawerTemplate { item, tracking_id, current_status }.render().unwrap()
+            )
+            .into_response()
+        }
         Err(_) => Html("Not found".to_string()).into_response(),
     }
 }
