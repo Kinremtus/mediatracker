@@ -1692,6 +1692,47 @@ body.drawer-open {
     transform: translateX(100%);
 }
 
+/* --- Drawer Status Chips --- */
+.drawer-status-label {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+    margin-top: 1.5rem;
+    color: var(--foreground);
+}
+
+.drawer-status-chips {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.drawer-status-chip {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    font-size: 14px;
+    font-weight: 500;
+    text-align: left;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    cursor: pointer;
+    color: var(--foreground);
+    font-family: inherit;
+    transition: all 0.15s ease;
+}
+
+.drawer-status-chip:hover {
+    background: var(--secondary);
+    border-color: var(--ring);
+}
+
+.drawer-status-chip.active {
+    background: var(--primary);
+    color: var(--primary-foreground);
+    border-color: var(--primary);
+}
+
 /* --- Settings Page --- */
 .settings-section {
     margin-bottom: 2rem;

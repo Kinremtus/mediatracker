@@ -179,6 +179,25 @@ impl TrackingService {
         Ok((in_progress, completed, planned, dropped))
     }
 
+    pub async fn find_entry_by_media(
+        &self,
+        user_id: Uuid,
+        provider: &str,
+        external_id: &str,
+    ) -> Result<Option<(Uuid, String)>, anyhow::Error> {
+        let row: Option<(Uuid, String)> = sqlx::query_as(
+            "SELECT te.id, te.status FROM tracking_entries te
+             JOIN media_items mi ON te.media_id = mi.id
+             WHERE te.user_id = $1 AND mi.provider = $2 AND mi.external_id = $3",
+        )
+        .bind(user_id)
+        .bind(provider)
+        .bind(external_id)
+        .fetch_optional(&self.db)
+        .await?;
+        Ok(row)
+    }
+
     pub async fn get_user_entries(
         &self,
         user_id: Uuid,

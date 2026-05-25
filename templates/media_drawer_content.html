@@ -47,24 +47,27 @@
         </div>
         {% endif %}
 
-        <!-- Actions -->
-        <div class="media-detail-actions" style="flex-direction: column;">
-            <form method="POST" action="/tracking" style="width: 100%;">
-                <input type="hidden" name="provider" value="{{ item.provider }}">
-                <input type="hidden" name="external_id" value="{{ item.external_id }}">
-                <input type="hidden" name="media_type" value="{{ item.media_type }}">
-                <input type="hidden" name="title" value="{{ item.title }}">
-                {% if item.title_english.is_some() %}<input type="hidden" name="title_english" value="{{ item.title_english.as_ref().unwrap() }}">{% endif %}
-                {% if item.title_native.is_some() %}<input type="hidden" name="title_native" value="{{ item.title_native.as_ref().unwrap() }}">{% endif %}
-                {% if item.title_russian.is_some() %}<input type="hidden" name="title_russian" value="{{ item.title_russian.as_ref().unwrap() }}">{% endif %}
-                {% if item.poster_url.is_some() %}<input type="hidden" name="poster_url" value="{{ item.poster_url.as_ref().unwrap() }}">{% endif %}
-                {% if item.episodes.is_some() %}<input type="hidden" name="episodes" value="{{ item.episodes.unwrap() }}">{% endif %}
-                {% if item.description.is_some() %}<input type="hidden" name="description" value="{{ item.description.as_ref().unwrap() }}">{% endif %}
-                {% if item.status.is_some() %}<input type="hidden" name="status" value="{{ item.status.as_ref().unwrap() }}">{% endif %}
-                {% if item.score.is_some() %}<input type="hidden" name="score" value="{{ item.score.unwrap() }}">{% endif %}
-                <input type="hidden" name="tracking_status" value="planned">
-                <button type="submit" class="btn btn-primary" style="width: 100%;">+ В список</button>
-            </form>
+        <!-- Status Chips (only if already tracked) -->
+        {% if let Some(tid) = tracking_id %}
+        <div class="drawer-status-label">Мой статус</div>
+        <div class="drawer-status-chips">
+            <button class="drawer-status-chip {% if current_status.as_deref() == Some("planned") %}active{% endif %}"
+                    onclick="updateTrackingStatus('{{ tid }}', 'planned', this)">
+                📋 Запланировано
+            </button>
+            <button class="drawer-status-chip {% if current_status.as_deref() == Some("in_progress") %}active{% endif %}"
+                    onclick="updateTrackingStatus('{{ tid }}', 'in_progress', this)">
+                ▶ В процессе
+            </button>
+            <button class="drawer-status-chip {% if current_status.as_deref() == Some("completed") %}active{% endif %}"
+                    onclick="updateTrackingStatus('{{ tid }}', 'completed', this)">
+                ✅ Завершено
+            </button>
+            <button class="drawer-status-chip {% if current_status.as_deref() == Some("dropped") %}active{% endif %}"
+                    onclick="updateTrackingStatus('{{ tid }}', 'dropped', this)">
+                ❌ Брошено
+            </button>
         </div>
+        {% endif %}
     </div>
 </div>
