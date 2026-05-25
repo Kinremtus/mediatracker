@@ -64,7 +64,7 @@ impl StatsService {
         })
     }
 
-    /// Daily action counts for the current calendar year (add + later updates, no double-count on create day).
+    /// Daily action counts from activity_log (journal; survives tracking entry deletion).
     pub async fn get_activity_by_day(
         &self,
         user_id: Uuid,
@@ -75,21 +75,11 @@ impl StatsService {
 
         let rows: Vec<(NaiveDate, i32)> = sqlx::query_as(
             r#"
-            SELECT activity_date, COUNT(*)::int AS count
-            FROM (
-                SELECT created_at::date AS activity_date
-                FROM tracking_entries
-                WHERE user_id = $1
-                  AND created_at >= $2::date
-                  AND created_at < $3::date
-                UNION ALL
-                SELECT updated_at::date
-                FROM tracking_entries
-                WHERE user_id = $1
-                  AND updated_at >= $2::date
-                  AND updated_at < $3::date
-                  AND updated_at > created_at
-            ) AS events
+            SELECT created_at::date AS activity_date, COUNT(*)::int AS count
+            FROM activity_log
+            WHERE user_id = $1
+              AND created_at >= $2::date
+              AND created_at < $3::date
             GROUP BY activity_date
             "#,
         )
