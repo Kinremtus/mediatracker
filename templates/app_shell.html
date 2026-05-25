@@ -147,11 +147,11 @@ function openMediaDrawer(provider, externalId, mediaType) {
 }
 
 function updateTrackingStatus(trackingId, newStatus, clickedBtn) {
-    const formData = new FormData();
-    formData.append('status', newStatus);
+    const params = new URLSearchParams();
+    params.append('status', newStatus);
     fetch(`/tracking/${trackingId}`, {
         method: 'POST',
-        body: formData,
+        body: params,
         redirect: 'manual',
     }).then(() => {
         const container = clickedBtn.closest('.drawer-status-chips');

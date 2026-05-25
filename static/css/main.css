@@ -1693,26 +1693,20 @@ body.drawer-open {
 }
 
 /* --- Drawer Status Chips --- */
-.drawer-status-label {
-    font-size: 13px;
-    font-weight: 600;
-    margin-bottom: 0.75rem;
-    margin-top: 1.5rem;
-    color: var(--foreground);
-}
-
 .drawer-status-chips {
     display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+    margin-bottom: 1rem;
 }
 
 .drawer-status-chip {
-    width: 100%;
-    padding: 0.75rem 1rem;
-    font-size: 14px;
+    flex: 1;
+    min-width: calc(50% - 0.375rem);
+    padding: 0.5rem 0.625rem;
+    font-size: 12px;
     font-weight: 500;
-    text-align: left;
+    text-align: center;
     background: var(--card);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
@@ -1720,6 +1714,7 @@ body.drawer-open {
     color: var(--foreground);
     font-family: inherit;
     transition: all 0.15s ease;
+    line-height: 1.2;
 }
 
 .drawer-status-chip:hover {
