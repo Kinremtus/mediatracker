@@ -1,7 +1,9 @@
+use chrono::{Datelike, NaiveDate, Utc};
 use sqlx::PgPool;
+use std::collections::HashMap;
 use uuid::Uuid;
 
-use crate::models::stats::{ActivityEntry, StatsOverview, StatusCount, TitleProgress};
+use crate::models::stats::{StatsOverview, StatusCount, TitleProgress};
 
 #[derive(Clone)]
 pub struct StatsService {
@@ -62,16 +64,32 @@ impl StatsService {
         })
     }
 
-    pub async fn get_activity(&self, user_id: Uuid) -> Result<Vec<ActivityEntry>, anyhow::Error> {
-        // Get activity log entries for the last year
-        let entries: Vec<ActivityEntry> = sqlx::query_as(
-            "SELECT action, created_at FROM activity_log WHERE user_id = $1 AND created_at > NOW() - INTERVAL '1 year' ORDER BY created_at ASC",
+    /// Daily action counts for the current calendar year (tracking adds + activity log).
+    pub async fn get_activity_by_day(
+        &self,
+        user_id: Uuid,
+    ) -> Result<HashMap<NaiveDate, i32>, anyhow::Error> {
+        let year = Utc::now().year();
+        let year_start = NaiveDate::from_ymd_opt(year, 1, 1).expect("valid year");
+        let year_end = NaiveDate::from_ymd_opt(year + 1, 1, 1).expect("valid next year");
+
+        let rows: Vec<(NaiveDate, i32)> = sqlx::query_as(
+            r#"
+            SELECT created_at::date AS activity_date, COUNT(*)::int AS count
+            FROM tracking_entries
+            WHERE user_id = $1
+              AND created_at >= $2::date
+              AND created_at < $3::date
+            GROUP BY activity_date
+            "#,
         )
         .bind(user_id)
+        .bind(year_start)
+        .bind(year_end)
         .fetch_all(&self.db)
         .await?;
 
-        Ok(entries)
+        Ok(rows.into_iter().collect())
     }
 
     pub async fn get_title_progress(&self, user_id: Uuid) -> Result<Vec<TitleProgress>, anyhow::Error> {

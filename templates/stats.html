@@ -6,8 +6,9 @@
 <h1 class="content-title">Статистика</h1>
 
 <!-- Activity Calendar -->
-<div class="card" style="padding: 1.5rem; border-radius: var(--radius-xl); border: 1px solid var(--border); background: var(--card); margin-bottom: 2rem;">
-    <h3 style="font-size: 16px; font-weight: 600; margin-bottom: 1rem;">Активность</h3>
+<div class="card activity-card" style="padding: 1.5rem; border-radius: var(--radius-xl); border: 1px solid var(--border); background: var(--card); margin-bottom: 2rem;">
+    <h3 style="font-size: 16px; font-weight: 600; margin-bottom: 0.25rem;">Активность</h3>
+    <p class="activity-calendar-subtitle">{{ activity_total }} действий за {{ activity_year }} год</p>
     <div class="activity-calendar">
         {{ calendar_html|safe }}
     </div>
