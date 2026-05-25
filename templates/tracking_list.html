@@ -5,10 +5,37 @@
 {% block content %}
 <h1 class="content-title">{{ status_label }}</h1>
 
-<div class="type-selector">
-    {% for btn in type_buttons %}
-    <a href="{{ btn.url }}" class="type-btn {% if btn.is_active %}active{% endif %}">{{ btn.icon }} {{ btn.label }}</a>
-    {% endfor %}
+<div class="filter-bar" x-data="{ typeOpen: false, statusOpen: false }">
+    <!-- Media Type dropdown -->
+    <div class="filter-dropdown" @click.outside="typeOpen = false">
+        <button @click="typeOpen = !typeOpen" class="filter-btn">
+            {{ current_type_label }}
+            <span style="font-size: 10px; opacity: 0.5;">▼</span>
+        </button>
+        <div x-show="typeOpen" x-cloak x-transition class="filter-dropdown-menu">
+            <a href="/tracking{% if !current_status.is_empty() %}?status={{ current_status }}{% endif %}" class="filter-dropdown-item {% if current_media_type == "" %}active{% endif %}">Все</a>
+            {% for item in media_types %}
+            <a href="/tracking?type={{ item.key }}{% if !current_status.is_empty() %}&status={{ current_status }}{% endif %}" class="filter-dropdown-item {% if current_media_type == item.key %}active{% endif %}">{{ item.icon }} {{ item.label }}</a>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Status dropdown -->
+    <div class="filter-dropdown" @click.outside="statusOpen = false">
+        <button @click="statusOpen = !statusOpen" class="filter-btn">
+            {{ status_label }}
+            <span style="font-size: 10px; opacity: 0.5;">▼</span>
+        </button>
+        <div x-show="statusOpen" x-cloak x-transition class="filter-dropdown-menu">
+            {% for item in statuses %}
+            {% if item.key == "" %}
+            <a href="/tracking{% if !current_media_type.is_empty() %}?type={{ current_media_type }}{% endif %}" class="filter-dropdown-item {% if current_status == "" %}active{% endif %}">{{ item.label }}</a>
+            {% else %}
+            <a href="/tracking?status={{ item.key }}{% if !current_media_type.is_empty() %}&type={{ current_media_type }}{% endif %}" class="filter-dropdown-item {% if current_status == item.key %}active{% endif %}">{{ item.label }}</a>
+            {% endif %}
+            {% endfor %}
+        </div>
+    </div>
 </div>
 
 {% if !entries.is_empty() %}
