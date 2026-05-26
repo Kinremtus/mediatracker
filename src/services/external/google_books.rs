@@ -85,6 +85,7 @@ impl GoogleBooksService {
                     description: r.volume_info.description,
                     status: None,
                     score: r.volume_info.average_rating,
+                    is_tracked: false,
                 }
             })
             .collect();
@@ -122,6 +123,7 @@ impl GoogleBooksService {
             description: r.volume_info.description,
             status: None,
             score: r.volume_info.average_rating,
+            is_tracked: false,
         })
     }
 }

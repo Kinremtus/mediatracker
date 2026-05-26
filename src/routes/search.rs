@@ -38,11 +38,19 @@ pub async fn get_search(
     let query = params.q.unwrap_or_default();
     let search_type = params.search_type.unwrap_or_default();
 
-    let results = if query.is_empty() {
+    let mut results = if query.is_empty() {
         Vec::new()
     } else {
         search::by_media_type(&state, &query, &search_type).await
     };
+
+    for item in &mut results {
+        if let Ok(Some(_)) = state.tracking.find_entry_by_media(
+            user.id, &item.provider, &item.external_id,
+        ).await {
+            item.is_tracked = true;
+        }
+    }
 
     let stats = get_sidebar_stats(&state, user.id).await;
 

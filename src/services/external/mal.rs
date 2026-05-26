@@ -65,6 +65,7 @@ fn map_anime(r: MalAnime) -> CreateMediaItem {
         description: r.synopsis,
         status: r.status,
         score: r.score,
+        is_tracked: false,
     }
 }
 

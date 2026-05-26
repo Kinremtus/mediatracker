@@ -54,6 +54,9 @@
 
         <!-- Actions -->
         <div class="media-detail-actions">
+            {% if item.is_tracked %}
+            <div class="btn btn-primary" style="cursor: default; opacity: 0.6;">✓ Добавлено</div>
+            {% else %}
             <form method="POST" action="/tracking">
                 <input type="hidden" name="provider" value="{{ item.provider }}">
                 <input type="hidden" name="external_id" value="{{ item.external_id }}">
@@ -70,6 +73,7 @@
                 <input type="hidden" name="tracking_status" value="planned">
                 <button type="submit" class="btn btn-primary">+ В список</button>
             </form>
+            {% endif %}
             <a href="/search" class="btn btn-secondary">← Назад к поиску</a>
         </div>
     </div>
