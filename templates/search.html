@@ -5,6 +5,10 @@
 {% block content %}
 <h1 class="content-title">Поиск</h1>
 
+{% if !flash_message.is_empty() %}
+<div x-data="{ show: true }" x-init="setTimeout(() => show = false, 3000)" x-show="show" class="flash-notification">{{ flash_message }}</div>
+{% endif %}
+
 <form action="/search" method="get" style="margin-bottom: 1.5rem; display: flex; gap: 0.5rem;">
     <input type="text" name="q" value="{{ query }}" placeholder="Введите запрос..." style="flex: 1; max-width: 500px; height: 40px; padding: 0 1rem; background: var(--secondary); border: 1px solid var(--border); border-radius: var(--radius); color: var(--foreground); font-size: 14px;">
     <input type="hidden" name="type" value="{{ current_type }}">
@@ -61,6 +65,7 @@
                 {% if item.status.is_some() %}<input type="hidden" name="status" value="{{ item.status.as_ref().unwrap() }}">{% endif %}
                 {% if item.score.is_some() %}<input type="hidden" name="score" value="{{ item.score.unwrap() }}">{% endif %}
                 <input type="hidden" name="tracking_status" value="planned">
+                <input type="hidden" name="redirect_to" value="/search?q={{ query }}&type={{ current_type }}">
                 <button type="submit" class="btn btn-secondary" style="width: 100%; height: 32px; font-size: 12px;">+ В список</button>
             </form>
             {% endif %}

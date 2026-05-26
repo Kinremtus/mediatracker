@@ -142,6 +142,7 @@ pub struct AddToTrackingForm {
     pub status: Option<String>,
     pub score: Option<f64>,
     pub tracking_status: String,
+    pub redirect_to: Option<String>,
 }
 
 pub async fn post_add_to_tracking(
@@ -171,12 +172,28 @@ pub async fn post_add_to_tracking(
         &form.tracking_status
     };
 
+    let redirect_url = form.redirect_to
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "/tracking".to_string());
+
     match state.tracking.add_to_list(user.id, &media, status).await {
-        Ok(_) => Redirect::to("/tracking").into_response(),
+        Ok(_) => {
+            let url = add_flash_param(&redirect_url, "added");
+            Redirect::to(&url).into_response()
+        }
         Err(e) => {
             eprintln!("Error adding to tracking: {}", e);
-            Redirect::to("/tracking").into_response()
+            let url = add_flash_param(&redirect_url, "error");
+            Redirect::to(&url).into_response()
         }
+    }
+}
+
+fn add_flash_param(url: &str, flash: &str) -> String {
+    if url.contains('?') {
+        format!("{}&flash={}", url, flash)
+    } else {
+        format!("{}?flash={}", url, flash)
     }
 }
 
