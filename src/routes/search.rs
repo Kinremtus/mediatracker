@@ -21,6 +21,7 @@ struct SearchTemplate {
     current_type: String,
     results: Vec<CreateMediaItem>,
     current_status: String,
+    flash_message: String,
 }
 
 #[derive(Deserialize)]
@@ -28,6 +29,7 @@ pub struct SearchQuery {
     q: Option<String>,
     #[serde(rename = "type")]
     search_type: Option<String>,
+    flash: Option<String>,
 }
 
 pub async fn get_search(
@@ -54,6 +56,12 @@ pub async fn get_search(
 
     let stats = get_sidebar_stats(&state, user.id).await;
 
+    let flash_message = params.flash.as_deref().map(|f| match f {
+        "added" => "✓ Медиа добавлено в список".to_string(),
+        "error" => "Ошибка при добавлении".to_string(),
+        _ => String::new(),
+    }).unwrap_or_default();
+
     SearchTemplate {
         username: user.username,
         stats,
@@ -62,6 +70,7 @@ pub async fn get_search(
         current_type: search_type,
         results,
         current_status: String::new(),
+        flash_message,
     }
     .render()
     .unwrap()

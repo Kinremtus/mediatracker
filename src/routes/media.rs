@@ -28,11 +28,13 @@ struct MediaDetailTemplate {
     active_page: String,
     item: CreateMediaItem,
     current_status: String,
+    flash_message: String,
 }
 
 #[derive(Deserialize)]
 pub struct MediaDetailQuery {
     media_type: Option<String>,
+    flash: Option<String>,
 }
 
 pub async fn get_media_detail(
@@ -63,6 +65,12 @@ pub async fn get_media_detail(
             ).await {
                 item.is_tracked = true;
             }
+            let flash_message = params.flash.as_deref().map(|f| match f {
+                "added" => "✓ Медиа добавлено в список".to_string(),
+                "error" => "Ошибка при добавлении".to_string(),
+                _ => String::new(),
+            }).unwrap_or_default();
+
             Html(
                 MediaDetailTemplate {
                     username: user.username,
@@ -70,6 +78,7 @@ pub async fn get_media_detail(
                     active_page: "search".to_string(),
                     item,
                     current_status: String::new(),
+                    flash_message,
                 }
                 .render()
                 .unwrap(),

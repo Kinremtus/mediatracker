@@ -4,6 +4,10 @@
 
 {% block content %}
 <div class="media-detail">
+    {% if !flash_message.is_empty() %}
+    <div x-data="{ show: true }" x-init="setTimeout(() => show = false, 3000)" x-show="show" class="flash-notification">{{ flash_message }}</div>
+    {% endif %}
+
     <!-- Poster -->
     <div class="media-detail-poster">
         {% if item.poster_url.is_some() %}
@@ -71,6 +75,7 @@
                 {% if item.status.is_some() %}<input type="hidden" name="status" value="{{ item.status.as_ref().unwrap() }}">{% endif %}
                 {% if item.score.is_some() %}<input type="hidden" name="score" value="{{ item.score.unwrap() }}">{% endif %}
                 <input type="hidden" name="tracking_status" value="planned">
+                <input type="hidden" name="redirect_to" value="/media/{{ item.provider }}/{{ item.external_id }}">
                 <button type="submit" class="btn btn-primary">+ В список</button>
             </form>
             {% endif %}
