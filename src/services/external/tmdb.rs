@@ -68,7 +68,7 @@ impl TmdbService {
                 let id = r["id"].as_i64()?;
                 let title = r["title"].as_str().or(r["name"].as_str())?.to_string();
                 let poster_path = r["poster_path"].as_str();
-                let poster_url = poster_path.map(|p| format!("/tmdb-image/{}", p));
+                let poster_url = poster_path.map(|p| format!("/tmdb-image/{}", p.trim_start_matches('/')));
                 let score = r["vote_average"].as_f64();
                 let description = r["overview"].as_str().map(String::from);
 
@@ -135,7 +135,7 @@ impl TmdbService {
                 let id = r["id"].as_i64()?;
                 let title = r["title"].as_str()?.to_string();
                 let poster_path = r["poster_path"].as_str();
-                let poster_url = poster_path.map(|p| format!("/tmdb-image/{}", p));
+                let poster_url = poster_path.map(|p| format!("/tmdb-image/{}", p.trim_start_matches('/')));
                 let score = r["vote_average"].as_f64();
                 let description = r["overview"].as_str().map(String::from);
 
@@ -198,7 +198,7 @@ impl TmdbService {
                 let id = r["id"].as_i64()?;
                 let title = r["name"].as_str()?.to_string();
                 let poster_path = r["poster_path"].as_str();
-                let poster_url = poster_path.map(|p| format!("/tmdb-image/{}", p));
+                let poster_url = poster_path.map(|p| format!("/tmdb-image/{}", p.trim_start_matches('/')));
                 let score = r["vote_average"].as_f64();
                 let description = r["overview"].as_str().map(String::from);
 
@@ -236,7 +236,7 @@ impl TmdbService {
         let response = self.client.get(url.as_str()).send().await?;
 
         let r: TmdbDetails = response.json().await?;
-        let poster_url = r.poster_path.map(|p| format!("/tmdb-image/{}", p));
+        let poster_url = r.poster_path.map(|p| format!("/tmdb-image/{}", p.trim_start_matches('/')));
         let title = r.title.unwrap_or(r.name.unwrap_or_default());
 
         Ok(CreateMediaItem {
