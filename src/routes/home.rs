@@ -75,7 +75,7 @@ pub async fn get_home(
     };
 
     // In-progress entries with progress
-    let entries = state.tracking.get_user_entries(user.id, Some("in_progress"), None).await.unwrap_or_default();
+    let entries = state.tracking.get_user_entries(user.id, Some("in_progress"), None, None).await.unwrap_or_default();
     let in_progress: Vec<HomeMediaCard> = entries
         .into_iter()
         .take(6)

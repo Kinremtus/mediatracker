@@ -21,6 +21,7 @@ struct TrackingListTemplate {
     status_label: String,
     current_status: String,
     current_media_type: String,
+    search_query: String,
     media_types: Vec<MediaTypeItem>,
     statuses: Vec<StatusItem>,
     current_type_label: String,
@@ -70,6 +71,7 @@ pub struct TrackingQuery {
     status: Option<String>,
     #[serde(rename = "type")]
     media_type: Option<String>,
+    q: Option<String>,
 }
 
 pub async fn get_tracking_list(
@@ -79,10 +81,12 @@ pub async fn get_tracking_list(
 ) -> Html<String> {
     let status = params.status.as_deref();
     let media_type = params.media_type.as_deref();
-    let entries = state.tracking.get_user_entries(user.id, status, media_type).await.unwrap_or_default();
+    let search_query = params.q.as_deref();
+    let entries = state.tracking.get_user_entries(user.id, status, media_type, search_query).await.unwrap_or_default();
     let stats = get_sidebar_stats(&state, user.id).await;
     let current_status = params.status.unwrap_or_default();
     let current_media_type = params.media_type.unwrap_or_default();
+    let search_query = params.q.unwrap_or_default();
     let status_label = get_status_label(&current_status);
 
     let all_types = get_all_media_types();
@@ -118,6 +122,7 @@ pub async fn get_tracking_list(
         status_label,
         current_status,
         current_media_type,
+        search_query,
         media_types,
         statuses,
         current_type_label,

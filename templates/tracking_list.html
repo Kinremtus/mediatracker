@@ -38,6 +38,13 @@
     </div>
 </div>
 
+<form action="/tracking" method="get" class="tracking-search-form">
+    <input type="hidden" name="type" value="{{ current_media_type }}">
+    <input type="hidden" name="status" value="{{ current_status }}">
+    <input type="search" name="q" value="{{ search_query }}" placeholder="Поиск по названию в списке...">
+    <button type="submit">Найти</button>
+</form>
+
 {% if !entries.is_empty() %}
 <div class="tracking-grid">
     {% for entry_with_media in entries %}

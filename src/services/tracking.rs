@@ -203,6 +203,7 @@ impl TrackingService {
         user_id: Uuid,
         status: Option<&str>,
         media_type: Option<&str>,
+        search_query: Option<&str>,
     ) -> Result<Vec<TrackingEntryWithMedia>, anyhow::Error> {
         let mut query = "SELECT tracking_entries.id, tracking_entries.user_id, tracking_entries.media_id, tracking_entries.status, tracking_entries.rating::double precision AS rating, tracking_entries.progress, tracking_entries.created_at, tracking_entries.updated_at, media_items.provider, media_items.external_id, media_items.media_type, media_items.title, media_items.title_english, media_items.title_native, media_items.title_russian, media_items.poster_url, media_items.episodes, media_items.description, media_items.status AS media_status, media_items.score::double precision AS score FROM tracking_entries JOIN media_items ON tracking_entries.media_id = media_items.id WHERE tracking_entries.user_id = $1".to_string();
         let mut param_idx = 2;
@@ -215,6 +216,12 @@ impl TrackingService {
             query.push_str(&format!(" AND media_items.media_type = ${}", param_idx));
             param_idx += 1;
         }
+        if let Some(sq) = search_query {
+            if !sq.is_empty() {
+                query.push_str(&format!(" AND media_items.title ILIKE '%' || ${} || '%'", param_idx));
+                param_idx += 1;
+            }
+        }
 
         query.push_str(" ORDER BY tracking_entries.updated_at DESC");
 
@@ -224,6 +231,11 @@ impl TrackingService {
         }
         if let Some(mt) = media_type {
             q = q.bind(mt);
+        }
+        if let Some(sq) = search_query {
+            if !sq.is_empty() {
+                q = q.bind(sq);
+            }
         }
 
         let entries = q.fetch_all(&self.db).await?;
