@@ -111,6 +111,7 @@ impl ShikimoriService {
                 description: r.description,
                 status: r.status,
                 score: r.score,
+                is_tracked: false,
             })
             .collect();
 
@@ -146,6 +147,7 @@ impl ShikimoriService {
             description: r.description,
             status: r.status,
             score: r.score,
+            is_tracked: false,
         })
     }
 }

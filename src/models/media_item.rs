@@ -40,6 +40,8 @@ pub struct CreateMediaItem {
     pub description: Option<String>,
     pub status: Option<String>,
     pub score: Option<f64>,
+    #[serde(default)]
+    pub is_tracked: bool,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]

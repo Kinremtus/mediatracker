@@ -85,6 +85,7 @@ impl RawgService {
                     description,
                     status: None,
                     score: rating,
+                    is_tracked: false,
                 })
             })
             .collect();
@@ -113,6 +114,7 @@ impl RawgService {
             description: r.description_raw,
             status: None,
             score: r.rating,
+            is_tracked: false,
         })
     }
 }

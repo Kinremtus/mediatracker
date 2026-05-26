@@ -57,18 +57,25 @@ pub async fn get_media_detail(
     let stats = get_sidebar_stats(&state, user.id).await;
 
     match item {
-        Ok(item) => Html(
-            MediaDetailTemplate {
-                username: user.username,
-                stats,
-                active_page: "search".to_string(),
-                item,
-                current_status: String::new(),
+        Ok(mut item) => {
+            if let Ok(Some(_)) = state.tracking.find_entry_by_media(
+                user.id, &item.provider, &item.external_id,
+            ).await {
+                item.is_tracked = true;
             }
-            .render()
-            .unwrap(),
-        )
-        .into_response(),
+            Html(
+                MediaDetailTemplate {
+                    username: user.username,
+                    stats,
+                    active_page: "search".to_string(),
+                    item,
+                    current_status: String::new(),
+                }
+                .render()
+                .unwrap(),
+            )
+            .into_response()
+        }
         Err(_) => Html("Not found".to_string()).into_response(),
     }
 }
