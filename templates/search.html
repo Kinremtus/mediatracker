@@ -10,7 +10,7 @@
 {% endif %}
 
 <form action="/search" method="get" style="margin-bottom: 1.5rem; display: flex; gap: 0.5rem;">
-    <input type="text" name="q" value="{{ query }}" placeholder="Введите запрос..." style="flex: 1; max-width: 500px; height: 40px; padding: 0 1rem; background: var(--secondary); border: 1px solid var(--border); border-radius: var(--radius); color: var(--foreground); font-size: 14px;">
+    <input type="text" name="q" value="{{ query }}" placeholder="Введите запрос..." style="flex: 1; height: 40px; padding: 0 1rem; background: var(--secondary); border: 1px solid var(--border); border-radius: var(--radius); color: var(--foreground); font-size: 14px;">
     <input type="hidden" name="type" value="{{ current_type }}">
     <button type="submit" class="btn btn-primary">Найти</button>
 </form>
