@@ -16,19 +16,19 @@
 </form>
 
 <div class="type-selector">
-    <a href="?q={{ query }}&type=anime" class="type-btn {% if current_type == "anime" %}active{% endif %}">▶ Аниме</a>
-    <a href="?q={{ query }}&type=manga" class="type-btn {% if current_type == "manga" %}active{% endif %}"> Манга</a>
-    <a href="?q={{ query }}&type=manhwa" class="type-btn {% if current_type == "manhwa" %}active{% endif %}"> Манхва</a>
-    <a href="?q={{ query }}&type=manhua" class="type-btn {% if current_type == "manhua" %}active{% endif %}">📚 Маньхуа</a>
-    <a href="?q={{ query }}&type=novel" class="type-btn {% if current_type == "novel" %}active{% endif %}">📝 Новеллы</a>
-    <a href="?q={{ query }}&type=other-comics" class="type-btn {% if current_type == "other-comics" %}active{% endif %}">📚 Другие комиксы</a>
-    <a href="?q={{ query }}&type=movie" class="type-btn {% if current_type == "movie" %}active{% endif %}">🎥 Фильмы</a>
-    <a href="?q={{ query }}&type=series" class="type-btn {% if current_type == "series" %}active{% endif %}"> Сериалы</a>
-    <a href="?q={{ query }}&type=dramas" class="type-btn {% if current_type == "dramas" %}active{% endif %}"> Дорамы</a>
-    <a href="?q={{ query }}&type=cartoons" class="type-btn {% if current_type == "cartoons" %}active{% endif %}">📺 Мультсериалы</a>
-    <a href="?q={{ query }}&type=animated-movies" class="type-btn {% if current_type == "animated-movies" %}active{% endif %}">🎞 Мультфильмы</a>
-    <a href="?q={{ query }}&type=game" class="type-btn {% if current_type == "game" %}active{% endif %}">🎮 Игры</a>
-    <a href="?q={{ query }}&type=book" class="type-btn {% if current_type == "book" %}active{% endif %}">📖 Книги</a>
+    <a href="?q={{ query }}&type=anime&page=1" class="type-btn {% if current_type == "anime" %}active{% endif %}">▶ Аниме</a>
+    <a href="?q={{ query }}&type=manga&page=1" class="type-btn {% if current_type == "manga" %}active{% endif %}"> Манга</a>
+    <a href="?q={{ query }}&type=manhwa&page=1" class="type-btn {% if current_type == "manhwa" %}active{% endif %}"> Манхва</a>
+    <a href="?q={{ query }}&type=manhua&page=1" class="type-btn {% if current_type == "manhua" %}active{% endif %}">📚 Маньхуа</a>
+    <a href="?q={{ query }}&type=novel&page=1" class="type-btn {% if current_type == "novel" %}active{% endif %}">📝 Новеллы</a>
+    <a href="?q={{ query }}&type=other-comics&page=1" class="type-btn {% if current_type == "other-comics" %}active{% endif %}">📚 Другие комиксы</a>
+    <a href="?q={{ query }}&type=movie&page=1" class="type-btn {% if current_type == "movie" %}active{% endif %}">🎥 Фильмы</a>
+    <a href="?q={{ query }}&type=series&page=1" class="type-btn {% if current_type == "series" %}active{% endif %}"> Сериалы</a>
+    <a href="?q={{ query }}&type=dramas&page=1" class="type-btn {% if current_type == "dramas" %}active{% endif %}"> Дорамы</a>
+    <a href="?q={{ query }}&type=cartoons&page=1" class="type-btn {% if current_type == "cartoons" %}active{% endif %}">📺 Мультсериалы</a>
+    <a href="?q={{ query }}&type=animated-movies&page=1" class="type-btn {% if current_type == "animated-movies" %}active{% endif %}">🎞 Мультфильмы</a>
+    <a href="?q={{ query }}&type=game&page=1" class="type-btn {% if current_type == "game" %}active{% endif %}">🎮 Игры</a>
+    <a href="?q={{ query }}&type=book&page=1" class="type-btn {% if current_type == "book" %}active{% endif %}">📖 Книги</a>
 </div>
 
 {% if !results.is_empty() %}
@@ -65,7 +65,7 @@
                 {% if item.status.is_some() %}<input type="hidden" name="status" value="{{ item.status.as_ref().unwrap() }}">{% endif %}
                 {% if item.score.is_some() %}<input type="hidden" name="score" value="{{ item.score.unwrap() }}">{% endif %}
                 <input type="hidden" name="tracking_status" value="planned">
-                <input type="hidden" name="redirect_to" value="/search?q={{ query }}&type={{ current_type }}">
+                <input type="hidden" name="redirect_to" value="/search?q={{ query }}&type={{ current_type }}&page={{ page }}">
                 <button type="submit" class="btn btn-secondary" style="width: 100%; height: 32px; font-size: 12px;">+ В список</button>
             </form>
             {% endif %}
@@ -73,6 +73,21 @@
     </a>
     {% endfor %}
 </div>
+
+{% if total_pages > 1 %}
+<div class="pagination">
+    {% if page > 1 %}
+    <a href="?q={{ query }}&type={{ current_type }}&page={{ page - 1 }}" class="pagination-btn">← Назад</a>
+    {% endif %}
+    {% for p in pages %}
+    <a href="?q={{ query }}&type={{ current_type }}&page={{ p.num }}" class="pagination-btn {% if p.current %}active{% endif %}">{{ p.num }}</a>
+    {% endfor %}
+    {% if page < total_pages %}
+    <a href="?q={{ query }}&type={{ current_type }}&page={{ page + 1 }}" class="pagination-btn">Вперёд →</a>
+    {% endif %}
+</div>
+{% endif %}
+
 {% else if !query.is_empty() %}
 <div class="empty-state">
     <div class="empty-state-icon">🔍</div>

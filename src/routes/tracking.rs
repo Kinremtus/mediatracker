@@ -169,6 +169,7 @@ pub async fn post_add_to_tracking(
         status: form.status,
         score: form.score,
         is_tracked: false,
+        mal_id: None,
     };
 
     let status = if form.tracking_status.is_empty() {
