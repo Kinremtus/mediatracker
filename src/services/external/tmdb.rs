@@ -90,6 +90,7 @@ impl TmdbService {
                     status: None,
                     score,
                     is_tracked: false,
+                    mal_id: None,
                 })
             })
             .collect();
@@ -153,6 +154,7 @@ impl TmdbService {
                     status: None,
                     score,
                     is_tracked: false,
+                    mal_id: None,
                 })
             })
             .collect();
@@ -216,6 +218,7 @@ impl TmdbService {
                     status: None,
                     score,
                     is_tracked: false,
+                    mal_id: None,
                 })
             })
             .collect();
@@ -253,6 +256,7 @@ impl TmdbService {
             status: r.status,
             score: r.vote_average,
             is_tracked: false,
+            mal_id: None,
         })
     }
 }

@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::app_state::AppState;
 use crate::models::media_item::CreateMediaItem;
 
@@ -15,14 +17,48 @@ fn extend(
 /// Аниме: Shikimori + MyAnimeList (Jikan).
 /// MangaUpdates не каталогизирует аниме — только комиксы/новеллы.
 pub async fn anime(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
-    let (shiki, mal) = tokio::join!(
+    let (shiki_res, mal_res) = tokio::join!(
         state.shikimori.search(query),
         state.mal.search(query),
     );
-    let mut out = Vec::new();
-    extend(&mut out, shiki, "shikimori");
-    extend(&mut out, mal, "mal");
-    out
+
+    let mut shiki_items = match shiki_res {
+        Ok(items) => items,
+        Err(e) => {
+            tracing::warn!(provider = "shikimori", error = %e, "external search failed");
+            Vec::new()
+        }
+    };
+
+    let mal_items = match mal_res {
+        Ok(items) => items,
+        Err(e) => {
+            tracing::warn!(provider = "mal", error = %e, "external search failed");
+            Vec::new()
+        }
+    };
+
+    let shiki_mal_ids: HashSet<i64> = shiki_items
+        .iter()
+        .filter_map(|item| item.mal_id)
+        .collect();
+
+    let filtered_count = mal_items
+        .iter()
+        .filter(|item| item.mal_id.map_or(false, |id| shiki_mal_ids.contains(&id)))
+        .count();
+
+    if filtered_count > 0 {
+        tracing::info!(filtered = filtered_count, "deduplicated MAL results already present in Shikimori");
+    }
+
+    for item in mal_items.into_iter() {
+        if item.mal_id.map_or(true, |id| !shiki_mal_ids.contains(&id)) {
+            shiki_items.push(item);
+        }
+    }
+
+    shiki_items
 }
 
 pub async fn manga(state: &AppState, query: &str) -> Vec<CreateMediaItem> {

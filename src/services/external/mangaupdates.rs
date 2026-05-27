@@ -112,6 +112,7 @@ impl MangaUpdatesService {
                     status: None,
                     score: r.record.bayesian_rating,
                     is_tracked: false,
+                    mal_id: None,
                 })
             })
             .collect();
@@ -148,6 +149,7 @@ impl MangaUpdatesService {
             status: None,
             score: r.bayesian_rating,
             is_tracked: false,
+            mal_id: None,
         })
     }
 }

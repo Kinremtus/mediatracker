@@ -11,6 +11,14 @@ use crate::models::media_item::CreateMediaItem;
 use crate::services::search;
 use super::home::SidebarStats;
 
+const ITEMS_PER_PAGE: usize = 24;
+
+#[derive(Debug)]
+struct PageItem {
+    num: u32,
+    current: bool,
+}
+
 #[derive(Template)]
 #[template(path = "search.html")]
 struct SearchTemplate {
@@ -22,6 +30,9 @@ struct SearchTemplate {
     results: Vec<CreateMediaItem>,
     current_status: String,
     flash_message: String,
+    page: u32,
+    total_pages: u32,
+    pages: Vec<PageItem>,
 }
 
 #[derive(Deserialize)]
@@ -30,6 +41,7 @@ pub struct SearchQuery {
     #[serde(rename = "type")]
     search_type: Option<String>,
     flash: Option<String>,
+    page: Option<u32>,
 }
 
 pub async fn get_search(
@@ -40,19 +52,37 @@ pub async fn get_search(
     let query = params.q.unwrap_or_default();
     let search_type = params.search_type.unwrap_or_default();
 
-    let mut results = if query.is_empty() {
+    let mut all_results = if query.is_empty() {
         Vec::new()
     } else {
         search::by_media_type(&state, &query, &search_type).await
     };
 
-    for item in &mut results {
+    for item in &mut all_results {
         if let Ok(Some(_)) = state.tracking.find_entry_by_media(
             user.id, &item.provider, &item.external_id,
         ).await {
             item.is_tracked = true;
         }
     }
+
+    let total_pages = if all_results.is_empty() {
+        1
+    } else {
+        (all_results.len() as f64 / ITEMS_PER_PAGE as f64).ceil() as u32
+    };
+
+    let page = params
+        .page
+        .unwrap_or(1)
+        .clamp(1, total_pages);
+
+    let page_idx = (page - 1) as usize;
+    let results: Vec<CreateMediaItem> = all_results
+        .chunks(ITEMS_PER_PAGE)
+        .nth(page_idx)
+        .unwrap_or_default()
+        .to_vec();
 
     let stats = get_sidebar_stats(&state, user.id).await;
 
@@ -71,6 +101,9 @@ pub async fn get_search(
         results,
         current_status: String::new(),
         flash_message,
+        page,
+        total_pages,
+        pages: (1..=total_pages).map(|p| PageItem { num: p, current: p == page }).collect(),
     }
     .render()
     .unwrap()

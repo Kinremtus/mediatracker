@@ -86,6 +86,7 @@ impl GoogleBooksService {
                     status: None,
                     score: r.volume_info.average_rating,
                     is_tracked: false,
+                    mal_id: None,
                 }
             })
             .collect();
@@ -124,6 +125,7 @@ impl GoogleBooksService {
             status: None,
             score: r.volume_info.average_rating,
             is_tracked: false,
+            mal_id: None,
         })
     }
 }

@@ -20,6 +20,7 @@ struct ShikimoriSearchResult {
     status: Option<String>,
     episodes: Option<i32>,
     description: Option<String>,
+    mal_id: Option<i64>,
 }
 
 fn deserialize_optional_f64<'de, D>(deserializer: D) -> Result<Option<f64>, D::Error>
@@ -88,7 +89,9 @@ impl ShikimoriService {
 
     pub async fn search(&self, query: &str) -> Result<Vec<CreateMediaItem>, anyhow::Error> {
         let mut url = Url::parse(&format!("{}/animes", BASE_URL))?;
-        url.query_pairs_mut().append_pair("search", query);
+        url.query_pairs_mut()
+            .append_pair("search", query)
+            .append_pair("limit", "50");
         let response = self.client.get(url).send().await?;
         let results: Vec<ShikimoriSearchResult> = response.json().await?;
 
@@ -112,6 +115,7 @@ impl ShikimoriService {
                 status: r.status,
                 score: r.score,
                 is_tracked: false,
+                mal_id: r.mal_id,
             })
             .collect();
 
@@ -148,6 +152,7 @@ impl ShikimoriService {
             status: r.status,
             score: r.score,
             is_tracked: false,
+            mal_id: r.mal_id,
         })
     }
 }

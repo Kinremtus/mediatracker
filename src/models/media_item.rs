@@ -26,7 +26,7 @@ pub struct MediaItem {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct CreateMediaItem {
     pub provider: String,
     pub external_id: String,
@@ -42,6 +42,8 @@ pub struct CreateMediaItem {
     pub score: Option<f64>,
     #[serde(default)]
     pub is_tracked: bool,
+    #[serde(default)]
+    pub mal_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
