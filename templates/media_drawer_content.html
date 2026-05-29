@@ -4,7 +4,7 @@
         {% if item.poster_url.is_some() %}
         <img src="{{ item.poster_url.as_ref().unwrap() }}" alt="{{ item.title }}">
         {% else %}
-        <div class="poster-placeholder" style="aspect-ratio: 2/3; border-radius: var(--radius-lg);">🎬</div>
+        <div class="poster-placeholder" style="aspect-ratio: 2/3; border-radius: var(--radius-lg);">{% if item.media_type == "anime" %}▶{% elif item.media_type == "manga" || item.media_type == "manhwa" || item.media_type == "manhua" || item.media_type == "novel" || item.media_type == "other-comics" %}📚{% elif item.media_type == "movie" %}🎥{% elif item.media_type == "series" || item.media_type == "dramas" %}📺{% elif item.media_type == "cartoons" || item.media_type == "animated-movies" %}🎞{% elif item.media_type == "game" %}🎮{% elif item.media_type == "book" %}📖{% else %}📄{% endif %}</div>
         {% endif %}
     </div>
 
@@ -42,10 +42,6 @@
             <div class="meta-item">
                 <div class="meta-item-label">Тип</div>
                 <div class="meta-item-value">{{ item.media_type }}</div>
-            </div>
-            <div class="meta-item">
-                <div class="meta-item-label">Источник</div>
-                <div class="meta-item-value">{{ item.provider }}</div>
             </div>
             {% if let Some(ep) = item.episodes %}
             <div class="meta-item">
