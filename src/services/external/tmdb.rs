@@ -80,7 +80,7 @@ impl TmdbService {
                     } else {
                         "series".to_string()
                     },
-                    title,
+                    title: title.clone(),
                     title_english: None,
                     title_native: None,
                     title_russian: None,
@@ -91,6 +91,7 @@ impl TmdbService {
                     score,
                     is_tracked: false,
                     mal_id: None,
+                    comparison_key: Some(title),
                 })
             })
             .collect();
@@ -144,7 +145,7 @@ impl TmdbService {
                     provider: "tmdb".to_string(),
                     external_id: id.to_string(),
                     media_type: "movie".to_string(),
-                    title,
+                    title: title.clone(),
                     title_english: None,
                     title_native: None,
                     title_russian: None,
@@ -155,6 +156,7 @@ impl TmdbService {
                     score,
                     is_tracked: false,
                     mal_id: None,
+                    comparison_key: Some(title),
                 })
             })
             .collect();
@@ -208,7 +210,7 @@ impl TmdbService {
                     provider: "tmdb".to_string(),
                     external_id: id.to_string(),
                     media_type: "series".to_string(),
-                    title,
+                    title: title.clone(),
                     title_english: None,
                     title_native: None,
                     title_russian: None,
@@ -219,6 +221,7 @@ impl TmdbService {
                     score,
                     is_tracked: false,
                     mal_id: None,
+                    comparison_key: Some(title),
                 })
             })
             .collect();
@@ -246,7 +249,7 @@ impl TmdbService {
             provider: "tmdb".to_string(),
             external_id: r.id.to_string(),
             media_type: media_type.to_string(),
-            title,
+            title: title.clone(),
             title_english: None,
             title_native: None,
             title_russian: None,
@@ -257,6 +260,7 @@ impl TmdbService {
             score: r.vote_average,
             is_tracked: false,
             mal_id: None,
+            comparison_key: Some(title),
         })
     }
 }

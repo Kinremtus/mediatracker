@@ -52,6 +52,7 @@ fn poster_url(images: &Option<MalImages>) -> Option<String> {
 }
 
 fn map_anime(r: MalAnime) -> CreateMediaItem {
+    let comparison_key = r.title_english.clone().unwrap_or_else(|| r.title.clone());
     CreateMediaItem {
         provider: "mal".to_string(),
         external_id: r.mal_id.to_string(),
@@ -67,6 +68,7 @@ fn map_anime(r: MalAnime) -> CreateMediaItem {
         score: r.score,
         is_tracked: false,
         mal_id: Some(r.mal_id),
+        comparison_key: Some(comparison_key),
     }
 }
 

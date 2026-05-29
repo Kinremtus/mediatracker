@@ -76,7 +76,7 @@ impl RawgService {
                     provider: "rawg".to_string(),
                     external_id: id.to_string(),
                     media_type: "game".to_string(),
-                    title: name,
+                    title: name.clone(),
                     title_english: None,
                     title_native: None,
                     title_russian: None,
@@ -87,6 +87,7 @@ impl RawgService {
                     score: rating,
                     is_tracked: false,
                     mal_id: None,
+                    comparison_key: Some(name),
                 })
             })
             .collect();
@@ -106,7 +107,7 @@ impl RawgService {
             provider: "rawg".to_string(),
             external_id: r.id.to_string(),
             media_type: "game".to_string(),
-            title: r.name,
+            title: r.name.clone(),
             title_english: None,
             title_native: None,
             title_russian: None,
@@ -117,6 +118,7 @@ impl RawgService {
             score: r.rating,
             is_tracked: false,
             mal_id: None,
+            comparison_key: Some(r.name),
         })
     }
 }

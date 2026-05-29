@@ -97,25 +97,29 @@ impl ShikimoriService {
 
         let items = results
             .into_iter()
-            .map(|r| CreateMediaItem {
-                provider: "shikimori".to_string(),
-                external_id: r.id.to_string(),
-                media_type: match r.kind.as_deref() {
-                    Some("anime") => "anime".to_string(),
-                    Some("manga") => "manga".to_string(),
-                    _ => "anime".to_string(),
-                },
-                title: r.name,
-                title_english: r.name_en,
-                title_native: None,
-                title_russian: r.russian,
-                poster_url: poster_url(r.image.and_then(|img| img.original)),
-                episodes: r.episodes,
-                description: r.description,
-                status: r.status,
-                score: r.score,
-                is_tracked: false,
-                mal_id: r.mal_id,
+            .map(|r| {
+                let comparison_key = r.name_en.clone().unwrap_or_else(|| r.name.clone());
+                CreateMediaItem {
+                    provider: "shikimori".to_string(),
+                    external_id: r.id.to_string(),
+                    media_type: match r.kind.as_deref() {
+                        Some("anime") => "anime".to_string(),
+                        Some("manga") => "manga".to_string(),
+                        _ => "anime".to_string(),
+                    },
+                    title: r.name,
+                    title_english: r.name_en,
+                    title_native: None,
+                    title_russian: r.russian,
+                    poster_url: poster_url(r.image.and_then(|img| img.original)),
+                    episodes: r.episodes,
+                    description: r.description,
+                    status: r.status,
+                    score: r.score,
+                    is_tracked: false,
+                    mal_id: r.mal_id,
+                    comparison_key: Some(comparison_key),
+                }
             })
             .collect();
 
@@ -133,6 +137,8 @@ impl ShikimoriService {
         let url = format!("{}/animes/{}", BASE_URL, id);
         let response = self.client.get(&url).send().await?;
         let r: ShikimoriSearchResult = response.json().await?;
+
+        let comparison_key = r.name_en.clone().unwrap_or_else(|| r.name.clone());
 
         Ok(CreateMediaItem {
             provider: "shikimori".to_string(),
@@ -153,6 +159,7 @@ impl ShikimoriService {
             score: r.score,
             is_tracked: false,
             mal_id: r.mal_id,
+            comparison_key: Some(comparison_key),
         })
     }
 }
