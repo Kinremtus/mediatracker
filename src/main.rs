@@ -23,9 +23,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Get API keys from environment
     let tmdb_api_key = std::env::var("TMDB_API_KEY").unwrap_or_default();
     let rawg_api_key = std::env::var("RAWG_API_KEY").unwrap_or_default();
+    let igdb_client_id = std::env::var("IGDB_CLIENT_ID").unwrap_or_default();
+    let igdb_client_secret = std::env::var("IGDB_CLIENT_SECRET").unwrap_or_default();
 
     // Initialize database and run migrations
-    let state = AppState::new(&config.database_url, &tmdb_api_key, &rawg_api_key).await?;
+    let state = AppState::new(
+        &config.database_url,
+        &tmdb_api_key,
+        &rawg_api_key,
+        &igdb_client_id,
+        &igdb_client_secret,
+    ).await?;
     info!("Database connected and migrations applied");
 
     // Public routes
