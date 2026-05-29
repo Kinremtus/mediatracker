@@ -86,15 +86,26 @@ function openMediaDrawer(provider, externalId, mediaType) {
 function updateTrackingStatus(trackingId, newStatus, clickedBtn) {
     const params = new URLSearchParams();
     params.append('status', newStatus);
-    fetch(`/tracking/${trackingId}`, {
+    fetch(`/tracking/${trackingId}/htmx`, {
         method: 'POST',
         body: params,
-        redirect: 'manual',
-    }).then(() => {
+    }).then(r => r.text()).then(html => {
+        // Update active chip in drawer
         const container = clickedBtn.closest('.drawer-status-chips');
         if (container) {
             container.querySelectorAll('.drawer-status-chip').forEach(btn => btn.classList.remove('active'));
             clickedBtn.classList.add('active');
         }
+        // Replace card on page
+        const card = document.getElementById(`card-${trackingId}`);
+        if (card && html.trim()) {
+            card.outerHTML = html;
+            const newCard = document.getElementById(`card-${trackingId}`);
+            if (newCard && typeof Alpine !== 'undefined') {
+                Alpine.initTree(newCard);
+            }
+        }
+    }).catch(() => {});
+}
     }).catch(() => {});
 }
