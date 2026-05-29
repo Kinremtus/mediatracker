@@ -63,22 +63,22 @@
                             hx-vals='{"status":"in_progress","progress":{{ entry_with_media.entry.progress }}}'
                             hx-target="#card-{{ entry_with_media.entry.id }}"
                             hx-swap="outerHTML"
-                            class="tracking-status-option">В процессе</button>
+                            class="tracking-status-option status-in_progress">В процессе</button>
                     <button hx-post="/tracking/{{ entry_with_media.entry.id }}/htmx"
                             hx-vals='{"status":"completed","progress":{{ entry_with_media.entry.progress }}}'
                             hx-target="#card-{{ entry_with_media.entry.id }}"
                             hx-swap="outerHTML"
-                            class="tracking-status-option">Завершено</button>
+                            class="tracking-status-option status-completed">Завершено</button>
                     <button hx-post="/tracking/{{ entry_with_media.entry.id }}/htmx"
                             hx-vals='{"status":"planned","progress":{{ entry_with_media.entry.progress }}}'
                             hx-target="#card-{{ entry_with_media.entry.id }}"
                             hx-swap="outerHTML"
-                            class="tracking-status-option">Запланировано</button>
+                            class="tracking-status-option status-planned">Запланировано</button>
                     <button hx-post="/tracking/{{ entry_with_media.entry.id }}/htmx"
                             hx-vals='{"status":"dropped","progress":{{ entry_with_media.entry.progress }}}'
                             hx-target="#card-{{ entry_with_media.entry.id }}"
                             hx-swap="outerHTML"
-                            class="tracking-status-option">Брошено</button>
+                            class="tracking-status-option status-dropped">Брошено</button>
                 </div>
             </div>
         </div>

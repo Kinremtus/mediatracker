@@ -81,7 +81,7 @@
 }
 
 .sidebar-link.active {
-    background: var(--sidebar-accent);
+    background: color-mix(in srgb, var(--sidebar-accent) 60%, transparent);
     font-weight: 500;
 }
 
@@ -1277,6 +1277,11 @@
     background: var(--secondary);
 }
 
+.tracking-status-option.status-in_progress { color: var(--in_progress); }
+.tracking-status-option.status-completed { color: var(--completed); }
+.tracking-status-option.status-planned { color: var(--planned); }
+.tracking-status-option.status-dropped { color: var(--dropped); }
+
 /* --- Category Section --- */
 .category-section {
     margin-bottom: 2rem;
@@ -1501,6 +1506,7 @@
     padding: 1.5rem;
     flex: 1;
     overflow-y: auto;
+    color: var(--muted-foreground);
 }
 
 @media (max-width: 480px) {
