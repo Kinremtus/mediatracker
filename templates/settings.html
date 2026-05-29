@@ -5,18 +5,22 @@
 {% block content %}
 <h1 class="content-title">Настройки</h1>
 
+<div id="settings-messages">
 {% if let Some(message) = message %}
 <div class="settings-message settings-message-success">{{ message }}</div>
 {% endif %}
 {% if let Some(error) = error %}
 <div class="settings-message settings-message-error">{{ error }}</div>
 {% endif %}
+</div>
 
 <!-- Profile Section -->
 <div class="settings-section">
     <h2 class="settings-section-title">Профиль</h2>
     <div class="settings-card">
-        <form method="POST" action="/settings/profile">
+        <form hx-post="/settings/profile/htmx"
+              hx-target="#settings-messages"
+              hx-swap="innerHTML">
             <div class="settings-field">
                 <label class="settings-label">Имя пользователя</label>
                 <input type="text" name="username" value="{{ username }}" class="settings-input" required>
@@ -34,7 +38,9 @@
 <div class="settings-section">
     <h2 class="settings-section-title">Безопасность</h2>
     <div class="settings-card">
-        <form method="POST" action="/settings/password">
+        <form hx-post="/settings/password/htmx"
+              hx-target="#settings-messages"
+              hx-swap="innerHTML">
             <div class="settings-field">
                 <label class="settings-label">Текущий пароль</label>
                 <input type="password" name="current_password" class="settings-input" required>
@@ -77,6 +83,32 @@
             </label>
         </div>
         <button type="button" class="btn btn-primary" onclick="this.closest('form').submit()">Сохранить</button>
+    </div>
+</div>
+
+<!-- Telegram Section -->
+<div class="settings-section">
+    <h2 class="settings-section-title">Telegram</h2>
+    <div class="settings-card">
+        <div class="settings-field">
+            <label class="settings-label">Chat ID</label>
+            <div class="settings-description">Узнайте свой Chat ID через <a href="https://t.me/userinfobot" target="_blank" style="color: var(--in_progress);">@userinfobot</a></div>
+            <form hx-post="/settings/telegram/htmx"
+                  hx-target="#settings-messages"
+                  hx-swap="innerHTML"
+                  style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+                <input type="text" name="telegram_chat_id" value="{{ telegram_chat_id.unwrap_or_default() }}" class="settings-input" placeholder="123456789" style="max-width: 300px;">
+                <button type="submit" class="btn btn-primary">Сохранить</button>
+            </form>
+        </div>
+        <div class="settings-field" style="margin-top: 1rem;">
+            <button hx-post="/settings/telegram/test"
+                    hx-target="#settings-messages"
+                    hx-swap="innerHTML"
+                    class="btn btn-secondary">
+                Отправить тестовое сообщение
+            </button>
+        </div>
     </div>
 </div>
 

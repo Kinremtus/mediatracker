@@ -1,0 +1,6 @@
+{% if let Some(msg) = message %}
+<div class="settings-message settings-message-success" hx-swap="outerHTML" hx-trigger="load">{{ msg }}</div>
+{% endif %}
+{% if let Some(err) = error %}
+<div class="settings-message settings-message-error" hx-swap="outerHTML" hx-trigger="load">{{ err }}</div>
+{% endif %}

@@ -125,42 +125,5 @@
 // Detect mobile
 window.isMobile = window.innerWidth <= 768;
 window.addEventListener('resize', () => { window.isMobile = window.innerWidth <= 768; });
-
-function setTheme(t) {
-    localStorage.setItem('mediatracker-theme', t);
-    document.documentElement.className = t;
-}
-
-function openMediaDrawer(provider, externalId, mediaType) {
-    let url = `/api/media/${provider}/${externalId}`;
-    if (mediaType) url += `?media_type=${mediaType}`;
-    fetch(url)
-        .then(r => r.text())
-        .then(html => {
-            const appShell = document.querySelector('.app-shell');
-            const data = Alpine.$data(appShell);
-            data.drawerContent = html;
-            data.drawerOpen = true;
-            document.body.style.overflow = 'hidden';
-        })
-        .catch(e => console.error('Failed to load media details', e));
-}
-
-function updateTrackingStatus(trackingId, newStatus, clickedBtn) {
-    const params = new URLSearchParams();
-    params.append('status', newStatus);
-    fetch(`/tracking/${trackingId}`, {
-        method: 'POST',
-        body: params,
-        redirect: 'manual',
-    }).then(() => {
-        const container = clickedBtn.closest('.drawer-status-chips');
-        if (container) {
-            container.querySelectorAll('.drawer-status-chip').forEach(btn => btn.classList.remove('active'));
-            clickedBtn.classList.add('active');
-        }
-        setTimeout(() => { window.location.href = window.location.href; }, 200);
-    }).catch(() => {});
-}
 </script>
 {% endblock %}

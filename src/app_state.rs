@@ -9,6 +9,7 @@ use crate::services::external::openlibrary::OpenLibraryService;
 use crate::services::external::rawg::RawgService;
 use crate::services::external::shikimori::ShikimoriService;
 use crate::services::external::tmdb::TmdbService;
+use crate::services::notifications::TelegramNotifier;
 use crate::services::release_schedule::ReleaseScheduleService;
 use crate::services::stats::StatsService;
 use crate::services::tracking::TrackingService;
@@ -28,6 +29,7 @@ pub struct AppState {
     pub tracking: TrackingService,
     pub release_schedule: ReleaseScheduleService,
     pub stats: StatsService,
+    pub telegram: TelegramNotifier,
 }
 
 impl AppState {
@@ -37,6 +39,7 @@ impl AppState {
         rawg_api_key: &str,
         igdb_client_id: &str,
         igdb_client_secret: &str,
+        telegram_bot_token: &str,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let db = PgPool::connect(database_url).await?;
         sqlx::migrate!("./migrations").run(&db).await?;
@@ -52,6 +55,7 @@ impl AppState {
         let tracking = TrackingService::new(db.clone());
         let release_schedule = ReleaseScheduleService::new(db.clone());
         let stats = StatsService::new(db.clone());
+        let telegram = TelegramNotifier::new(telegram_bot_token.to_string());
         Ok(Self {
             db,
             auth,
@@ -66,6 +70,7 @@ impl AppState {
             tracking,
             release_schedule,
             stats,
+            telegram,
         })
     }
 }
