@@ -1,7 +1,9 @@
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use reqwest::Client;
 use serde::Deserialize;
 use tokio::sync::Mutex;
+use url::Url;
 
 use crate::models::media_item::CreateMediaItem;
 
@@ -48,8 +50,8 @@ pub struct IgdbService {
     client: Client,
     pub client_id: String,
     client_secret: String,
-    token: Mutex<String>,
-    token_expires_at: Mutex<Instant>,
+    token: Arc<Mutex<String>>,
+    token_expires_at: Arc<Mutex<Instant>>,
 }
 
 impl IgdbService {
@@ -58,8 +60,8 @@ impl IgdbService {
             client: Client::new(),
             client_id,
             client_secret,
-            token: Mutex::new(String::new()),
-            token_expires_at: Mutex::new(Instant::now()),
+            token: Arc::new(Mutex::new(String::new())),
+            token_expires_at: Arc::new(Mutex::new(Instant::now())),
         }
     }
 
@@ -78,14 +80,15 @@ impl IgdbService {
             }
         }
 
+        let mut url = Url::parse(TOKEN_URL)?;
+        url.query_pairs_mut()
+            .append_pair("client_id", &self.client_id)
+            .append_pair("client_secret", &self.client_secret)
+            .append_pair("grant_type", "client_credentials");
+
         let resp = self
             .client
-            .post(TOKEN_URL)
-            .query(&[
-                ("client_id", self.client_id.as_str()),
-                ("client_secret", self.client_secret.as_str()),
-                ("grant_type", "client_credentials"),
-            ])
+            .post(url.as_str())
             .send()
             .await?
             .json::<TwitchTokenResponse>()
