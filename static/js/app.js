@@ -107,5 +107,3 @@ function updateTrackingStatus(trackingId, newStatus, clickedBtn) {
         }
     }).catch(() => {});
 }
-    }).catch(() => {});
-}
