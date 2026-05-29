@@ -16,6 +16,7 @@
 </form>
 
 <div class="type-selector">
+    <a href="?q={{ query }}&page=1" class="type-btn {% if current_type.is_empty() %}active{% endif %}">🔍 Все типы</a>
     <a href="?q={{ query }}&type=anime&page=1" class="type-btn {% if current_type == "anime" %}active{% endif %}">▶ Аниме</a>
     <a href="?q={{ query }}&type=manga&page=1" class="type-btn {% if current_type == "manga" %}active{% endif %}"> Манга</a>
     <a href="?q={{ query }}&type=manhwa&page=1" class="type-btn {% if current_type == "manhwa" %}active{% endif %}"> Манхва</a>
