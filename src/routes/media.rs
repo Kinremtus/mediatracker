@@ -52,7 +52,9 @@ pub async fn get_media_detail(
             state.tmdb.get_details(&external_id, media_type).await
         }
         "rawg" => state.rawg.get_details(&external_id).await,
+        "igdb" => state.igdb.get_details(&external_id).await,
         "google_books" => state.google_books.get_details(&external_id).await,
+        "openlibrary" => state.openlibrary.get_details(&external_id).await,
         _ => Err(anyhow::anyhow!("Unknown provider")),
     };
 
@@ -104,7 +106,9 @@ pub async fn get_media_drawer_content(
             state.tmdb.get_details(&external_id, media_type).await
         }
         "rawg" => state.rawg.get_details(&external_id).await,
+        "igdb" => state.igdb.get_details(&external_id).await,
         "google_books" => state.google_books.get_details(&external_id).await,
+        "openlibrary" => state.openlibrary.get_details(&external_id).await,
         _ => Err(anyhow::anyhow!("Unknown provider")),
     };
 

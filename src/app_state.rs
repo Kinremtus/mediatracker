@@ -2,8 +2,10 @@ use sqlx::PgPool;
 
 use crate::services::auth::AuthService;
 use crate::services::external::google_books::GoogleBooksService;
+use crate::services::external::igdb::IgdbService;
 use crate::services::external::mal::MalService;
 use crate::services::external::mangaupdates::MangaUpdatesService;
+use crate::services::external::openlibrary::OpenLibraryService;
 use crate::services::external::rawg::RawgService;
 use crate::services::external::shikimori::ShikimoriService;
 use crate::services::external::tmdb::TmdbService;
@@ -20,7 +22,9 @@ pub struct AppState {
     pub mangaupdates: MangaUpdatesService,
     pub tmdb: TmdbService,
     pub rawg: RawgService,
+    pub igdb: IgdbService,
     pub google_books: GoogleBooksService,
+    pub openlibrary: OpenLibraryService,
     pub tracking: TrackingService,
     pub release_schedule: ReleaseScheduleService,
     pub stats: StatsService,
@@ -31,6 +35,8 @@ impl AppState {
         database_url: &str,
         tmdb_api_key: &str,
         rawg_api_key: &str,
+        igdb_client_id: &str,
+        igdb_client_secret: &str,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let db = PgPool::connect(database_url).await?;
         sqlx::migrate!("./migrations").run(&db).await?;
@@ -40,7 +46,9 @@ impl AppState {
         let mangaupdates = MangaUpdatesService::new();
         let tmdb = TmdbService::new(tmdb_api_key.to_string());
         let rawg = RawgService::new(rawg_api_key.to_string());
+        let igdb = IgdbService::new(igdb_client_id.to_string(), igdb_client_secret.to_string());
         let google_books = GoogleBooksService::new();
+        let openlibrary = OpenLibraryService::new();
         let tracking = TrackingService::new(db.clone());
         let release_schedule = ReleaseScheduleService::new(db.clone());
         let stats = StatsService::new(db.clone());
@@ -52,7 +60,9 @@ impl AppState {
             mangaupdates,
             tmdb,
             rawg,
+            igdb,
             google_books,
+            openlibrary,
             tracking,
             release_schedule,
             stats,

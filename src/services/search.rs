@@ -32,10 +32,12 @@ fn provider_priority(media_type: &str, provider: &str) -> u8 {
         },
         "game" => match provider {
             "rawg" => 0,
+            "igdb" => 1,
             _ => 10,
         },
         "book" => match provider {
             "google_books" => 0,
+            "openlibrary" => 1,
             _ => 10,
         },
         "movie" | "series" | "dramas" | "cartoons" | "animated-movies" => match provider {
@@ -241,26 +243,57 @@ pub async fn animated_movies(state: &AppState, query: &str) -> Vec<CreateMediaIt
     out
 }
 
-/// Игры → RAWG.
+/// Игры → RAWG + IGDB.
 pub async fn game(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
-    let mut out = Vec::new();
-    if state.rawg.api_key.is_empty() {
-        tracing::warn!("RAWG_API_KEY not set, game search skipped");
-        return out;
+    let mut has_rawg = false;
+    let mut has_igdb = false;
+
+    if !state.rawg.api_key.is_empty() {
+        has_rawg = true;
     }
-    extend(&mut out, state.rawg.search(query).await, "rawg");
-    out
+    if state.igdb.is_configured() {
+        has_igdb = true;
+    }
+
+    if !has_rawg && !has_igdb {
+        tracing::warn!("No game providers configured (RAWG_API_KEY / IGDB_CLIENT_ID+SECRET)");
+        return Vec::new();
+    }
+
+    let (rawg_res, igdb_res) = tokio::join!(
+        async {
+            if has_rawg {
+                state.rawg.search(query).await
+            } else {
+                Ok(Vec::new())
+            }
+        },
+        async {
+            if has_igdb {
+                state.igdb.search(query).await
+            } else {
+                Ok(Vec::new())
+            }
+        },
+    );
+
+    let mut items = Vec::new();
+    extend(&mut items, rawg_res, "rawg");
+    extend(&mut items, igdb_res, "igdb");
+    deduplicate_by_title(items)
 }
 
-/// Книги → Google Books.
+/// Книги → Google Books + Open Library.
 pub async fn book(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
-    let mut out = Vec::new();
-    extend(
-        &mut out,
-        state.google_books.search(query).await,
-        "google_books",
+    let (gb_res, ol_res) = tokio::join!(
+        state.google_books.search(query),
+        state.openlibrary.search(query),
     );
-    out
+
+    let mut items = Vec::new();
+    extend(&mut items, gb_res, "google_books");
+    extend(&mut items, ol_res, "openlibrary");
+    deduplicate_by_title(items)
 }
 
 /// Без выбранного типа — срез по всем категориям (по одному запросу на группу провайдеров).
