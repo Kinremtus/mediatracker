@@ -22,7 +22,7 @@ struct SettingsTemplate {
     email_notifications: bool,
     weekly_digest: bool,
     current_status: String,
-    telegram_chat_id: Option<String>,
+    telegram_chat_id: String,
     telegram_notifications_enabled: bool,
 }
 
@@ -63,7 +63,7 @@ pub async fn get_settings(
         email_notifications: false,
         weekly_digest: false,
         current_status: String::new(),
-        telegram_chat_id: user_data.2,
+        telegram_chat_id: user_data.2.unwrap_or_default(),
         telegram_notifications_enabled: user_data.3,
     }
     .render()
@@ -106,7 +106,7 @@ pub async fn post_profile(
                 email_notifications: false,
                 weekly_digest: false,
                 current_status: String::new(),
-                telegram_chat_id: None,
+                telegram_chat_id: String::new(),
                 telegram_notifications_enabled: false,
             }.render().unwrap()).into_response()
         }
@@ -122,7 +122,7 @@ pub async fn post_profile(
                 email_notifications: false,
                 weekly_digest: false,
                 current_status: String::new(),
-                telegram_chat_id: None,
+                telegram_chat_id: String::new(),
                 telegram_notifications_enabled: false,
             }.render().unwrap()).into_response()
         }
@@ -146,6 +146,8 @@ pub async fn post_password(
             email_notifications: false,
             weekly_digest: false,
             current_status: String::new(),
+            telegram_chat_id: None,
+            telegram_notifications_enabled: false,
         }.render().unwrap()).into_response();
     }
 
@@ -161,6 +163,8 @@ pub async fn post_password(
             email_notifications: false,
             weekly_digest: false,
             current_status: String::new(),
+            telegram_chat_id: None,
+            telegram_notifications_enabled: false,
         }.render().unwrap()).into_response();
     }
 
@@ -195,7 +199,7 @@ pub async fn post_password(
                 email_notifications: false,
                 weekly_digest: false,
                 current_status: String::new(),
-                telegram_chat_id: None,
+                telegram_chat_id: String::new(),
                 telegram_notifications_enabled: false,
             }.render().unwrap()).into_response();
         }
@@ -213,6 +217,8 @@ pub async fn post_password(
             email_notifications: false,
             weekly_digest: false,
             current_status: String::new(),
+            telegram_chat_id: None,
+            telegram_notifications_enabled: false,
         }.render().unwrap()).into_response();
     }
 
@@ -233,7 +239,7 @@ pub async fn post_password(
                 email_notifications: false,
                 weekly_digest: false,
                 current_status: String::new(),
-                telegram_chat_id: None,
+                telegram_chat_id: String::new(),
                 telegram_notifications_enabled: false,
             }.render().unwrap()).into_response();
         }
@@ -260,7 +266,7 @@ pub async fn post_password(
                 email_notifications: false,
                 weekly_digest: false,
                 current_status: String::new(),
-                telegram_chat_id: None,
+                telegram_chat_id: String::new(),
                 telegram_notifications_enabled: false,
             }.render().unwrap()).into_response()
         }
@@ -276,7 +282,7 @@ pub async fn post_password(
                 email_notifications: false,
                 weekly_digest: false,
                 current_status: String::new(),
-                telegram_chat_id: None,
+                telegram_chat_id: String::new(),
                 telegram_notifications_enabled: false,
             }.render().unwrap()).into_response()
         }
