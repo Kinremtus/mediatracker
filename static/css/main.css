@@ -418,10 +418,22 @@ img {
     transform: scale(1.05);
 }
 
+@keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
+
 .poster-placeholder {
     width: 100%;
     height: 100%;
-    background: linear-gradient(145deg, var(--muted), color-mix(in srgb, var(--muted-foreground) 8%, var(--muted)));
+    background: linear-gradient(
+        90deg,
+        var(--muted) 0%,
+        color-mix(in srgb, var(--muted-foreground) 10%, var(--muted)) 50%,
+        var(--muted) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 3s ease-in-out infinite;
     display: flex;
     align-items: center;
     justify-content: center;
