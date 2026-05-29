@@ -96,6 +96,5 @@ function updateTrackingStatus(trackingId, newStatus, clickedBtn) {
             container.querySelectorAll('.drawer-status-chip').forEach(btn => btn.classList.remove('active'));
             clickedBtn.classList.add('active');
         }
-        setTimeout(() => { window.location.href = window.location.href; }, 200);
     }).catch(() => {});
 }
