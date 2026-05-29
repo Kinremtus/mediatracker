@@ -97,7 +97,7 @@
                   hx-target="#settings-messages"
                   hx-swap="innerHTML"
                   style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
-                <input type="text" name="telegram_chat_id" value="{{ telegram_chat_id.unwrap_or_default() }}" class="settings-input" placeholder="123456789" style="max-width: 300px;">
+                <input type="text" name="telegram_chat_id" value="{{ telegram_chat_id }}" class="settings-input" placeholder="123456789" style="max-width: 300px;">
                 <button type="submit" class="btn btn-primary">Сохранить</button>
             </form>
         </div>
