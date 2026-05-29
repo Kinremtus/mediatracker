@@ -25,6 +25,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rawg_api_key = std::env::var("RAWG_API_KEY").unwrap_or_default();
     let igdb_client_id = std::env::var("IGDB_CLIENT_ID").unwrap_or_default();
     let igdb_client_secret = std::env::var("IGDB_CLIENT_SECRET").unwrap_or_default();
+    let telegram_bot_token = std::env::var("TELEGRAM_BOT_TOKEN").unwrap_or_default();
 
     // Initialize database and run migrations
     let state = AppState::new(
@@ -33,6 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &rawg_api_key,
         &igdb_client_id,
         &igdb_client_secret,
+        &telegram_bot_token,
     ).await?;
     info!("Database connected and migrations applied");
 
@@ -51,12 +53,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/tracking", get(tracking::get_tracking_list).post(tracking::post_add_to_tracking))
         .route("/tracking/{id}", axum::routing::post(tracking::post_update_tracking))
         .route("/tracking/{id}/delete", axum::routing::post(tracking::post_delete_tracking))
+        .route("/tracking/partial", get(tracking::htmx_tracking_partial))
+        .route("/tracking/{id}/htmx", axum::routing::post(tracking::htmx_update_tracking))
+        .route("/tracking/{id}/htmx/delete", axum::routing::post(tracking::htmx_delete_tracking))
         .route("/calendar", get(calendar::get_calendar))
         .route("/stats", get(stats::get_stats))
         .route("/settings", get(settings::get_settings))
         .route("/settings/profile", axum::routing::post(settings::post_profile))
         .route("/settings/password", axum::routing::post(settings::post_password))
         .route("/settings/delete-account", axum::routing::post(settings::post_delete_account))
+        .route("/settings/profile/htmx", axum::routing::post(settings::htmx_update_profile))
+        .route("/settings/password/htmx", axum::routing::post(settings::htmx_update_password))
+        .route("/settings/telegram/htmx", axum::routing::post(settings::htmx_save_telegram_chat_id))
+        .route("/settings/telegram/test", axum::routing::post(settings::htmx_test_telegram))
         .layer(from_fn_with_state(state.clone(), auth_middleware));
 
     // Combine routes

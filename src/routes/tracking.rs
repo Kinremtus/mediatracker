@@ -246,6 +246,104 @@ pub async fn post_delete_tracking(
     }
 }
 
+// ========== HTMX Endpoints ==========
+
+#[derive(Template)]
+#[template(path = "partials/tracking_card.html")]
+struct TrackingCardPartial {
+    entry_with_media: TrackingEntryWithMedia,
+}
+
+#[derive(Template)]
+#[template(path = "partials/tracking_grid.html")]
+struct TrackingGridPartial {
+    entries: Vec<TrackingEntryWithMedia>,
+    current_status: String,
+    current_media_type: String,
+    search_query: String,
+}
+
+#[derive(Template)]
+#[template(path = "partials/message.html")]
+struct MessagePartial {
+    message: Option<String>,
+    error: Option<String>,
+}
+
+pub async fn htmx_update_tracking(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Form(form): Form<UpdateTrackingForm>,
+) -> Response {
+    let update = UpdateTracking {
+        status: form.status,
+        rating: form.rating,
+        progress: form.progress,
+    };
+
+    match state.tracking.update_entry(id, user.id, &update).await {
+        Ok(entry) => {
+            let entries = state.tracking.get_user_entries(user.id, None, None, None).await.unwrap_or_default();
+            let entry_with_media = entries.iter().find(|e| e.entry.id == id).cloned();
+            match entry_with_media {
+                Some(ewm) => {
+                    let html = TrackingCardPartial { entry_with_media: ewm }.render().unwrap();
+                    (
+                        [("HX-Trigger", "trackingUpdated")],
+                        Html(html),
+                    ).into_response()
+                }
+                None => Redirect::to("/tracking").into_response(),
+            }
+        }
+        Err(e) => {
+            eprintln!("Error updating tracking: {}", e);
+            Redirect::to("/tracking").into_response()
+        }
+    }
+}
+
+pub async fn htmx_delete_tracking(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Response {
+    match state.tracking.delete_entry(id, user.id).await {
+        Ok(_) => {
+            (
+                [("HX-Trigger", "trackingUpdated")],
+                "",
+            ).into_response()
+        }
+        Err(e) => {
+            eprintln!("Error deleting tracking: {}", e);
+            Redirect::to("/tracking").into_response()
+        }
+    }
+}
+
+pub async fn htmx_tracking_partial(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Query(params): Query<TrackingQuery>,
+) -> Html<String> {
+    let status = params.status.as_deref();
+    let media_type = params.media_type.as_deref();
+    let search_query = params.q.as_deref();
+    let entries = state.tracking.get_user_entries(user.id, status, media_type, search_query).await.unwrap_or_default();
+
+    TrackingGridPartial {
+        entries,
+        current_status: params.status.unwrap_or_default(),
+        current_media_type: params.media_type.unwrap_or_default(),
+        search_query: params.q.unwrap_or_default(),
+    }
+    .render()
+    .unwrap()
+    .into()
+}
+
 async fn get_sidebar_stats(state: &AppState, user_id: uuid::Uuid) -> SidebarStats {
     let (ip, cp, pp, dp) = state.tracking.get_status_counts(user_id).await.unwrap_or_default();
     SidebarStats { in_progress: ip, completed: cp, planned: pp, dropped: dp }

@@ -1,0 +1,25 @@
+/* --- Utilities --- */
+
+[x-cloak] { display: none !important; }
+
+.empty-state {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: var(--muted-foreground);
+}
+
+.empty-state-icon {
+    font-size: 48px;
+    margin-bottom: 1rem;
+    opacity: 0.5;
+}
+
+.empty-state-text {
+    font-size: 16px;
+    margin-bottom: 0.5rem;
+}
+
+.empty-state-sub {
+    font-size: 14px;
+    opacity: 0.7;
+}

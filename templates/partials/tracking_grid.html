@@ -1,79 +1,5 @@
-{% extends "app_shell.html" %}
-
-{% block title %}{{ status_label }} - MediaTracker{% endblock %}
-
-{% block content %}
-<h1 class="content-title">{{ status_label }}</h1>
-
-<div class="filter-bar" x-data="{ typeOpen: false, statusOpen: false }">
-    <!-- Media Type dropdown -->
-    <div class="filter-dropdown" @click.outside="typeOpen = false">
-        <button @click="typeOpen = !typeOpen" class="filter-btn">
-            {{ current_type_label }}
-            <span style="font-size: 10px; opacity: 0.5;">▼</span>
-        </button>
-        <div x-show="typeOpen" x-cloak x-transition class="filter-dropdown-menu">
-            <a href="/tracking{% if !current_status.is_empty() %}?status={{ current_status }}{% endif %}"
-               hx-get="/tracking/partial{% if !current_status.is_empty() %}?status={{ current_status }}{% endif %}"
-               hx-target="#tracking-grid"
-               hx-swap="innerHTML"
-               class="filter-dropdown-item {% if current_media_type == "" %}active{% endif %}">Все</a>
-            {% for item in media_types %}
-            <a href="/tracking?type={{ item.key }}{% if !current_status.is_empty() %}&status={{ current_status }}{% endif %}"
-               hx-get="/tracking/partial?type={{ item.key }}{% if !current_status.is_empty() %}&status={{ current_status }}{% endif %}"
-               hx-target="#tracking-grid"
-               hx-swap="innerHTML"
-               class="filter-dropdown-item {% if current_media_type == item.key %}active{% endif %}">{{ item.icon }} {{ item.label }}</a>
-            {% endfor %}
-        </div>
-    </div>
-
-    <!-- Status dropdown -->
-    <div class="filter-dropdown" @click.outside="statusOpen = false">
-        <button @click="statusOpen = !statusOpen" class="filter-btn">
-            {{ status_label }}
-            <span style="font-size: 10px; opacity: 0.5;">▼</span>
-        </button>
-        <div x-show="statusOpen" x-cloak x-transition class="filter-dropdown-menu">
-            {% for item in statuses %}
-            {% if item.key == "" %}
-            <a href="/tracking{% if !current_media_type.is_empty() %}?type={{ current_media_type }}{% endif %}"
-               hx-get="/tracking/partial{% if !current_media_type.is_empty() %}?type={{ current_media_type }}{% endif %}"
-               hx-target="#tracking-grid"
-               hx-swap="innerHTML"
-               class="filter-dropdown-item {% if current_status == "" %}active{% endif %}">{{ item.label }}</a>
-            {% else %}
-            <a href="/tracking?status={{ item.key }}{% if !current_media_type.is_empty() %}&type={{ current_media_type }}{% endif %}"
-               hx-get="/tracking/partial?status={{ item.key }}{% if !current_media_type.is_empty() %}&type={{ current_media_type }}{% endif %}"
-               hx-target="#tracking-grid"
-               hx-swap="innerHTML"
-               class="filter-dropdown-item {% if current_status == item.key %}active{% endif %}">{{ item.label }}</a>
-            {% endif %}
-            {% endfor %}
-        </div>
-    </div>
-</div>
-
-<form action="/tracking" method="get" class="tracking-search-form"
-      hx-get="/tracking/partial"
-      hx-target="#tracking-grid"
-      hx-swap="innerHTML"
-      hx-trigger="submit"
-      hx-include="[name='type'], [name='status'], [name='q']">
-    <input type="hidden" name="type" value="{{ current_media_type }}">
-    <input type="hidden" name="status" value="{{ current_status }}">
-    <input type="search" name="q" value="{{ search_query }}" placeholder="Поиск по названию в списке..."
-           hx-trigger="keyup changed delay:300ms"
-           hx-get="/tracking/partial"
-           hx-target="#tracking-grid"
-           hx-swap="innerHTML"
-           hx-include="[name='type'], [name='status']">
-    <button type="submit">Найти</button>
-</form>
-
-<div id="tracking-grid">
 {% if !entries.is_empty() %}
-<div class="tracking-grid">
+<div class="tracking-grid" id="tracking-grid">
     {% for entry_with_media in entries %}
     <div class="tracking-card" id="card-{{ entry_with_media.entry.id }}" x-data="{ statusOpen: false }">
         <!-- Delete button -->
@@ -166,5 +92,3 @@
     <p class="empty-state-sub">Добавьте тайтлы через <a href="/search" style="color: var(--in_progress);">поиск</a></p>
 </div>
 {% endif %}
-</div>
-{% endblock %}

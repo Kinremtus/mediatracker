@@ -22,10 +22,13 @@ RUN --mount=type=cache,target=/root/.cargo/registry,id=cargo-registry \
 
 # Runtime stage
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y libssl3 ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y libssl3 ca-certificates curl && rm -rf /var/lib/apt/lists/*
+RUN adduser --disabled-password --no-create-home appuser
 WORKDIR /app
 COPY --from=builder /app/target/release/mediatracker /app/mediatracker
 COPY --from=builder /app/static /app/static
 COPY --from=builder /app/migrations /app/migrations
+RUN chown -R appuser:appuser /app
+USER appuser
 EXPOSE 8080
 CMD ["./mediatracker"]

@@ -9,3 +9,10 @@ tests
 legacy-python
 frontend
 backend
+.env
+infra/
+k8s/
+docs/
+scripts/
+backups/
+*.sql.gz

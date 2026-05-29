@@ -1,0 +1,82 @@
+<div class="tracking-card" id="card-{{ entry_with_media.entry.id }}" x-data="{ statusOpen: false }">
+    <!-- Delete button -->
+    <button hx-delete="/tracking/{{ entry_with_media.entry.id }}/htmx/delete"
+            hx-target="#card-{{ entry_with_media.entry.id }}"
+            hx-swap="outerHTML"
+            hx-confirm="Удалить из списка?"
+            class="tracking-card-delete" title="Удалить">✕</button>
+
+    <!-- Poster -->
+    <a @click.prevent="openMediaDrawer('{{ entry_with_media.media.provider }}', '{{ entry_with_media.media.external_id }}')" href="#" class="tracking-card-poster">
+        {% if entry_with_media.media.poster_url.is_some() %}
+        <img src="{{ entry_with_media.media.poster_url.as_ref().unwrap() }}" alt="{{ entry_with_media.media.title }}" loading="lazy">
+        {% else %}
+        <div class="poster-placeholder" style="font-size: 10px; padding: 4px;">Нет обложки</div>
+        {% endif %}
+        {% if entry_with_media.media.score.is_some() && entry_with_media.media.score.unwrap() > 0.0 %}
+        <span class="media-card-score">{{ "{:.1}"|format(entry_with_media.media.score.unwrap()) }}</span>
+        {% endif %}
+    </a>
+
+    <!-- Info -->
+    <div class="tracking-card-info">
+        <a @click.prevent="openMediaDrawer('{{ entry_with_media.media.provider }}', '{{ entry_with_media.media.external_id }}')" href="#" class="tracking-card-title">
+            {{ entry_with_media.media.title }}
+        </a>
+
+        <!-- Progress -->
+        <div class="tracking-card-progress">
+            <button hx-post="/tracking/{{ entry_with_media.entry.id }}/htmx"
+                    hx-vals='{"status":"{{ entry_with_media.entry.status }}"{% if let Some(r) = entry_with_media.entry.rating %},"rating":"{{ r }}"{% endif %},"progress":{{ entry_with_media.entry.progress - 1 }}}'
+                    hx-target="#card-{{ entry_with_media.entry.id }}"
+                    hx-swap="outerHTML"
+                    class="tracking-progress-btn"
+                    {% if entry_with_media.entry.progress <= 0 %}disabled{% endif %}>−</button>
+            <span class="tracking-progress-value">{{ entry_with_media.entry.progress }}</span>
+            <span class="tracking-progress-total">/ {% if entry_with_media.media.episodes.is_some() %}{{ entry_with_media.media.episodes.unwrap() }}{% else %}?{% endif %}</span>
+            <button hx-post="/tracking/{{ entry_with_media.entry.id }}/htmx"
+                    hx-vals='{"status":"{{ entry_with_media.entry.status }}"{% if let Some(r) = entry_with_media.entry.rating %},"rating":"{{ r }}"{% endif %},"progress":{{ entry_with_media.entry.progress + 1 }}}'
+                    hx-target="#card-{{ entry_with_media.entry.id }}"
+                    hx-swap="outerHTML"
+                    class="tracking-progress-btn"
+                    {% if entry_with_media.media.episodes.is_some() %}{% if entry_with_media.entry.progress >= entry_with_media.media.episodes.unwrap() %}disabled{% endif %}{% endif %}>+</button>
+        </div>
+
+        <!-- Status dropdown -->
+        <div class="tracking-card-status" @click.outside="statusOpen = false">
+            <button @click="statusOpen = !statusOpen" class="tracking-status-btn" style="color: var(--{{ entry_with_media.entry.status }});">
+                {% match entry_with_media.entry.status.as_str() %}
+                {% when "in_progress" %}В процессе
+                {% when "completed" %}Завершено
+                {% when "planned" %}Запланировано
+                {% when "dropped" %}Брошено
+                {% else %}{{ entry_with_media.entry.status }}
+                {% endmatch %}
+                <span style="font-size: 10px; opacity: 0.5;">▼</span>
+            </button>
+
+            <div x-show="statusOpen" x-cloak x-transition class="tracking-status-dropdown">
+                <button hx-post="/tracking/{{ entry_with_media.entry.id }}/htmx"
+                        hx-vals='{"status":"in_progress","progress":{{ entry_with_media.entry.progress }}}'
+                        hx-target="#card-{{ entry_with_media.entry.id }}"
+                        hx-swap="outerHTML"
+                        class="tracking-status-option">В процессе</button>
+                <button hx-post="/tracking/{{ entry_with_media.entry.id }}/htmx"
+                        hx-vals='{"status":"completed","progress":{{ entry_with_media.entry.progress }}}'
+                        hx-target="#card-{{ entry_with_media.entry.id }}"
+                        hx-swap="outerHTML"
+                        class="tracking-status-option">Завершено</button>
+                <button hx-post="/tracking/{{ entry_with_media.entry.id }}/htmx"
+                        hx-vals='{"status":"planned","progress":{{ entry_with_media.entry.progress }}}'
+                        hx-target="#card-{{ entry_with_media.entry.id }}"
+                        hx-swap="outerHTML"
+                        class="tracking-status-option">Запланировано</button>
+                <button hx-post="/tracking/{{ entry_with_media.entry.id }}/htmx"
+                        hx-vals='{"status":"dropped","progress":{{ entry_with_media.entry.progress }}}'
+                        hx-target="#card-{{ entry_with_media.entry.id }}"
+                        hx-swap="outerHTML"
+                        class="tracking-status-option">Брошено</button>
+            </div>
+        </div>
+    </div>
+</div>
