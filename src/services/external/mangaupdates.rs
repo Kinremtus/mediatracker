@@ -102,7 +102,7 @@ impl MangaUpdatesService {
                     provider: "mangaupdates".to_string(),
                     external_id: r.record.series_id.to_string(),
                     media_type,
-                    title: r.record.title,
+                    title: r.record.title.clone(),
                     title_english: None,
                     title_native: None,
                     title_russian: None,
@@ -113,6 +113,7 @@ impl MangaUpdatesService {
                     score: r.record.bayesian_rating,
                     is_tracked: false,
                     mal_id: None,
+                    comparison_key: Some(r.record.title),
                 })
             })
             .collect();
@@ -139,7 +140,7 @@ impl MangaUpdatesService {
                 Some("Novel") => "novel".to_string(),
                 _ => "manga".to_string(),
             },
-            title: r.title,
+            title: r.title.clone(),
             title_english: None,
             title_native: None,
             title_russian: None,
@@ -150,6 +151,7 @@ impl MangaUpdatesService {
             score: r.bayesian_rating,
             is_tracked: false,
             mal_id: None,
+            comparison_key: Some(r.title),
         })
     }
 }

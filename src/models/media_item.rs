@@ -44,6 +44,8 @@ pub struct CreateMediaItem {
     pub is_tracked: bool,
     #[serde(default)]
     pub mal_id: Option<i64>,
+    #[serde(default)]
+    pub comparison_key: Option<String>,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]

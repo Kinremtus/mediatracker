@@ -87,6 +87,7 @@ impl GoogleBooksService {
                     score: r.volume_info.average_rating,
                     is_tracked: false,
                     mal_id: None,
+                    comparison_key: Some(r.volume_info.title),
                 }
             })
             .collect();
@@ -126,6 +127,7 @@ impl GoogleBooksService {
             score: r.volume_info.average_rating,
             is_tracked: false,
             mal_id: None,
+            comparison_key: Some(r.volume_info.title),
         })
     }
 }

@@ -14,6 +14,58 @@ fn extend(
     }
 }
 
+fn normalize_title(title: &str) -> String {
+    title.to_lowercase().trim().to_string()
+}
+
+/// Приоритет провайдера для типа медиа (0 =canonical, 10 = остальные).
+fn provider_priority(media_type: &str, provider: &str) -> u8 {
+    match media_type {
+        "anime" => match provider {
+            "mal" => 0,
+            "shikimori" => 1,
+            _ => 10,
+        },
+        "manga" | "manhwa" | "manhua" | "novel" | "other-comics" => match provider {
+            "mangaupdates" => 0,
+            _ => 10,
+        },
+        "game" => match provider {
+            "rawg" => 0,
+            _ => 10,
+        },
+        "book" => match provider {
+            "google_books" => 0,
+            _ => 10,
+        },
+        "movie" | "series" | "dramas" | "cartoons" | "animated-movies" => match provider {
+            "tmdb" => 0,
+            _ => 10,
+        },
+        _ => 10,
+    }
+}
+
+/// Дедупликация по (comparison_key, media_type).
+/// Сортирует по приоритету провайдера для типа, оставляет первый уникальный.
+fn deduplicate_by_title(items: Vec<CreateMediaItem>) -> Vec<CreateMediaItem> {
+    let mut sorted = items;
+    sorted.sort_by_key(|item| provider_priority(&item.media_type, &item.provider));
+
+    let mut seen = HashSet::new();
+    sorted
+        .into_iter()
+        .filter(|item| {
+            let key = item
+                .comparison_key
+                .as_deref()
+                .unwrap_or(&item.title);
+            let normalized = normalize_title(key);
+            seen.insert((normalized, item.media_type.clone()))
+        })
+        .collect()
+}
+
 /// Аниме: Shikimori + MyAnimeList (Jikan).
 /// MangaUpdates не каталогизирует аниме — только комиксы/новеллы.
 pub async fn anime(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
@@ -58,7 +110,7 @@ pub async fn anime(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
         }
     }
 
-    shiki_items
+    deduplicate_by_title(shiki_items)
 }
 
 pub async fn manga(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
@@ -226,7 +278,7 @@ pub async fn all_types(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
     out.extend(movie_r);
     out.extend(game_r);
     out.extend(book_r);
-    out
+    deduplicate_by_title(out)
 }
 
 pub async fn by_media_type(state: &AppState, query: &str, search_type: &str) -> Vec<CreateMediaItem> {
