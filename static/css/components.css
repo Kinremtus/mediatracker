@@ -1535,9 +1535,7 @@ body.drawer-open {
     transition: all 0.15s ease;
     white-space: nowrap;
     line-height: 1.4;
-    color: var(--chip-color);
-    border-color: color-mix(in srgb, var(--chip-color) 40%, var(--border));
-    opacity: 0.75;
+    color: var(--muted-foreground);
 }
 
 .drawer-status-chip.planned { --chip-color: var(--planned); }
@@ -1546,15 +1544,14 @@ body.drawer-open {
 .drawer-status-chip.dropped { --chip-color: var(--dropped); }
 
 .drawer-status-chip:hover {
-    opacity: 1;
-    background: color-mix(in srgb, var(--chip-color) 10%, transparent);
+    color: var(--foreground);
+    background: var(--secondary);
 }
 
 .drawer-status-chip.active {
-    opacity: 1;
-    background: var(--chip-color);
-    color: white;
+    color: var(--foreground);
     border-color: var(--chip-color);
+    background: color-mix(in srgb, var(--chip-color) 12%, transparent);
 }
 
 /* --- Settings Page --- */
