@@ -1506,7 +1506,7 @@
     padding: 1.5rem;
     flex: 1;
     overflow-y: auto;
-    color: var(--muted-foreground);
+    color: oklch(0.6 0 0);
 }
 
 @media (max-width: 480px) {
