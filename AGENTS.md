@@ -23,7 +23,7 @@ Rust 1.95 · Axum 0.8 · SQLx 0.8 · Askama 0.16 · PostgreSQL 17 · Alpine.js �
 │   ├── config.rs            # Config from env
 │   ├── app_state.rs         # AppState (DB + services)
 │   ├── routes/              # auth, home, media, search, tracking, stats, settings, calendar
-│   ├── services/            # auth, tracking, stats, release_schedule
+│   ├── services/            # auth, search, tracking, stats, release_schedule
 │   │   ├── external/        # shikimori, mal, mangaupdates, tmdb, rawg, igdb, google_books, openlibrary
 │   │   └── notifications/   # telegram
 │   ├── models/              # user, session, media_item, tracking_entry, stats, schedule
