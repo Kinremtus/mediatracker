@@ -1560,7 +1560,7 @@ body.drawer-open {
 }
 
 .drawer-status-chip.active {
-    color: oklch(0.85 0 0);
+    color: oklch(0.92 0 0);
     border-color: var(--chip-color);
     background: color-mix(in srgb, var(--chip-color) 12%, transparent);
 }
