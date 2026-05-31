@@ -52,7 +52,17 @@
             {% if item.score.is_some() %}
             <div class="meta-item">
                 <div class="meta-item-label">Оценка</div>
-                <div class="meta-item-value" style="color: #fbbf24;">{{ "{:.1}"|format(item.score.unwrap()) }}</div>
+                {% if item.score.unwrap() <= 3.0 %}
+                <div class="meta-item-value score-1">{{ "{:.1}"|format(item.score.unwrap()) }}</div>
+                {% elif item.score.unwrap() <= 5.0 %}
+                <div class="meta-item-value score-4">{{ "{:.1}"|format(item.score.unwrap()) }}</div>
+                {% elif item.score.unwrap() <= 7.0 %}
+                <div class="meta-item-value score-6">{{ "{:.1}"|format(item.score.unwrap()) }}</div>
+                {% elif item.score.unwrap() <= 9.0 %}
+                <div class="meta-item-value score-8">{{ "{:.1}"|format(item.score.unwrap()) }}</div>
+                {% else %}
+                <div class="meta-item-value score-10">{{ "{:.1}"|format(item.score.unwrap()) }}</div>
+                {% endif %}
             </div>
             {% endif %}
         </div>

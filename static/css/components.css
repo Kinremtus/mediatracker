@@ -1405,9 +1405,15 @@
 
 .media-detail-description p {
     font-size: 14px;
-    color: var(--muted-foreground);
     line-height: 1.7;
 }
+
+/* Score colors by level */
+.score-1, .score-2, .score-3 { color: #ef4444; }
+.score-4, .score-5 { color: #f97316; }
+.score-6, .score-7 { color: #eab308; }
+.score-8, .score-9 { color: #22c55e; }
+.score-10 { color: #facc15; }
 
 .media-detail-actions {
     margin-top: 1.5rem;
@@ -1506,8 +1512,6 @@
     padding: 1.5rem;
     flex: 1;
     overflow-y: auto;
-    color: oklch(0.6 0 0);
-    --muted-foreground: oklch(0.6 0 0);
 }
 
 @media (max-width: 480px) {
@@ -1556,7 +1560,7 @@ body.drawer-open {
 }
 
 .drawer-status-chip.active {
-    color: var(--foreground);
+    color: oklch(0.85 0 0);
     border-color: var(--chip-color);
     background: color-mix(in srgb, var(--chip-color) 12%, transparent);
 }
