@@ -1507,6 +1507,7 @@
     flex: 1;
     overflow-y: auto;
     color: oklch(0.6 0 0);
+    --muted-foreground: oklch(0.6 0 0);
 }
 
 @media (max-width: 480px) {
