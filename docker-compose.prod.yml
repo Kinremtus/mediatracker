@@ -11,7 +11,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    restart: unless-stopped
     deploy:
       resources:
         limits:
@@ -36,7 +35,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-    restart: unless-stopped
     deploy:
       resources:
         limits:
@@ -55,7 +53,6 @@ services:
       - /etc/ssl/cloudflare.key:/etc/ssl/cloudflare.key:ro
     depends_on:
       - app
-    restart: unless-stopped
     deploy:
       resources:
         limits:
