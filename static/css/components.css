@@ -2035,3 +2035,65 @@ body.drawer-open {
     color: var(--primary-foreground);
     border-color: var(--primary);
 }
+
+/* --- Chips (genres, themes, demographics, platforms) --- */
+.chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.2rem 0.55rem;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.4;
+    border-radius: 9999px;
+    background: var(--secondary);
+    color: var(--secondary-foreground);
+    border: 1px solid var(--border);
+    white-space: nowrap;
+    transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.chip:hover {
+    transform: translateY(-1px);
+    border-color: var(--primary);
+}
+
+.chip-sm {
+    font-size: 10px;
+    padding: 0.1rem 0.45rem;
+}
+
+.chip-genre {
+    background: color-mix(in srgb, var(--primary) 12%, transparent);
+    color: var(--foreground);
+    border-color: color-mix(in srgb, var(--primary) 30%, transparent);
+}
+
+.chip-theme {
+    background: color-mix(in srgb, oklch(0.7 0.15 320) 12%, transparent);
+    color: oklch(0.85 0.1 320);
+    border-color: color-mix(in srgb, oklch(0.7 0.15 320) 30%, transparent);
+}
+
+.chip-demo {
+    background: color-mix(in srgb, oklch(0.75 0.15 145) 12%, transparent);
+    color: oklch(0.85 0.1 145);
+    border-color: color-mix(in srgb, oklch(0.75 0.15 145) 30%, transparent);
+}
+
+.chip-platform {
+    background: color-mix(in srgb, oklch(0.75 0.15 60) 12%, transparent);
+    color: oklch(0.85 0.1 60);
+    border-color: color-mix(in srgb, oklch(0.75 0.15 60) 30%, transparent);
+}
+
+/* --- Chip containers (flexbox layout) --- */
+.chips,
+.tracking-card-genres,
+.media-card-genres {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin-top: 0.35rem;
+    margin-bottom: 0.5rem;
+}
+

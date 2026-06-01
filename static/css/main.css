@@ -102,3 +102,180 @@ img {
     font-weight: 600;
     margin-bottom: 1.5rem;
 }
+
+/* ============================================
+   Auth Pages — Glass Morphism + Neon + Stars
+   ============================================ */
+
+.auth-page {
+    position: relative;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1rem;
+    overflow: hidden;
+    background:
+        radial-gradient(ellipse at top, color-mix(in srgb, var(--primary) 8%, transparent), transparent 60%),
+        radial-gradient(ellipse at bottom right, color-mix(in srgb, var(--secondary) 15%, transparent), transparent 50%),
+        var(--background);
+}
+
+.auth-stars {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 0;
+}
+
+.auth-star {
+    position: absolute;
+    width: 2px;
+    height: 2px;
+    background: var(--foreground);
+    border-radius: 50%;
+    box-shadow: 0 0 6px color-mix(in srgb, var(--foreground) 60%, transparent);
+    animation: authStarTwinkle 3s ease-in-out infinite;
+}
+
+@keyframes authStarTwinkle {
+    0%, 100% {
+        opacity: 0.3;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 1;
+        transform: scale(1.4);
+    }
+}
+
+.auth-card {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 420px;
+    padding: 2.5rem 2rem;
+    border-radius: 1.25rem;
+    background: color-mix(in srgb, var(--card) 60%, transparent);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+    box-shadow:
+        0 8px 32px rgba(0, 0, 0, 0.35),
+        inset 0 1px 0 color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.auth-title {
+    font-size: 28px;
+    font-weight: 700;
+    margin: 0 0 0.5rem 0;
+    text-align: center;
+    background: linear-gradient(135deg, var(--foreground), color-mix(in srgb, var(--primary) 70%, var(--foreground)));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+    letter-spacing: -0.02em;
+}
+
+.auth-subtitle {
+    text-align: center;
+    color: var(--muted-foreground);
+    font-size: 14px;
+    margin: 0 0 1.75rem 0;
+}
+
+.auth-error {
+    padding: 0.75rem 1rem;
+    margin-bottom: 1.25rem;
+    border-radius: 0.625rem;
+    background: color-mix(in srgb, var(--destructive) 18%, transparent);
+    border: 1px solid color-mix(in srgb, var(--destructive) 40%, transparent);
+    color: var(--destructive-foreground);
+    font-size: 13px;
+    text-align: center;
+}
+
+.auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.875rem;
+}
+
+.auth-input {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    font-size: 14px;
+    font-family: inherit;
+    color: var(--foreground);
+    background: color-mix(in srgb, var(--background) 70%, transparent);
+    border: 1px solid var(--border);
+    border-radius: 0.625rem;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+    outline: none;
+    box-sizing: border-box;
+}
+
+.auth-input::placeholder {
+    color: var(--muted-foreground);
+    opacity: 0.7;
+}
+
+.auth-input:focus {
+    border-color: var(--primary);
+    background: color-mix(in srgb, var(--background) 90%, transparent);
+    box-shadow:
+        0 0 0 3px color-mix(in srgb, var(--primary) 25%, transparent),
+        0 0 20px color-mix(in srgb, var(--primary) 35%, transparent);
+}
+
+.auth-submit {
+    margin-top: 0.5rem;
+    padding: 0.8rem 1.25rem;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: inherit;
+    color: var(--primary-foreground);
+    background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary) 70%, var(--accent)));
+    border: 1px solid color-mix(in srgb, var(--primary) 50%, transparent);
+    border-radius: 0.625rem;
+    cursor: pointer;
+    transition: transform 0.12s ease, box-shadow 0.15s ease, filter 0.15s ease;
+    box-shadow:
+        0 0 0 0 color-mix(in srgb, var(--primary) 0%, transparent),
+        0 4px 14px color-mix(in srgb, var(--primary) 25%, transparent);
+}
+
+.auth-submit:hover {
+    transform: translateY(-1px);
+    filter: brightness(1.08);
+    box-shadow:
+        0 0 24px color-mix(in srgb, var(--primary) 45%, transparent),
+        0 6px 20px color-mix(in srgb, var(--primary) 30%, transparent);
+}
+
+.auth-submit:active {
+    transform: translateY(0);
+    filter: brightness(0.95);
+}
+
+.auth-link {
+    margin-top: 1.25rem;
+    text-align: center;
+    font-size: 13px;
+    color: var(--muted-foreground);
+}
+
+.auth-link a {
+    color: var(--primary);
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.15s ease, text-shadow 0.15s ease;
+}
+
+.auth-link a:hover {
+    text-decoration: underline;
+    text-shadow: 0 0 12px color-mix(in srgb, var(--primary) 50%, transparent);
+}
+
