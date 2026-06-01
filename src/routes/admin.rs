@@ -145,6 +145,20 @@ pub async fn post_refresh_details(
     for (id, provider, external_id, media_type) in rows {
         match fetch_details_for_provider(&state, &provider, &external_id, &media_type).await {
             Ok(item) => {
+                tracing::info!(
+                    "Refresh-debug id={} status_len={:?} format_type_len={:?} source_len={:?} rating_len={:?} premiered_season_len={:?} status={:?} format_type={:?} source={:?} rating={:?} premiered_season={:?}",
+                    id,
+                    item.status.as_ref().map(|s| s.len()),
+                    item.format_type.as_ref().map(|s| s.len()),
+                    item.source.as_ref().map(|s| s.len()),
+                    item.rating.as_ref().map(|s| s.len()),
+                    item.premiered_season.as_ref().map(|s| s.len()),
+                    item.status,
+                    item.format_type,
+                    item.source,
+                    item.rating,
+                    item.premiered_season,
+                );
                 let res = sqlx::query(
                     r#"
                     UPDATE media_items SET
