@@ -15,6 +15,7 @@ use super::home::SidebarStats;
 #[template(path = "tracking_list.html")]
 struct TrackingListTemplate {
     username: String,
+    role: String,
     stats: SidebarStats,
     active_page: String,
     entries: Vec<TrackingEntryWithMedia>,
@@ -83,7 +84,7 @@ pub async fn get_tracking_list(
     let media_type = params.media_type.as_deref();
     let search_query = params.q.as_deref();
     let entries = state.tracking.get_user_entries(user.id, status, media_type, search_query).await.unwrap_or_default();
-    let stats = get_sidebar_stats(&state, user.id).await;
+    let stats = get_sidebar_stats(&state, &user).await;
     let current_status = params.status.unwrap_or_default();
     let current_media_type = params.media_type.unwrap_or_default();
     let search_query = params.q.unwrap_or_default();
@@ -116,6 +117,7 @@ pub async fn get_tracking_list(
 
     TrackingListTemplate {
         username: user.username,
+        role: user.role.clone(),
         stats,
         active_page: "tracking".to_string(),
         entries,
@@ -148,6 +150,39 @@ pub struct AddToTrackingForm {
     pub score: Option<f64>,
     pub tracking_status: String,
     pub redirect_to: Option<String>,
+
+    // === Расширенные метаданные ===
+    pub format_type: Option<String>,
+    pub chapters: Option<i32>,
+    pub volumes: Option<i32>,
+    pub pages: Option<i32>,
+    pub runtime_minutes: Option<i32>,
+    pub playtime_hours: Option<i32>,
+    pub year: Option<i16>,
+    pub aired_from: Option<chrono::NaiveDate>,
+    pub aired_to: Option<chrono::NaiveDate>,
+    pub premiered_season: Option<String>,
+    pub premiered_year: Option<i16>,
+    pub broadcast: Option<String>,
+    pub completed: Option<bool>,
+    pub licensed: Option<bool>,
+    pub source: Option<String>,
+    pub duration: Option<String>,
+    pub rating: Option<String>,
+    pub rating_votes: Option<i32>,
+    pub authors: Vec<String>,
+    pub artists: Vec<String>,
+    pub studios: Vec<String>,
+    pub producers: Vec<String>,
+    pub licensors: Vec<String>,
+    pub publishers: Vec<String>,
+    pub serialized_in: Vec<String>,
+    pub networks: Vec<String>,
+    pub platforms: Vec<String>,
+    pub genres: Vec<String>,
+    pub themes: Vec<String>,
+    pub demographics: Vec<String>,
+    pub categories: Vec<String>,
 }
 
 pub async fn post_add_to_tracking(
@@ -171,6 +206,38 @@ pub async fn post_add_to_tracking(
         is_tracked: false,
         mal_id: None,
         comparison_key: None,
+        format_type: form.format_type,
+        details: None,
+        chapters: form.chapters,
+        volumes: form.volumes,
+        pages: form.pages,
+        runtime_minutes: form.runtime_minutes,
+        playtime_hours: form.playtime_hours,
+        year: form.year,
+        aired_from: form.aired_from,
+        aired_to: form.aired_to,
+        premiered_season: form.premiered_season,
+        premiered_year: form.premiered_year,
+        broadcast: form.broadcast,
+        completed: form.completed,
+        licensed: form.licensed,
+        source: form.source,
+        duration: form.duration,
+        rating: form.rating,
+        rating_votes: form.rating_votes,
+        authors: form.authors,
+        artists: form.artists,
+        studios: form.studios,
+        producers: form.producers,
+        licensors: form.licensors,
+        publishers: form.publishers,
+        serialized_in: form.serialized_in,
+        networks: form.networks,
+        platforms: form.platforms,
+        genres: form.genres,
+        themes: form.themes,
+        demographics: form.demographics,
+        categories: form.categories,
     };
 
     let status = if form.tracking_status.is_empty() {
@@ -344,7 +411,7 @@ pub async fn htmx_tracking_partial(
     .into()
 }
 
-async fn get_sidebar_stats(state: &AppState, user_id: uuid::Uuid) -> SidebarStats {
-    let (ip, cp, pp, dp) = state.tracking.get_status_counts(user_id).await.unwrap_or_default();
-    SidebarStats { in_progress: ip, completed: cp, planned: pp, dropped: dp }
+async fn get_sidebar_stats(state: &AppState, user: &CurrentUser) -> SidebarStats {
+    let (ip, cp, pp, dp) = state.tracking.get_status_counts(user.id).await.unwrap_or_default();
+    SidebarStats { in_progress: ip, completed: cp, planned: pp, dropped: dp, role: user.role.clone() }
 }

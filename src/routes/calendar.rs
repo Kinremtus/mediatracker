@@ -20,6 +20,7 @@ const MONTHS_RU: &[&str] = &[
 #[template(path = "calendar.html")]
 struct CalendarTemplate {
     username: String,
+    role: String,
     stats: SidebarStats,
     active_page: String,
     current_status: String,
@@ -52,6 +53,7 @@ pub async fn get_calendar(
         completed: cp,
         planned: pp,
         dropped: dp,
+        role: user.role.clone(),
     };
 
     let _ = state.release_schedule.ensure_fresh(&state.shikimori).await;
@@ -130,6 +132,7 @@ pub async fn get_calendar(
 
     CalendarTemplate {
         username: user.username,
+        role: user.role,
         stats,
         active_page: "calendar".to_string(),
         current_status: String::new(),

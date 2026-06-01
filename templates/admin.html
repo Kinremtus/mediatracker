@@ -1,0 +1,73 @@
+{% extends "app_shell.html" %}
+
+{% block title %}Админ-панель - MediaTracker{% endblock %}
+
+{% block content %}
+<h1 class="content-title">Админ-панель</h1>
+<p style="color: var(--text-secondary); margin-bottom: 1.5rem;">Управление библиотекой метаданных (роль: {{ role }})</p>
+
+{% if !error.is_empty() %}
+<div class="flash-notification" style="background: rgba(220, 38, 38, 0.2); border-color: var(--dropped);">{{ error }}</div>
+{% endif %}
+
+{% if !message.is_empty() %}
+<div class="flash-notification" style="background: rgba(34, 197, 94, 0.2); border-color: var(--completed);">{{ message }}</div>
+{% endif %}
+
+<div class="admin-panel">
+    <h2>Обновление деталей медиа</h2>
+    <p style="color: var(--text-secondary); margin-bottom: 1rem;">
+        Загружает полные метаданные (формат, главы, тома, студии, авторы, жанры и т.д.) через API соответствующих провайдеров.
+        Используется для бэкфилла расширенных полей на старых записях.
+    </p>
+
+    <form method="POST" action="/admin/refresh-details" class="admin-form">
+        <div class="form-group">
+            <label for="media_type">Тип медиа (опционально)</label>
+            <select name="media_type" id="media_type">
+                <option value="">Все типы</option>
+                <option value="anime">Аниме</option>
+                <option value="manga">Манга</option>
+                <option value="manhwa">Манхва</option>
+                <option value="manhua">Маньхуа</option>
+                <option value="novel">Новеллы</option>
+                <option value="other-comics">Другие комиксы</option>
+                <option value="movie">Фильмы</option>
+                <option value="series">Сериалы</option>
+                <option value="dramas">Дорамы</option>
+                <option value="cartoons">Мультсериалы</option>
+                <option value="animated-movies">Мультфильмы</option>
+                <option value="game">Игры</option>
+                <option value="book">Книги</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="provider">Провайдер (опционально)</label>
+            <select name="provider" id="provider">
+                <option value="">Все провайдеры</option>
+                <option value="shikimori">Shikimori</option>
+                <option value="mal">MAL</option>
+                <option value="mangaupdates">MangaUpdates</option>
+                <option value="tmdb">TMDB</option>
+                <option value="rawg">RAWG</option>
+                <option value="igdb">IGDB</option>
+                <option value="google_books">Google Books</option>
+                <option value="openlibrary">Open Library</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="limit">Лимит записей (1-500)</label>
+            <input type="number" name="limit" id="limit" value="50" min="1" max="500">
+        </div>
+
+        <button type="submit" class="btn btn-primary">▶ Запустить обновление</button>
+    </form>
+
+    <p style="color: var(--text-secondary); margin-top: 1rem; font-size: 13px;">
+        ⏱ Между запросами пауза 1 сек (бережём rate limit).<br>
+        {% if let Some(t) = total %}Последний запуск: обновлено {{ refreshed.unwrap_or(0) }} из {{ t }}.{% endif %}
+    </p>
+</div>
+{% endblock %}

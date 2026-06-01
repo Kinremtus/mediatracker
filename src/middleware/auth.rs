@@ -13,6 +13,7 @@ use crate::app_state::AppState;
 pub struct CurrentUser {
     pub id: Uuid,
     pub username: String,
+    pub role: String,
 }
 
 impl<S> FromRequestParts<S> for CurrentUser
@@ -66,6 +67,7 @@ pub async fn auth_middleware(
                     let current_user = CurrentUser {
                         id: user.id,
                         username: user.username,
+                        role: user.role,
                     };
                     req.extensions_mut().insert(current_user);
                     next.run(req).await

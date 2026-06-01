@@ -11,16 +11,16 @@ const SEARCH_LIMIT: u32 = 25;
 
 #[derive(Debug, Deserialize)]
 struct MalAnimeSearchResponse {
-    data: Vec<MalAnime>,
+    data: Vec<MalAnimeSearchItem>,
 }
 
 #[derive(Debug, Deserialize)]
 struct MalAnimeResponse {
-    data: MalAnime,
+    data: MalAnimeFull,
 }
 
 #[derive(Debug, Deserialize)]
-struct MalAnime {
+struct MalAnimeSearchItem {
     mal_id: i64,
     title: String,
     title_english: Option<String>,
@@ -32,6 +32,55 @@ struct MalAnime {
     status: Option<String>,
     #[serde(rename = "type")]
     anime_type: Option<String>,
+    genres: Option<Vec<MalNamed>>,
+    themes: Option<Vec<MalNamed>>,
+    demographics: Option<Vec<MalNamed>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MalAnimeFull {
+    mal_id: i64,
+    title: String,
+    title_english: Option<String>,
+    title_japanese: Option<String>,
+    images: Option<MalImages>,
+    episodes: Option<i32>,
+    synopsis: Option<String>,
+    score: Option<f64>,
+    scored_by: Option<i64>,
+    status: Option<String>,
+    #[serde(rename = "type")]
+    anime_type: Option<String>,
+    source: Option<String>,
+    aired: Option<MalAired>,
+    duration: Option<String>,
+    rating: Option<String>,
+    season: Option<String>,
+    year: Option<i32>,
+    broadcast: Option<MalBroadcast>,
+    producers: Option<Vec<MalNamed>>,
+    licensors: Option<Vec<MalNamed>>,
+    studios: Option<Vec<MalNamed>>,
+    genres: Option<Vec<MalNamed>>,
+    themes: Option<Vec<MalNamed>>,
+    demographics: Option<Vec<MalNamed>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MalNamed {
+    name: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct MalAired {
+    from: Option<String>,
+    to: Option<String>,
+    string: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MalBroadcast {
+    string: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -51,24 +100,154 @@ fn poster_url(images: &Option<MalImages>) -> Option<String> {
         .and_then(|j| j.image_url.clone())
 }
 
-fn map_anime(r: MalAnime) -> CreateMediaItem {
-    let comparison_key = r.title_english.clone().unwrap_or_else(|| r.title.clone());
+fn extract_names(items: &Option<Vec<MalNamed>>) -> Vec<String> {
+    items
+        .as_ref()
+        .map(|v| v.iter().map(|n| n.name.clone()).collect())
+        .unwrap_or_default()
+}
+
+fn parse_date(s: &str) -> Option<chrono::NaiveDate> {
+    // Jikan returns RFC3339 like "2002-10-03T00:00:00+00:00"
+    chrono::DateTime::parse_from_rfc3339(s)
+        .ok()
+        .map(|dt| dt.naive_utc().date())
+}
+
+fn map_full(anime: MalAnimeFull) -> CreateMediaItem {
+    let comparison_key = anime.title_english.clone().unwrap_or_else(|| anime.title.clone());
+
+    let aired_from = anime
+        .aired
+        .as_ref()
+        .and_then(|a| a.from.as_deref())
+        .and_then(parse_date);
+    let aired_to = anime
+        .aired
+        .as_ref()
+        .and_then(|a| a.to.as_deref())
+        .and_then(parse_date);
+
+    let mut details = serde_json::Map::new();
+    if let Some(a) = anime.aired.as_ref() {
+        if let Some(s) = a.string.as_ref() {
+            details.insert("aired_string".to_string(), serde_json::Value::String(s.clone()));
+        }
+    }
+    if let Some(b) = anime.broadcast.as_ref() {
+        if let Some(s) = b.string.as_ref() {
+            details.insert("broadcast".to_string(), serde_json::Value::String(s.clone()));
+        }
+    }
+
+    let year_i16: Option<i16> = anime.year.and_then(|y| i16::try_from(y).ok());
+    let premiered_year_i16 = year_i16;
+
     CreateMediaItem {
         provider: "mal".to_string(),
-        external_id: r.mal_id.to_string(),
+        external_id: anime.mal_id.to_string(),
         media_type: "anime".to_string(),
-        title: r.title,
-        title_english: r.title_english,
-        title_native: r.title_japanese,
+        title: anime.title,
+        title_english: anime.title_english,
+        title_native: anime.title_japanese,
         title_russian: None,
-        poster_url: poster_url(&r.images),
-        episodes: r.episodes,
-        description: r.synopsis,
-        status: r.status,
-        score: r.score,
+        poster_url: poster_url(&anime.images),
+        episodes: anime.episodes,
+        description: anime.synopsis,
+        status: anime.status,
+        score: anime.score,
         is_tracked: false,
-        mal_id: Some(r.mal_id),
+        mal_id: Some(anime.mal_id),
         comparison_key: Some(comparison_key),
+        format_type: anime.anime_type,
+        details: if details.is_empty() {
+            None
+        } else {
+            Some(serde_json::Value::Object(details))
+        },
+        chapters: None,
+        volumes: None,
+        pages: None,
+        runtime_minutes: None,
+        playtime_hours: None,
+        year: None,
+        aired_from,
+        aired_to,
+        premiered_season: anime.season,
+        premiered_year: premiered_year_i16,
+        broadcast: None, // лежит в details.broadcast
+        completed: None,
+        licensed: None,
+        source: anime.source,
+        duration: anime.duration,
+        rating: anime.rating,
+        rating_votes: anime.scored_by.and_then(|v| i32::try_from(v).ok()),
+        authors: Vec::new(),
+        artists: Vec::new(),
+        studios: extract_names(&anime.studios),
+        producers: extract_names(&anime.producers),
+        licensors: extract_names(&anime.licensors),
+        publishers: Vec::new(),
+        serialized_in: Vec::new(),
+        networks: Vec::new(),
+        platforms: Vec::new(),
+        genres: extract_names(&anime.genres),
+        themes: extract_names(&anime.themes),
+        demographics: extract_names(&anime.demographics),
+        categories: Vec::new(),
+    }
+}
+
+fn map_search(item: MalAnimeSearchItem) -> CreateMediaItem {
+    let comparison_key = item.title_english.clone().unwrap_or_else(|| item.title.clone());
+    CreateMediaItem {
+        provider: "mal".to_string(),
+        external_id: item.mal_id.to_string(),
+        media_type: "anime".to_string(),
+        title: item.title,
+        title_english: item.title_english,
+        title_native: item.title_japanese,
+        title_russian: None,
+        poster_url: poster_url(&item.images),
+        episodes: item.episodes,
+        description: item.synopsis,
+        status: item.status,
+        score: item.score,
+        is_tracked: false,
+        mal_id: Some(item.mal_id),
+        comparison_key: Some(comparison_key),
+        format_type: item.anime_type,
+        details: None,
+        chapters: None,
+        volumes: None,
+        pages: None,
+        runtime_minutes: None,
+        playtime_hours: None,
+        year: None,
+        aired_from: None,
+        aired_to: None,
+        premiered_season: None,
+        premiered_year: None,
+        broadcast: None,
+        completed: None,
+        licensed: None,
+        source: None,
+        duration: None,
+        rating: None,
+        rating_votes: None,
+        authors: Vec::new(),
+        artists: Vec::new(),
+        studios: Vec::new(),
+        producers: Vec::new(),
+        licensors: Vec::new(),
+        publishers: Vec::new(),
+        serialized_in: Vec::new(),
+        networks: Vec::new(),
+        platforms: Vec::new(),
+        genres: extract_names(&item.genres),
+        themes: extract_names(&item.themes),
+        demographics: extract_names(&item.demographics),
+        categories: Vec::new(),
     }
 }
 
@@ -101,7 +280,7 @@ impl MalService {
         }
 
         let body: MalAnimeSearchResponse = response.json().await?;
-        Ok(body.data.into_iter().map(map_anime).collect())
+        Ok(body.data.into_iter().map(map_search).collect())
     }
 
     pub async fn get_details(&self, id: &str) -> Result<CreateMediaItem, anyhow::Error> {
@@ -112,7 +291,7 @@ impl MalService {
         }
 
         let body: MalAnimeResponse = response.json().await?;
-        Ok(map_anime(body.data))
+        Ok(map_full(body.data))
     }
 }
 
@@ -125,5 +304,55 @@ mod tests {
         let json = r#"{"data":[{"mal_id":20,"title":"Naruto","title_english":"Naruto","title_japanese":"ナルト","score":8.02,"episodes":220,"status":"Finished Airing","type":"TV"}]}"#;
         let body: MalAnimeSearchResponse = serde_json::from_str(json).unwrap();
         assert_eq!(body.data[0].mal_id, 20);
+    }
+
+    #[test]
+    fn parses_full_anime_response() {
+        let json = r#"{
+            "data": {
+                "mal_id": 20,
+                "title": "Naruto",
+                "title_english": "Naruto",
+                "title_japanese": "ナルト",
+                "episodes": 220,
+                "synopsis": "...",
+                "score": 7.99,
+                "scored_by": 250000,
+                "status": "Finished Airing",
+                "type": "TV",
+                "source": "Manga",
+                "aired": {"from": "2002-10-03T00:00:00+00:00", "to": "2007-02-08T00:00:00+00:00", "string": "Oct 3, 2002 to Feb 8, 2007"},
+                "duration": "23 min. per ep.",
+                "rating": "PG-13 - Teens 13 or older",
+                "season": "fall",
+                "year": 2002,
+                "broadcast": {"string": "Thursdays at 19:30 (JST)"},
+                "producers": [{"name": "TV Tokyo"}, {"name": "Aniplex"}],
+                "licensors": [{"name": "VIZ Media"}],
+                "studios": [{"name": "Studio Pierrot"}],
+                "genres": [{"name": "Action"}, {"name": "Adventure"}],
+                "themes": [{"name": "Martial Arts"}],
+                "demographics": [{"name": "Shounen"}]
+            }
+        }"#;
+        let body: MalAnimeResponse = serde_json::from_str(json).unwrap();
+        let item = map_full(body.data);
+        assert_eq!(item.title, "Naruto");
+        assert_eq!(item.format_type.as_deref(), Some("TV"));
+        assert_eq!(item.source.as_deref(), Some("Manga"));
+        assert_eq!(item.premiered_season.as_deref(), Some("fall"));
+        assert_eq!(item.premiered_year, Some(2002));
+        assert_eq!(item.aired_from, Some(chrono::NaiveDate::from_ymd_opt(2002, 10, 3).unwrap()));
+        assert_eq!(item.aired_to, Some(chrono::NaiveDate::from_ymd_opt(2007, 2, 8).unwrap()));
+        assert_eq!(item.duration.as_deref(), Some("23 min. per ep."));
+        assert_eq!(item.rating.as_deref(), Some("PG-13 - Teens 13 or older"));
+        assert!(item.studios.contains(&"Studio Pierrot".to_string()));
+        assert!(item.producers.contains(&"TV Tokyo".to_string()));
+        assert!(item.licensors.contains(&"VIZ Media".to_string()));
+        assert!(item.genres.contains(&"Action".to_string()));
+        assert!(item.themes.contains(&"Martial Arts".to_string()));
+        assert!(item.demographics.contains(&"Shounen".to_string()));
+        let details = item.details.expect("details should exist");
+        assert_eq!(details.get("aired_string").and_then(|v| v.as_str()), Some("Oct 3, 2002 to Feb 8, 2007"));
     }
 }

@@ -18,12 +18,14 @@ struct MediaDrawerTemplate {
     item: CreateMediaItem,
     tracking_id: Option<Uuid>,
     current_status: Option<String>,
+    role: String,
 }
 
 #[derive(Template)]
 #[template(path = "media_detail.html")]
 struct MediaDetailTemplate {
     username: String,
+    role: String,
     stats: SidebarStats,
     active_page: String,
     item: CreateMediaItem,
@@ -58,7 +60,7 @@ pub async fn get_media_detail(
         _ => Err(anyhow::anyhow!("Unknown provider")),
     };
 
-    let stats = get_sidebar_stats(&state, user.id).await;
+    let stats = get_sidebar_stats(&state, &user).await;
 
     match item {
         Ok(mut item) => {
@@ -76,6 +78,7 @@ pub async fn get_media_detail(
             Html(
                 MediaDetailTemplate {
                     username: user.username,
+                    role: user.role,
                     stats,
                     active_page: "search".to_string(),
                     item,
@@ -120,7 +123,7 @@ pub async fn get_media_drawer_content(
                 None => (None, None),
             };
             Html(
-                MediaDrawerTemplate { item, tracking_id, current_status }.render().unwrap()
+                MediaDrawerTemplate { item, tracking_id, current_status, role: user.role }.render().unwrap()
             )
             .into_response()
         }
@@ -128,7 +131,7 @@ pub async fn get_media_drawer_content(
     }
 }
 
-async fn get_sidebar_stats(state: &AppState, user_id: uuid::Uuid) -> SidebarStats {
-    let (ip, cp, pp, dp) = state.tracking.get_status_counts(user_id).await.unwrap_or_default();
-    SidebarStats { in_progress: ip, completed: cp, planned: pp, dropped: dp }
+async fn get_sidebar_stats(state: &AppState, user: &CurrentUser) -> SidebarStats {
+    let (ip, cp, pp, dp) = state.tracking.get_status_counts(user.id).await.unwrap_or_default();
+    SidebarStats { in_progress: ip, completed: cp, planned: pp, dropped: dp, role: user.role.clone() }
 }

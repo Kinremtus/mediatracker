@@ -15,6 +15,7 @@ use crate::models::schedule::ReleaseEntry;
 #[template(path = "home.html")]
 struct HomeTemplate {
     username: String,
+    role: String,
     greeting: String,
     today: String,
     active_page: String,
@@ -30,6 +31,7 @@ pub struct SidebarStats {
     pub completed: i32,
     pub planned: i32,
     pub dropped: i32,
+    pub role: String,
 }
 
 pub struct HomeMediaCard {
@@ -72,6 +74,7 @@ pub async fn get_home(
         completed: cp,
         planned: pp,
         dropped: dp,
+        role: user.role.clone(),
     };
 
     // In-progress entries with progress
@@ -102,6 +105,7 @@ pub async fn get_home(
 
     HomeTemplate {
         username: user.username,
+        role: user.role.clone(),
         greeting: greeting(),
         today: today_ru(),
         active_page: "home".to_string(),
