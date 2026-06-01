@@ -156,6 +156,46 @@ where
         .unwrap_or_default()
 }
 
+/// MangaUpdates возвращает `status` в формате:
+///   "N Volumes (StatusWord)  \nM SpecialVolumes (StatusWord)" — для завершённых
+///   "Ongoing" / " hiatus" / "Discontinued" / "Cancelled" — для продолжающихся
+/// Эта функция отделяет количество томов от статусного слова.
+fn parse_mu_status(raw: Option<String>) -> (Option<String>, Option<i32>) {
+    let s = match raw {
+        Some(s) if !s.is_empty() => s,
+        _ => return (None, None),
+    };
+    if let Some(volumes) = extract_first_volume_count(&s) {
+        let status = extract_parenthesized_after_volumes(&s);
+        (status, Some(volumes))
+    } else {
+        (Some(s), None)
+    }
+}
+
+fn extract_first_volume_count(s: &str) -> Option<i32> {
+    let idx = s.find("Volume")?;
+    let before = s[..idx].trim_end();
+    let num_start = before
+        .rfind(|c: char| !c.is_ascii_digit())
+        .map(|i| i + 1)
+        .unwrap_or(0);
+    before[num_start..].parse().ok()
+}
+
+fn extract_parenthesized_after_volumes(s: &str) -> Option<String> {
+    let idx = s.find("Volume")?;
+    let rest = &s[idx..];
+    let open = rest.find('(')?;
+    let close_rel = rest[open..].find(')')?;
+    let content = rest[open + 1..open + close_rel].trim();
+    if content.is_empty() {
+        None
+    } else {
+        Some(content.to_string())
+    }
+}
+
 fn map_series(series: MangaUpdatesSeries) -> CreateMediaItem {
     let media_type = media_type_for(series.series_type.as_deref());
     let poster_url = poster_url_from(series.image);
@@ -188,6 +228,8 @@ fn map_series(series: MangaUpdatesSeries) -> CreateMediaItem {
         .as_ref()
         .and_then(|y| y.parse::<i16>().ok());
 
+    let (status, volumes) = parse_mu_status(series.status);
+
     let mut details = serde_json::Map::new();
     if let Some(start) = series.anime.as_ref().and_then(|a| a.start.clone()) {
         details.insert("anime_start_chapter".to_string(), serde_json::Value::String(start));
@@ -207,7 +249,7 @@ fn map_series(series: MangaUpdatesSeries) -> CreateMediaItem {
         poster_url,
         episodes: None,
         description: series.description,
-        status: series.status,
+        status,
         score: series.bayesian_rating,
         is_tracked: false,
         mal_id: None,
@@ -219,7 +261,7 @@ fn map_series(series: MangaUpdatesSeries) -> CreateMediaItem {
             Some(serde_json::Value::Object(details))
         },
         chapters: series.latest_chapter,
-        volumes: None,
+        volumes,
         pages: None,
         runtime_minutes: None,
         playtime_hours: None,
@@ -378,5 +420,42 @@ mod tests {
             details.get("anime_start_chapter").and_then(|v| v.as_str()),
             Some("Vol 1, Chap 1")
         );
+    }
+
+    #[test]
+    fn parse_mu_status_extracts_combini_ban() {
+        let (s, v) = parse_mu_status(Some(
+            "72 Volumes (Complete)  \n24 Combini-ban Volumes (Complete)".to_string(),
+        ));
+        assert_eq!(s.as_deref(), Some("Complete"));
+        assert_eq!(v, Some(72));
+    }
+
+    #[test]
+    fn parse_mu_status_ongoing_no_volumes() {
+        let (s, v) = parse_mu_status(Some("Ongoing".to_string()));
+        assert_eq!(s.as_deref(), Some("Ongoing"));
+        assert_eq!(v, None);
+    }
+
+    #[test]
+    fn parse_mu_status_one_piece() {
+        let (s, v) = parse_mu_status(Some("110 Volumes (Ongoing)".to_string()));
+        assert_eq!(s.as_deref(), Some("Ongoing"));
+        assert_eq!(v, Some(110));
+    }
+
+    #[test]
+    fn parse_mu_status_short_completed() {
+        let (s, v) = parse_mu_status(Some("4 Volumes (Complete)".to_string()));
+        assert_eq!(s.as_deref(), Some("Complete"));
+        assert_eq!(v, Some(4));
+    }
+
+    #[test]
+    fn parse_mu_status_empty() {
+        let (s, v) = parse_mu_status(None);
+        assert_eq!(s, None);
+        assert_eq!(v, None);
     }
 }
