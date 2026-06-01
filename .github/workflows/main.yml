@@ -26,7 +26,9 @@ jobs:
             docker volume create cargo-registry 2>/dev/null || true
             docker volume create cargo-git 2>/dev/null || true
 
-            docker compose down
+            docker compose down -t 0
+            docker rm -f mediatracker-db-1 mediatracker-app-1 mediatracker-nginx-1 2>/dev/null || true
+            sleep 3
             DOCKER_BUILDKIT=1 docker compose up --build -d
 
             echo "⏳ Ждём запуска сервиса..."
