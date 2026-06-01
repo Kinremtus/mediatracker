@@ -1374,25 +1374,25 @@
 .meta-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    gap: 0.75rem;
-    margin-bottom: 1.5rem;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
 }
 
 .meta-item {
-    padding: 0.75rem;
-    border-radius: var(--radius-lg);
+    padding: 0.5rem 0.625rem;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border);
     background: var(--card);
 }
 
 .meta-item-label {
-    font-size: 12px;
+    font-size: 11px;
     color: var(--muted-foreground);
-    margin-bottom: 0.25rem;
+    margin-bottom: 0.15rem;
 }
 
 .meta-item-value {
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 500;
 }
 
@@ -1405,6 +1405,8 @@
 .media-detail-description p {
     font-size: 14px;
     line-height: 1.7;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 /* Score colors by level */
@@ -2040,50 +2042,54 @@ body.drawer-open {
 .chip {
     display: inline-flex;
     align-items: center;
-    padding: 0.2rem 0.55rem;
-    font-size: 11px;
-    font-weight: 500;
-    line-height: 1.4;
+    padding: 0.3rem 0.7rem;
+    font-size: 12px;
+    font-weight: 600;
+    font-style: italic;
+    line-height: 1.3;
+    letter-spacing: 0.01em;
     border-radius: 9999px;
     background: var(--secondary);
     color: var(--secondary-foreground);
     border: 1px solid var(--border);
     white-space: nowrap;
-    transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+    transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
 }
 
 .chip:hover {
     transform: translateY(-1px);
     border-color: var(--primary);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
 }
 
 .chip-sm {
-    font-size: 10px;
-    padding: 0.1rem 0.45rem;
+    font-size: 11px;
+    padding: 0.2rem 0.55rem;
 }
 
 .chip-genre {
-    background: color-mix(in srgb, var(--primary) 12%, transparent);
+    background: color-mix(in srgb, var(--primary) 20%, transparent);
     color: var(--foreground);
-    border-color: color-mix(in srgb, var(--primary) 30%, transparent);
+    border-color: color-mix(in srgb, var(--primary) 45%, transparent);
 }
 
 .chip-theme {
-    background: color-mix(in srgb, oklch(0.7 0.15 320) 12%, transparent);
-    color: oklch(0.85 0.1 320);
-    border-color: color-mix(in srgb, oklch(0.7 0.15 320) 30%, transparent);
+    background: color-mix(in srgb, oklch(0.7 0.15 320) 20%, transparent);
+    color: oklch(0.88 0.1 320);
+    border-color: color-mix(in srgb, oklch(0.7 0.15 320) 45%, transparent);
 }
 
 .chip-demo {
-    background: color-mix(in srgb, oklch(0.75 0.15 145) 12%, transparent);
-    color: oklch(0.85 0.1 145);
-    border-color: color-mix(in srgb, oklch(0.75 0.15 145) 30%, transparent);
+    background: color-mix(in srgb, oklch(0.75 0.15 145) 20%, transparent);
+    color: oklch(0.88 0.1 145);
+    border-color: color-mix(in srgb, oklch(0.75 0.15 145) 45%, transparent);
 }
 
 .chip-platform {
-    background: color-mix(in srgb, oklch(0.75 0.15 60) 12%, transparent);
-    color: oklch(0.85 0.1 60);
-    border-color: color-mix(in srgb, oklch(0.75 0.15 60) 30%, transparent);
+    background: color-mix(in srgb, oklch(0.75 0.15 60) 20%, transparent);
+    color: oklch(0.88 0.1 60);
+    border-color: color-mix(in srgb, oklch(0.75 0.15 60) 45%, transparent);
 }
 
 /* --- Chip containers (flexbox layout) --- */
