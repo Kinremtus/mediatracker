@@ -1,5 +1,4 @@
 <div class="media-detail" style="grid-template-columns: 1fr;">
-    <!-- Poster -->
     <div class="media-detail-poster" style="max-width: 200px; margin-bottom: 1rem; aspect-ratio: 2/3;">
         {% if item.poster_url.is_some() %}
         <img src="{{ item.poster_url.as_ref().unwrap() }}" alt="{{ item.title }}">
@@ -8,7 +7,6 @@
         {% endif %}
     </div>
 
-    <!-- Status Chips (under poster, horizontal) -->
     {% if let Some(tid) = tracking_id %}
     <div class="drawer-status-chips">
         <button class="drawer-status-chip planned {% if current_status.as_deref() == Some("planned") %}active{% endif %}"
@@ -30,14 +28,21 @@
     </div>
     {% endif %}
 
-    <!-- Info -->
     <div class="media-detail-info">
         <h1 style="font-size: 20px;">{{ item.title }}</h1>
-        {% if item.status.is_some() %}
-        <span class="media-detail-status">{{ item.status.as_ref().unwrap() }}</span>
+        {% if item.title_english.is_some() && item.title_english.as_ref().unwrap().as_str() != item.title.as_str() %}
+        <p class="media-detail-alt-title">{{ item.title_english.as_ref().unwrap() }}</p>
         {% endif %}
 
-        <!-- Meta Grid -->
+        <div class="media-detail-badges">
+            {% if item.format_type.is_some() %}
+            <span class="badge badge-format">{{ item.format_type.as_ref().unwrap() }}</span>
+            {% endif %}
+            {% if item.status.is_some() %}
+            <span class="badge badge-status">{{ item.status.as_ref().unwrap() }}</span>
+            {% endif %}
+        </div>
+
         <div class="meta-grid" style="grid-template-columns: repeat(2, 1fr);">
             <div class="meta-item">
                 <div class="meta-item-label">Тип</div>
@@ -49,25 +54,65 @@
                 <div class="meta-item-value">{{ ep }}</div>
             </div>
             {% endif %}
+            {% if let Some(ch) = item.chapters %}
+            <div class="meta-item">
+                <div class="meta-item-label">Главы</div>
+                <div class="meta-item-value">{{ ch }}</div>
+            </div>
+            {% endif %}
+            {% if let Some(v) = item.volumes %}
+            <div class="meta-item">
+                <div class="meta-item-label">Тома</div>
+                <div class="meta-item-value">{{ v }}</div>
+            </div>
+            {% endif %}
+            {% if let Some(p) = item.pages %}
+            <div class="meta-item">
+                <div class="meta-item-label">Страницы</div>
+                <div class="meta-item-value">{{ p }}</div>
+            </div>
+            {% endif %}
+            {% if let Some(rt) = item.runtime_minutes %}
+            <div class="meta-item">
+                <div class="meta-item-label">Длительность</div>
+                <div class="meta-item-value">{{ item.runtime_human() }}</div>
+            </div>
+            {% endif %}
+            {% if let Some(pt) = item.playtime_hours %}
+            <div class="meta-item">
+                <div class="meta-item-label">Время игры</div>
+                <div class="meta-item-value">{{ pt }} ч</div>
+            </div>
+            {% endif %}
+            {% if let Some(y) = item.year %}
+            <div class="meta-item">
+                <div class="meta-item-label">Год</div>
+                <div class="meta-item-value">{{ y }}</div>
+            </div>
+            {% endif %}
             {% if item.score.is_some() %}
             <div class="meta-item">
                 <div class="meta-item-label">Оценка</div>
-                {% if item.score.unwrap() <= 3.0 %}
-                <div class="meta-item-value score-1">{{ "{:.1}"|format(item.score.unwrap()) }}</div>
-                {% elif item.score.unwrap() <= 5.0 %}
-                <div class="meta-item-value score-4">{{ "{:.1}"|format(item.score.unwrap()) }}</div>
-                {% elif item.score.unwrap() <= 7.0 %}
-                <div class="meta-item-value score-6">{{ "{:.1}"|format(item.score.unwrap()) }}</div>
-                {% elif item.score.unwrap() <= 9.0 %}
-                <div class="meta-item-value score-8">{{ "{:.1}"|format(item.score.unwrap()) }}</div>
-                {% else %}
-                <div class="meta-item-value score-10">{{ "{:.1}"|format(item.score.unwrap()) }}</div>
-                {% endif %}
+                <div class="meta-item-value {{ item.score_class() }}">{{ "{:.2}"|format(item.score.unwrap()) }}</div>
             </div>
             {% endif %}
         </div>
 
-        <!-- Description -->
+        {% if !item.genres.is_empty() %}
+        <div class="chips">
+            {% for g in item.genres.iter().take(3) %}<span class="chip chip-genre">{{ g }}</span>{% endfor %}
+        </div>
+        {% endif %}
+
+        {% if !item.studios.is_empty() || !item.authors.is_empty() || !item.publishers.is_empty() || !item.platforms.is_empty() %}
+        <p style="font-size: 13px; color: var(--text-secondary); margin-top: 0.5rem;">
+            {% if !item.studios.is_empty() %}<strong>Студия:</strong> {{ item.studios[0] }}{% if !item.studios.is_empty() && (item.authors.is_empty() && item.publishers.is_empty() && item.platforms.is_empty()) %}{% endif %}{% endif %}
+            {% if !item.authors.is_empty() %}{% if !item.studios.is_empty() %} · {% endif %}<strong>Автор:</strong> {{ item.authors[0] }}{% endif %}
+            {% if !item.publishers.is_empty() %}{% if !item.studios.is_empty() || !item.authors.is_empty() %} · {% endif %}<strong>Издатель:</strong> {{ item.publishers[0] }}{% endif %}
+            {% if !item.platforms.is_empty() %}{% if !item.studios.is_empty() || !item.authors.is_empty() || !item.publishers.is_empty() %} · {% endif %}<strong>Платформа:</strong> {{ item.platforms[0] }}{% endif %}
+        </p>
+        {% endif %}
+
         {% if item.description.is_some() %}
         <div class="media-detail-description">
             <h3>Описание</h3>

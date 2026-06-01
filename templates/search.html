@@ -50,7 +50,16 @@
         </div>
         <div class="media-card-body">
             <div class="media-card-title">{{ item.title }}</div>
-            <div class="media-card-meta">{{ item.media_type }}</div>
+            <div class="media-card-meta">
+                {{ item.media_type }}
+                {% if item.format_type.is_some() %} · {{ item.format_type.as_ref().unwrap() }}{% endif %}
+                {% if let Some(y) = item.year %} · {{ y }}{% endif %}
+            </div>
+            {% if !item.genres.is_empty() %}
+            <div class="media-card-genres">
+                {% for g in item.genres.iter().take(3) %}<span class="chip chip-genre chip-sm">{{ g }}</span>{% endfor %}
+            </div>
+            {% endif %}
             {% if item.is_tracked %}
             <span class="btn btn-secondary" style="width: 100%; height: 32px; font-size: 12px; display: flex; align-items: center; justify-content: center; cursor: default; opacity: 0.6;">✓ Добавлено</span>
             {% else %}
@@ -67,6 +76,32 @@
                 {% if item.description.is_some() %}<input type="hidden" name="description" value="{{ item.description.as_ref().unwrap() }}">{% endif %}
                 {% if item.status.is_some() %}<input type="hidden" name="status" value="{{ item.status.as_ref().unwrap() }}">{% endif %}
                 {% if item.score.is_some() %}<input type="hidden" name="score" value="{{ item.score.unwrap() }}">{% endif %}
+                {% if item.format_type.is_some() %}<input type="hidden" name="format_type" value="{{ item.format_type.as_ref().unwrap() }}">{% endif %}
+                {% if item.chapters.is_some() %}<input type="hidden" name="chapters" value="{{ item.chapters.unwrap() }}">{% endif %}
+                {% if item.volumes.is_some() %}<input type="hidden" name="volumes" value="{{ item.volumes.unwrap() }}">{% endif %}
+                {% if item.pages.is_some() %}<input type="hidden" name="pages" value="{{ item.pages.unwrap() }}">{% endif %}
+                {% if item.runtime_minutes.is_some() %}<input type="hidden" name="runtime_minutes" value="{{ item.runtime_minutes.unwrap() }}">{% endif %}
+                {% if item.playtime_hours.is_some() %}<input type="hidden" name="playtime_hours" value="{{ item.playtime_hours.unwrap() }}">{% endif %}
+                {% if item.year.is_some() %}<input type="hidden" name="year" value="{{ item.year.unwrap() }}">{% endif %}
+                {% if item.premiered_season.is_some() %}<input type="hidden" name="premiered_season" value="{{ item.premiered_season.as_ref().unwrap() }}">{% endif %}
+                {% if item.premiered_year.is_some() %}<input type="hidden" name="premiered_year" value="{{ item.premiered_year.unwrap() }}">{% endif %}
+                {% if item.broadcast.is_some() %}<input type="hidden" name="broadcast" value="{{ item.broadcast.as_ref().unwrap() }}">{% endif %}
+                {% if item.source.is_some() %}<input type="hidden" name="source" value="{{ item.source.as_ref().unwrap() }}">{% endif %}
+                {% if item.rating.is_some() %}<input type="hidden" name="rating" value="{{ item.rating.as_ref().unwrap() }}">{% endif %}
+                {% if item.rating_votes.is_some() %}<input type="hidden" name="rating_votes" value="{{ item.rating_votes.unwrap() }}">{% endif %}
+                <input type="hidden" name="authors" value="{{ item.authors.join(",") }}">
+                <input type="hidden" name="artists" value="{{ item.artists.join(",") }}">
+                <input type="hidden" name="studios" value="{{ item.studios.join(",") }}">
+                <input type="hidden" name="producers" value="{{ item.producers.join(",") }}">
+                <input type="hidden" name="licensors" value="{{ item.licensors.join(",") }}">
+                <input type="hidden" name="publishers" value="{{ item.publishers.join(",") }}">
+                <input type="hidden" name="serialized_in" value="{{ item.serialized_in.join(",") }}">
+                <input type="hidden" name="networks" value="{{ item.networks.join(",") }}">
+                <input type="hidden" name="platforms" value="{{ item.platforms.join(",") }}">
+                <input type="hidden" name="genres" value="{{ item.genres.join(",") }}">
+                <input type="hidden" name="themes" value="{{ item.themes.join(",") }}">
+                <input type="hidden" name="demographics" value="{{ item.demographics.join(",") }}">
+                <input type="hidden" name="categories" value="{{ item.categories.join(",") }}">
                 <input type="hidden" name="tracking_status" value="planned">
                 <input type="hidden" name="redirect_to" value="/search?q={{ query }}&type={{ current_type }}&page={{ page }}">
                 <button type="submit" class="btn btn-secondary" style="width: 100%; height: 32px; font-size: 12px;">+ В список</button>

@@ -1,7 +1,7 @@
 use mediatracker::app_state::AppState;
 use mediatracker::config::Config;
 use mediatracker::middleware::auth_middleware;
-use mediatracker::routes::{auth, calendar, home, media, search, settings, stats, tracking};
+use mediatracker::routes::{admin, auth, calendar, home, media, search, settings, stats, tracking};
 use axum::{middleware::from_fn_with_state, routing::get, Router, Json};
 use serde_json::json;
 use tower_http::services::ServeDir;
@@ -66,6 +66,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/settings/password/htmx", axum::routing::post(settings::htmx_update_password))
         .route("/settings/telegram/htmx", axum::routing::post(settings::htmx_save_telegram_chat_id))
         .route("/settings/telegram/test", axum::routing::post(settings::htmx_test_telegram))
+        .route("/admin", get(admin::get_admin_panel))
+        .route("/admin/refresh-details", axum::routing::post(admin::post_refresh_details))
         .layer(from_fn_with_state(state.clone(), auth_middleware));
 
     // Combine routes

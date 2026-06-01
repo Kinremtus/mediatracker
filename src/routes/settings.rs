@@ -14,6 +14,7 @@ use super::home::SidebarStats;
 #[template(path = "settings.html")]
 struct SettingsTemplate {
     username: String,
+    role: String,
     email: String,
     stats: SidebarStats,
     active_page: String,
@@ -43,7 +44,7 @@ pub async fn get_settings(
     user: CurrentUser,
     State(state): State<AppState>,
 ) -> Html<String> {
-    let stats = get_sidebar_stats(&state, user.id).await;
+    let stats = get_sidebar_stats(&state, &user).await;
 
     let user_data = sqlx::query_as::<_, (String, String, Option<String>, bool)>(
         "SELECT username, email, telegram_chat_id, telegram_notifications_enabled FROM users WHERE id = $1"
@@ -55,6 +56,7 @@ pub async fn get_settings(
 
     SettingsTemplate {
         username: user_data.0,
+        role: user.role.clone(),
         email: user_data.1,
         stats,
         active_page: "settings".to_string(),
@@ -87,7 +89,7 @@ pub async fn post_profile(
 
     match result {
         Ok(_) => {
-            let stats = get_sidebar_stats(&state, user.id).await;
+            let stats = get_sidebar_stats(&state, &user).await;
             let user_data = sqlx::query_as::<_, (String, String)>(
                 "SELECT username, email FROM users WHERE id = $1"
             )
@@ -98,6 +100,7 @@ pub async fn post_profile(
 
             Html(SettingsTemplate {
                 username: user_data.0,
+                role: user.role.clone(),
                 email: user_data.1,
                 stats,
                 active_page: "settings".to_string(),
@@ -111,9 +114,10 @@ pub async fn post_profile(
             }.render().unwrap()).into_response()
         }
         Err(e) => {
-            let stats = get_sidebar_stats(&state, user.id).await;
+            let stats = get_sidebar_stats(&state, &user).await;
             Html(SettingsTemplate {
                 username: user.username,
+                role: user.role.clone(),
                 email: String::new(),
                 stats,
                 active_page: "settings".to_string(),
@@ -135,9 +139,10 @@ pub async fn post_password(
     Form(form): Form<PasswordForm>,
 ) -> Response {
     if form.new_password != form.confirm_password {
-        let stats = get_sidebar_stats(&state, user.id).await;
+        let stats = get_sidebar_stats(&state, &user).await;
         return Html(SettingsTemplate {
             username: user.username,
+            role: user.role.clone(),
             email: String::new(),
             stats,
             active_page: "settings".to_string(),
@@ -152,9 +157,10 @@ pub async fn post_password(
     }
 
     if form.new_password.len() < 6 {
-        let stats = get_sidebar_stats(&state, user.id).await;
+        let stats = get_sidebar_stats(&state, &user).await;
         return Html(SettingsTemplate {
             username: user.username,
+            role: user.role.clone(),
             email: String::new(),
             stats,
             active_page: "settings".to_string(),
@@ -188,9 +194,10 @@ pub async fn post_password(
     let parsed_hash = match PasswordHash::new(&user_data.1) {
         Ok(h) => h,
         Err(_) => {
-            let stats = get_sidebar_stats(&state, user.id).await;
+            let stats = get_sidebar_stats(&state, &user).await;
             return Html(SettingsTemplate {
                 username: user.username,
+                role: user.role.clone(),
                 email: String::new(),
                 stats,
                 active_page: "settings".to_string(),
@@ -206,9 +213,10 @@ pub async fn post_password(
     };
 
     if Argon2::default().verify_password(form.current_password.as_bytes(), &parsed_hash).is_err() {
-        let stats = get_sidebar_stats(&state, user.id).await;
+        let stats = get_sidebar_stats(&state, &user).await;
         return Html(SettingsTemplate {
             username: user.username,
+            role: user.role.clone(),
             email: String::new(),
             stats,
             active_page: "settings".to_string(),
@@ -228,9 +236,10 @@ pub async fn post_password(
     let new_hash = match Argon2::default().hash_password(form.new_password.as_bytes(), &salt) {
         Ok(h) => h.to_string(),
         Err(_) => {
-            let stats = get_sidebar_stats(&state, user.id).await;
+            let stats = get_sidebar_stats(&state, &user).await;
             return Html(SettingsTemplate {
                 username: user.username,
+                role: user.role.clone(),
                 email: String::new(),
                 stats,
                 active_page: "settings".to_string(),
@@ -255,9 +264,10 @@ pub async fn post_password(
 
     match result {
         Ok(_) => {
-            let stats = get_sidebar_stats(&state, user.id).await;
+            let stats = get_sidebar_stats(&state, &user).await;
             Html(SettingsTemplate {
                 username: user.username,
+                role: user.role.clone(),
                 email: String::new(),
                 stats,
                 active_page: "settings".to_string(),
@@ -271,9 +281,10 @@ pub async fn post_password(
             }.render().unwrap()).into_response()
         }
         Err(e) => {
-            let stats = get_sidebar_stats(&state, user.id).await;
+            let stats = get_sidebar_stats(&state, &user).await;
             Html(SettingsTemplate {
                 username: user.username,
+                role: user.role.clone(),
                 email: String::new(),
                 stats,
                 active_page: "settings".to_string(),
@@ -309,9 +320,9 @@ pub async fn post_delete_account(
     response
 }
 
-async fn get_sidebar_stats(state: &AppState, user_id: uuid::Uuid) -> SidebarStats {
-    let (ip, cp, pp, dp) = state.tracking.get_status_counts(user_id).await.unwrap_or_default();
-    SidebarStats { in_progress: ip, completed: cp, planned: pp, dropped: dp }
+async fn get_sidebar_stats(state: &AppState, user: &CurrentUser) -> SidebarStats {
+    let (ip, cp, pp, dp) = state.tracking.get_status_counts(user.id).await.unwrap_or_default();
+    SidebarStats { in_progress: ip, completed: cp, planned: pp, dropped: dp, role: user.role.clone() }
 }
 
 // ========== HTMX Endpoints ==========

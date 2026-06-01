@@ -23,6 +23,7 @@ struct PageItem {
 #[template(path = "search.html")]
 struct SearchTemplate {
     username: String,
+    role: String,
     stats: SidebarStats,
     active_page: String,
     query: String,
@@ -84,7 +85,7 @@ pub async fn get_search(
         .unwrap_or_default()
         .to_vec();
 
-    let stats = get_sidebar_stats(&state, user.id).await;
+    let stats = get_sidebar_stats(&state, &user).await;
 
     let flash_message = params.flash.as_deref().map(|f| match f {
         "added" => "✓ Медиа добавлено в список".to_string(),
@@ -94,6 +95,7 @@ pub async fn get_search(
 
     SearchTemplate {
         username: user.username,
+        role: user.role.clone(),
         stats,
         active_page: "search".to_string(),
         query,
@@ -110,7 +112,7 @@ pub async fn get_search(
     .into()
 }
 
-async fn get_sidebar_stats(state: &AppState, user_id: uuid::Uuid) -> SidebarStats {
-    let (ip, cp, pp, dp) = state.tracking.get_status_counts(user_id).await.unwrap_or_default();
-    SidebarStats { in_progress: ip, completed: cp, planned: pp, dropped: dp }
+async fn get_sidebar_stats(state: &AppState, user: &CurrentUser) -> SidebarStats {
+    let (ip, cp, pp, dp) = state.tracking.get_status_counts(user.id).await.unwrap_or_default();
+    SidebarStats { in_progress: ip, completed: cp, planned: pp, dropped: dp, role: user.role.clone() }
 }

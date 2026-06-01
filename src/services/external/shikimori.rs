@@ -19,8 +19,19 @@ struct ShikimoriSearchResult {
     score: Option<f64>,
     status: Option<String>,
     episodes: Option<i32>,
+    episodes_aired: Option<i32>,
     description: Option<String>,
     mal_id: Option<i64>,
+    aired_on: Option<chrono::NaiveDate>,
+    released_on: Option<chrono::NaiveDate>,
+    rating: Option<String>,
+    duration: Option<i32>,
+    #[serde(default)]
+    studios: Vec<ShikimoriStudio>,
+    #[serde(default)]
+    genres: Vec<ShikimoriGenre>,
+    #[serde(default)]
+    demographics: Vec<ShikimoriDemographic>,
 }
 
 fn deserialize_optional_f64<'de, D>(deserializer: D) -> Result<Option<f64>, D::Error>
@@ -62,6 +73,23 @@ pub struct ShikiCalendarAnime {
     pub image: ShikimoriImage,
 }
 
+#[derive(Debug, Deserialize)]
+struct ShikimoriStudio {
+    name: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ShikimoriGenre {
+    name: String,
+    russian: Option<String>,
+    kind: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ShikimoriDemographic {
+    name: String,
+}
+
 fn poster_url(original: Option<String>) -> Option<String> {
     original.map(|url| {
         if url.starts_with("http") {
@@ -70,6 +98,103 @@ fn poster_url(original: Option<String>) -> Option<String> {
             format!("https://shikimori.one{}", url)
         }
     })
+}
+
+fn extract_studio_names(items: &[ShikimoriStudio]) -> Vec<String> {
+    items.iter().map(|s| s.name.clone()).collect()
+}
+
+fn extract_genre_names(items: &[ShikimoriGenre]) -> (Vec<String>, Vec<String>) {
+    // Shikimori: kind = "theme" → themes, иначе → genres
+    let mut genres = Vec::new();
+    let mut themes = Vec::new();
+    for g in items {
+        match g.kind.as_deref() {
+            Some("theme") => themes.push(g.name.clone()),
+            _ => genres.push(g.name.clone()),
+        }
+    }
+    (genres, themes)
+}
+
+fn extract_demographic_names(items: &[ShikimoriDemographic]) -> Vec<String> {
+    items.iter().map(|d| d.name.clone()).collect()
+}
+
+fn map_anime(r: ShikimoriSearchResult) -> CreateMediaItem {
+    let comparison_key = r.name_en.clone().unwrap_or_else(|| r.name.clone());
+    let (genres, themes) = extract_genre_names(&r.genres);
+    let demographics = extract_demographic_names(&r.demographics);
+    let studios = extract_studio_names(&r.studios);
+
+    // aired_on / released_on могут быть одинаковыми для аниме; используем aired_on
+    let (aired_from, aired_to) = (r.aired_on, r.released_on);
+
+    let format_type = r.kind.as_ref().map(|k| match k.as_str() {
+        "tv" => "TV",
+        "movie" => "Movie",
+        "ova" => "OVA",
+        "ona" => "ONA",
+        "special" => "Special",
+        "music" => "Music",
+        other => other,
+    }.to_string());
+
+    let duration_text = r.duration.map(|m| format!("{m} min."));
+
+    CreateMediaItem {
+        provider: "shikimori".to_string(),
+        external_id: r.id.to_string(),
+        media_type: match r.kind.as_deref() {
+            Some("anime") => "anime".to_string(),
+            Some("manga") => "manga".to_string(),
+            _ => "anime".to_string(),
+        },
+        title: r.name,
+        title_english: r.name_en,
+        title_native: None,
+        title_russian: r.russian,
+        poster_url: poster_url(r.image.and_then(|img| img.original)),
+        episodes: r.episodes,
+        description: r.description,
+        status: r.status,
+        score: r.score,
+        is_tracked: false,
+        mal_id: r.mal_id,
+        comparison_key: Some(comparison_key),
+        format_type,
+        details: None,
+        chapters: None,
+        volumes: None,
+        pages: None,
+        runtime_minutes: r.duration,
+        playtime_hours: None,
+        year: None,
+        aired_from,
+        aired_to,
+        premiered_season: None,
+        premiered_year: None,
+        broadcast: None,
+        completed: None,
+        licensed: None,
+        source: None,
+        duration: duration_text,
+        rating: r.rating,
+        rating_votes: None,
+        authors: Vec::new(),
+        artists: Vec::new(),
+        studios,
+        producers: Vec::new(),
+        licensors: Vec::new(),
+        publishers: Vec::new(),
+        serialized_in: Vec::new(),
+        networks: Vec::new(),
+        platforms: Vec::new(),
+        genres,
+        themes,
+        demographics,
+        categories: Vec::new(),
+    }
 }
 
 #[derive(Clone)]
@@ -95,33 +220,7 @@ impl ShikimoriService {
         let response = self.client.get(url).send().await?;
         let results: Vec<ShikimoriSearchResult> = response.json().await?;
 
-        let items = results
-            .into_iter()
-            .map(|r| {
-                let comparison_key = r.name_en.clone().unwrap_or_else(|| r.name.clone());
-                CreateMediaItem {
-                    provider: "shikimori".to_string(),
-                    external_id: r.id.to_string(),
-                    media_type: match r.kind.as_deref() {
-                        Some("anime") => "anime".to_string(),
-                        Some("manga") => "manga".to_string(),
-                        _ => "anime".to_string(),
-                    },
-                    title: r.name,
-                    title_english: r.name_en,
-                    title_native: None,
-                    title_russian: r.russian,
-                    poster_url: poster_url(r.image.and_then(|img| img.original)),
-                    episodes: r.episodes,
-                    description: r.description,
-                    status: r.status,
-                    score: r.score,
-                    is_tracked: false,
-                    mal_id: r.mal_id,
-                    comparison_key: Some(comparison_key),
-                }
-            })
-            .collect();
+        let items = results.into_iter().map(map_anime).collect();
 
         Ok(items)
     }
@@ -136,31 +235,11 @@ impl ShikimoriService {
     pub async fn get_details(&self, id: &str) -> Result<CreateMediaItem, anyhow::Error> {
         let url = format!("{}/animes/{}", BASE_URL, id);
         let response = self.client.get(&url).send().await?;
+        if !response.status().is_success() {
+            anyhow::bail!("Shikimori details failed: {}", response.status());
+        }
         let r: ShikimoriSearchResult = response.json().await?;
-
-        let comparison_key = r.name_en.clone().unwrap_or_else(|| r.name.clone());
-
-        Ok(CreateMediaItem {
-            provider: "shikimori".to_string(),
-            external_id: r.id.to_string(),
-            media_type: match r.kind.as_deref() {
-                Some("anime") => "anime".to_string(),
-                Some("manga") => "manga".to_string(),
-                _ => "anime".to_string(),
-            },
-            title: r.name,
-            title_english: r.name_en,
-            title_native: None,
-            title_russian: r.russian,
-            poster_url: poster_url(r.image.and_then(|img| img.original)),
-            episodes: r.episodes,
-            description: r.description,
-            status: r.status,
-            score: r.score,
-            is_tracked: false,
-            mal_id: r.mal_id,
-            comparison_key: Some(comparison_key),
-        })
+        Ok(map_anime(r))
     }
 }
 
@@ -174,5 +253,29 @@ mod tests {
         let results: Vec<ShikimoriSearchResult> = serde_json::from_str(json).unwrap();
         assert_eq!(results[0].score, Some(8.02));
         assert_eq!(results[0].russian.as_deref(), Some("Наруто"));
+    }
+
+    #[test]
+    fn parses_genres_themes_demographics() {
+        let json = r#"{
+            "id": 20,
+            "name": "Naruto",
+            "kind": "tv",
+            "episodes": 220,
+            "status": "released",
+            "studios": [{"name": "Studio Pierrot"}],
+            "genres": [
+                {"name": "Action", "kind": "genre"},
+                {"name": "Martial Arts", "kind": "theme"}
+            ],
+            "demographics": [{"name": "Shounen"}]
+        }"#;
+        let r: ShikimoriSearchResult = serde_json::from_str(json).unwrap();
+        let item = map_anime(r);
+        assert_eq!(item.format_type.as_deref(), Some("TV"));
+        assert!(item.studios.contains(&"Studio Pierrot".to_string()));
+        assert!(item.genres.contains(&"Action".to_string()));
+        assert!(item.themes.contains(&"Martial Arts".to_string()));
+        assert!(item.demographics.contains(&"Shounen".to_string()));
     }
 }

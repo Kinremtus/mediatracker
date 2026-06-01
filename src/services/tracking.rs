@@ -32,9 +32,33 @@ impl TrackingService {
         let media_id = match media_id {
             Some(id) => id,
             None => {
-                // Insert media item
                 let new_id = sqlx::query_scalar::<_, Uuid>(
-                    "INSERT INTO media_items (provider, external_id, media_type, title, title_english, title_native, title_russian, poster_url, episodes, description, status, score) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id",
+                    r#"
+                    INSERT INTO media_items (
+                        provider, external_id, media_type, title, title_english, title_native, title_russian,
+                        poster_url, episodes, description, status, score,
+                        format_type, details,
+                        chapters, volumes, pages, runtime_minutes, playtime_hours,
+                        year, aired_from, aired_to, premiered_season, premiered_year, broadcast,
+                        completed, licensed,
+                        source, duration, rating, rating_votes,
+                        authors, artists, studios, producers, licensors, publishers,
+                        serialized_in, networks, platforms,
+                        genres, themes, demographics, categories
+                    ) VALUES (
+                        $1, $2, $3, $4, $5, $6, $7,
+                        $8, $9, $10, $11, $12,
+                        $13, $14,
+                        $15, $16, $17, $18, $19,
+                        $20, $21, $22, $23, $24, $25,
+                        $26, $27,
+                        $28, $29, $30, $31,
+                        $32, $33, $34, $35, $36, $37,
+                        $38, $39, $40,
+                        $41, $42, $43, $44
+                    )
+                    RETURNING id
+                    "#,
                 )
                 .bind(&media.provider)
                 .bind(&media.external_id)
@@ -48,6 +72,38 @@ impl TrackingService {
                 .bind(&media.description)
                 .bind(&media.status)
                 .bind(media.score)
+                .bind(&media.format_type)
+                .bind(media.details.clone().unwrap_or(serde_json::Value::Object(Default::default())))
+                .bind(media.chapters)
+                .bind(media.volumes)
+                .bind(media.pages)
+                .bind(media.runtime_minutes)
+                .bind(media.playtime_hours)
+                .bind(media.year)
+                .bind(media.aired_from)
+                .bind(media.aired_to)
+                .bind(&media.premiered_season)
+                .bind(media.premiered_year)
+                .bind(&media.broadcast)
+                .bind(media.completed)
+                .bind(media.licensed)
+                .bind(&media.source)
+                .bind(&media.duration)
+                .bind(&media.rating)
+                .bind(media.rating_votes)
+                .bind(&media.authors)
+                .bind(&media.artists)
+                .bind(&media.studios)
+                .bind(&media.producers)
+                .bind(&media.licensors)
+                .bind(&media.publishers)
+                .bind(&media.serialized_in)
+                .bind(&media.networks)
+                .bind(&media.platforms)
+                .bind(&media.genres)
+                .bind(&media.themes)
+                .bind(&media.demographics)
+                .bind(&media.categories)
                 .fetch_one(&self.db)
                 .await?;
                 new_id
@@ -205,7 +261,23 @@ impl TrackingService {
         media_type: Option<&str>,
         search_query: Option<&str>,
     ) -> Result<Vec<TrackingEntryWithMedia>, anyhow::Error> {
-        let mut query = "SELECT tracking_entries.id, tracking_entries.user_id, tracking_entries.media_id, tracking_entries.status, tracking_entries.rating::double precision AS rating, tracking_entries.progress, tracking_entries.created_at, tracking_entries.updated_at, media_items.provider, media_items.external_id, media_items.media_type, media_items.title, media_items.title_english, media_items.title_native, media_items.title_russian, media_items.poster_url, media_items.episodes, media_items.description, media_items.status AS media_status, media_items.score::double precision AS score FROM tracking_entries JOIN media_items ON tracking_entries.media_id = media_items.id WHERE tracking_entries.user_id = $1".to_string();
+        let mut query = String::from(
+            "SELECT tracking_entries.id, tracking_entries.user_id, tracking_entries.media_id, \
+             tracking_entries.status, tracking_entries.rating::double precision AS rating, \
+             tracking_entries.progress, tracking_entries.created_at, tracking_entries.updated_at, \
+             media_items.provider, media_items.external_id, media_items.media_type, \
+             media_items.title, media_items.title_english, media_items.title_native, \
+             media_items.title_russian, media_items.poster_url, media_items.episodes, \
+             media_items.description, media_items.status AS media_status, \
+             media_items.score::double precision AS score, \
+             media_items.format_type, media_items.chapters, media_items.volumes, media_items.pages, \
+             media_items.runtime_minutes, media_items.playtime_hours, \
+             media_items.authors, media_items.artists, media_items.studios, media_items.publishers, \
+             media_items.genres, media_items.themes, media_items.year \
+             FROM tracking_entries \
+             JOIN media_items ON tracking_entries.media_id = media_items.id \
+             WHERE tracking_entries.user_id = $1",
+        );
         let mut param_idx = 2;
 
         if let Some(s) = status {

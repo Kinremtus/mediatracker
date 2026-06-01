@@ -48,6 +48,7 @@ fn translate_media_type(media_type: &str) -> String {
 #[template(path = "stats.html")]
 struct StatsTemplate {
     username: String,
+    role: String,
     stats: SidebarStats,
     active_page: String,
     overview: StatsOverview,
@@ -72,7 +73,7 @@ pub async fn get_stats(
         .await
         .unwrap_or_default();
     let progress = state.stats.get_title_progress(user.id).await.unwrap_or_default();
-    let sidebar_stats = get_sidebar_stats(&state, user.id).await;
+    let sidebar_stats = get_sidebar_stats(&state, &user).await;
 
     let calendar = build_activity_calendar(&activity_by_day);
     let progress_count = progress.len();
@@ -94,6 +95,7 @@ pub async fn get_stats(
 
     StatsTemplate {
         username: user.username,
+        role: user.role.clone(),
         stats: sidebar_stats,
         active_page: "stats".to_string(),
         overview,
@@ -111,7 +113,7 @@ pub async fn get_stats(
     .into()
 }
 
-async fn get_sidebar_stats(state: &AppState, user_id: uuid::Uuid) -> SidebarStats {
-    let (ip, cp, pp, dp) = state.tracking.get_status_counts(user_id).await.unwrap_or_default();
-    SidebarStats { in_progress: ip, completed: cp, planned: pp, dropped: dp }
+async fn get_sidebar_stats(state: &AppState, user: &CurrentUser) -> SidebarStats {
+    let (ip, cp, pp, dp) = state.tracking.get_status_counts(user.id).await.unwrap_or_default();
+    SidebarStats { in_progress: ip, completed: cp, planned: pp, dropped: dp, role: user.role.clone() }
 }
