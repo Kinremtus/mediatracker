@@ -3,7 +3,7 @@ use axum::{
     extract::{Form, Path, Query, State},
     response::{Html, IntoResponse, Redirect, Response},
 };
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use uuid::Uuid;
 
 use crate::app_state::AppState;
@@ -134,6 +134,19 @@ pub async fn get_tracking_list(
     .into()
 }
 
+fn csv_str<'de, D>(de: D) -> Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let raw = String::deserialize(de).unwrap_or_default();
+    Ok(raw
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .collect())
+}
+
 #[derive(Deserialize)]
 pub struct AddToTrackingForm {
     pub provider: String,
@@ -170,18 +183,31 @@ pub struct AddToTrackingForm {
     pub duration: Option<String>,
     pub rating: Option<String>,
     pub rating_votes: Option<i32>,
+    #[serde(default, deserialize_with = "csv_str")]
     pub authors: Vec<String>,
+    #[serde(default, deserialize_with = "csv_str")]
     pub artists: Vec<String>,
+    #[serde(default, deserialize_with = "csv_str")]
     pub studios: Vec<String>,
+    #[serde(default, deserialize_with = "csv_str")]
     pub producers: Vec<String>,
+    #[serde(default, deserialize_with = "csv_str")]
     pub licensors: Vec<String>,
+    #[serde(default, deserialize_with = "csv_str")]
     pub publishers: Vec<String>,
+    #[serde(default, deserialize_with = "csv_str")]
     pub serialized_in: Vec<String>,
+    #[serde(default, deserialize_with = "csv_str")]
     pub networks: Vec<String>,
+    #[serde(default, deserialize_with = "csv_str")]
     pub platforms: Vec<String>,
+    #[serde(default, deserialize_with = "csv_str")]
     pub genres: Vec<String>,
+    #[serde(default, deserialize_with = "csv_str")]
     pub themes: Vec<String>,
+    #[serde(default, deserialize_with = "csv_str")]
     pub demographics: Vec<String>,
+    #[serde(default, deserialize_with = "csv_str")]
     pub categories: Vec<String>,
 }
 
