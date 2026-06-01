@@ -1319,6 +1319,7 @@ dependencies = [
  "dotenvy",
  "envy",
  "hex",
+ "regex",
  "reqwest",
  "serde",
  "serde_json",
