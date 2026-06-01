@@ -39,7 +39,7 @@
             {% if item.score.is_some() %}
             <div class="meta-item">
                 <div class="meta-item-label">Оценка</div>
-                <div class="meta-item-value" style="color: #fbbf24;">{{ "{:.1}"|format(item.score.unwrap()) }}</div>
+                <div class="meta-item-value {{ item.score_class() }}">{{ "{:.1}"|format(item.score.unwrap()) }}</div>
             </div>
             {% endif %}
         </div>
