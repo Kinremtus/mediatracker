@@ -2,6 +2,7 @@ use reqwest::Client;
 use serde::Deserialize;
 
 use crate::models::media_item::CreateMediaItem;
+use crate::utils::clean_description;
 
 const BASE_URL: &str = "https://api.mangaupdates.com/v1";
 
@@ -248,7 +249,7 @@ fn map_series(series: MangaUpdatesSeries) -> CreateMediaItem {
         title_russian: None,
         poster_url,
         episodes: None,
-        description: series.description,
+        description: clean_description(series.description),
         status,
         score: series.bayesian_rating,
         is_tracked: false,
