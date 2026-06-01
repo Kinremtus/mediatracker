@@ -1,26 +1,25 @@
-# Builder stage
-FROM rust:1.95-slim-bookworm AS builder
+# Chef stage: installs cargo-chef (used in planner + builder)
+FROM rust:1.95-slim-bookworm AS chef
+RUN cargo install cargo-chef --locked
 WORKDIR /app
 
-# Copy only manifest files first for dependency caching
+# Planner stage: produces a recipe.json from Cargo.toml/Cargo.lock
+# The recipe is invalidated only when deps change, not when source code changes
+FROM chef AS planner
 COPY Cargo.toml Cargo.lock ./
-
-# Create a dummy main.rs to build dependencies only
 RUN mkdir src && echo "fn main() {}" > src/main.rs
-RUN --mount=type=cache,target=/root/.cargo/registry,id=cargo-registry \
-    --mount=type=cache,target=/root/.cargo/git,id=cargo-git \
-    cargo build --release
-RUN rm -f target/release/deps/mediatracker*
+RUN cargo chef prepare --recipe-path recipe.json
+RUN rm -rf src
 
-# Copy actual source code
+# Builder stage: cooks deps from recipe (cached in Docker layer until deps change),
+# then builds the real app on top
+FROM chef AS builder
+COPY --from=planner /app/recipe.json recipe.json
+RUN cargo chef cook --release --recipe-path recipe.json
 COPY . .
+RUN cargo build --release
 
-# Build the real application (dependencies already cached)
-RUN --mount=type=cache,target=/root/.cargo/registry,id=cargo-registry \
-    --mount=type=cache,target=/root/.cargo/git,id=cargo-git \
-    cargo build --release
-
-# Runtime stage
+# Runtime stage: minimal debian + the binary + static + migrations
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y libssl3 ca-certificates curl && rm -rf /var/lib/apt/lists/*
 RUN adduser --disabled-password --no-create-home appuser
