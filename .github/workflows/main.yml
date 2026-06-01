@@ -19,8 +19,16 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           command_timeout: 120m
           script: |
+            set -euo pipefail
             cd ${{ secrets.TARGET_DIR }}
-            git pull origin main
+
+            # Force-push-safe sync. 'git pull' fails on non-fast-forward
+            # (e.g. after a local `git reset --hard` + force-push), but
+            # the script continues without `set -e` and silently deploys
+            # the old code. Reset to origin/main is idempotent.
+            git fetch origin main
+            git reset --hard origin/main
+            echo "📌 Synced to: $(git rev-parse --short HEAD)"
 
             # Создаём volumes для кэша Cargo (если ещё нет)
             docker volume create cargo-registry 2>/dev/null || true
