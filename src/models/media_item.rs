@@ -64,3 +64,42 @@ pub struct MediaItemSlim {
     pub status: Option<String>,
     pub score: Option<f64>,
 }
+
+impl MediaItem {
+    pub fn score_class(&self) -> &'static str {
+        match self.score {
+            Some(s) if s <= 3.0 => "score-1",
+            Some(s) if s <= 5.0 => "score-4",
+            Some(s) if s <= 7.0 => "score-6",
+            Some(s) if s <= 9.0 => "score-8",
+            Some(_) => "score-10",
+            None => "",
+        }
+    }
+}
+
+impl MediaItemSlim {
+    pub fn score_class(&self) -> &'static str {
+        match self.score {
+            Some(s) if s <= 3.0 => "score-1",
+            Some(s) if s <= 5.0 => "score-4",
+            Some(s) if s <= 7.0 => "score-6",
+            Some(s) if s <= 9.0 => "score-8",
+            Some(_) => "score-10",
+            None => "",
+        }
+    }
+}
+
+impl CreateMediaItem {
+    pub fn score_class(&self) -> &'static str {
+        match self.score {
+            Some(s) if s <= 3.0 => "score-1",
+            Some(s) if s <= 5.0 => "score-4",
+            Some(s) if s <= 7.0 => "score-6",
+            Some(s) if s <= 9.0 => "score-8",
+            Some(_) => "score-10",
+            None => "",
+        }
+    }
+}

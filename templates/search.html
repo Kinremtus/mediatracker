@@ -45,7 +45,7 @@
             </div>
             {% endif %}
             {% if item.score.is_some() %}
-            <span class="media-card-score">{{ "{:.1}"|format(item.score.unwrap()) }}</span>
+            <span class="media-card-score {{ item.score_class() }}">{{ "{:.1}"|format(item.score.unwrap()) }}</span>
             {% endif %}
         </div>
         <div class="media-card-body">

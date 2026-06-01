@@ -14,7 +14,7 @@
         <div class="poster-placeholder" style="font-size: 10px; padding: 4px;">Нет обложки</div>
         {% endif %}
         {% if entry_with_media.media.score.is_some() && entry_with_media.media.score.unwrap() > 0.0 %}
-        <span class="media-card-score">{{ "{:.1}"|format(entry_with_media.media.score.unwrap()) }}</span>
+        <span class="media-card-score {{ entry_with_media.media.score_class() }}">{{ "{:.1}"|format(entry_with_media.media.score.unwrap()) }}</span>
         {% endif %}
     </a>
 
