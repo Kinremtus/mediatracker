@@ -3,6 +3,7 @@ use serde::Deserialize;
 use url::Url;
 
 use crate::models::media_item::CreateMediaItem;
+use crate::utils::clean_description;
 
 const BASE_URL: &str = "https://shikimori.one/api";
 const USER_AGENT: &str = "MediaTracker/0.1 (+https://github.com/Kinremtus/mediatracker)";
@@ -156,7 +157,7 @@ fn map_anime(r: ShikimoriSearchResult) -> CreateMediaItem {
         title_russian: r.russian,
         poster_url: poster_url(r.image.and_then(|img| img.original)),
         episodes: r.episodes,
-        description: r.description,
+        description: clean_description(r.description),
         status: r.status,
         score: r.score,
         is_tracked: false,

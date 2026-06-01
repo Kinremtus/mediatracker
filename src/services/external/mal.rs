@@ -3,6 +3,7 @@ use serde::Deserialize;
 use url::Url;
 
 use crate::models::media_item::CreateMediaItem;
+use crate::utils::clean_description;
 
 /// MyAnimeList data via Jikan v4 (https://jikan.moe) — no API key required.
 const BASE_URL: &str = "https://api.jikan.moe/v4";
@@ -153,7 +154,7 @@ fn map_full(anime: MalAnimeFull) -> CreateMediaItem {
         title_russian: None,
         poster_url: poster_url(&anime.images),
         episodes: anime.episodes,
-        description: anime.synopsis,
+        description: clean_description(anime.synopsis),
         status: anime.status,
         score: anime.score,
         is_tracked: false,
@@ -210,7 +211,7 @@ fn map_search(item: MalAnimeSearchItem) -> CreateMediaItem {
         title_russian: None,
         poster_url: poster_url(&item.images),
         episodes: item.episodes,
-        description: item.synopsis,
+        description: clean_description(item.synopsis),
         status: item.status,
         score: item.score,
         is_tracked: false,
