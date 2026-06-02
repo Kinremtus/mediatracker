@@ -67,7 +67,8 @@
            hx-get="/tracking/partial"
            hx-target="#tracking-grid"
            hx-swap="innerHTML"
-           hx-include="[name='type'], [name='status']">
+           hx-include="[name='type'], [name='status']"
+           @input.debounce.500ms="const u = new URL(window.location); u.searchParams.set('q', $event.target.value); history.replaceState({}, '', u);">
     <button type="submit">Найти</button>
 </form>
 
