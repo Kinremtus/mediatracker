@@ -379,7 +379,7 @@
 }
 
 .user-dropdown-logout {
-    color: var(--destructive);
+    color: var(--destructive-foreground);
 }
 
 .user-dropdown-logout:hover {
@@ -1683,7 +1683,7 @@ body.drawer-open {
 }
 
 .settings-label-danger {
-    color: var(--destructive);
+    color: var(--destructive-foreground);
 }
 
 .btn-danger {
