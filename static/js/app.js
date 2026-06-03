@@ -123,29 +123,6 @@ function afterDelete() {
     // Refresh tracking grid
     refreshTrackingList();
 }
-    // Refresh tracking grid on the page (if it exists)
-    refreshTrackingList();
-}
-
-function afterProgressIncrement(btn, newProgress) {
-    // Update progress text in drawer
-    const row = btn.closest('.drawer-progress-row');
-    if (row) {
-        const text = row.querySelector('.drawer-progress-text');
-        if (text) {
-            const current = text.textContent.trim();
-            // Replace the number before "/" with newProgress
-            text.textContent = current.replace(/\d+/, newProgress);
-        }
-        // Hide button if reached total
-        const tcMatch = text.textContent.match(/\/\s*(\d+)/);
-        if (tcMatch && newProgress >= parseInt(tcMatch[1])) {
-            btn.remove();
-        }
-    }
-    // Refresh tracking grid on the page
-    refreshTrackingList();
-}
 
 // --- Rating (half-star precision) ---
 function setRatingHalf(trackingId, starIndex, event) {
