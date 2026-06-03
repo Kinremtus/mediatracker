@@ -453,15 +453,15 @@ pub async fn htmx_tracking_partial(
     let search_query = params.q.as_deref();
     let entries = state.tracking.get_user_entries(user.id, status, media_type, search_query).await.unwrap_or_default();
 
-    TrackingGridPartial {
+    Html(TrackingGridPartial {
         entries,
         current_status: params.status.unwrap_or_default(),
         current_media_type: params.media_type.unwrap_or_default(),
         search_query: params.q.unwrap_or_default(),
     }
     .render()
-    .unwrap()
-    .into()
+    .unwrap())
+    .into_response()
 }
 
 async fn get_sidebar_stats(state: &AppState, user: &CurrentUser) -> SidebarStats {
