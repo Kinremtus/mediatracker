@@ -1,9 +1,7 @@
 {% if !entries.is_empty() %}
-<div class="tracking-grid" id="tracking-grid">
-    {% for entry_with_media in entries %}
-    {% include "partials/tracking_card.html" %}
-    {% endfor %}
-</div>
+{% for entry_with_media in entries %}
+{% include "partials/tracking_card.html" %}
+{% endfor %}
 {% else %}
 <div class="empty-state">
     <div class="empty-state-icon"></div>
