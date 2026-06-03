@@ -59,6 +59,25 @@ document.addEventListener('DOMContentLoaded', function() {
             Alpine.initTree(e.detail.target);
         }
     });
+
+    // Remove card from filtered list if its status no longer matches the filter
+    document.body.addEventListener('htmx:afterSwap', function(e) {
+        const card = e.detail.target;
+        if (card.classList && card.classList.contains('tracking-card')) {
+            const currentStatus = new URLSearchParams(window.location.search).get('status');
+            if (currentStatus) {
+                const cardStatus = card.getAttribute('data-status');
+                if (cardStatus && cardStatus !== currentStatus) {
+                    card.remove();
+                    // Check if grid is now empty
+                    const grid = document.querySelector('.tracking-grid');
+                    if (grid && grid.children.length === 0) {
+                        grid.outerHTML = '<div class="empty-state"><div class="empty-state-icon"></div><p class="empty-state-text">Список пуст</p><p class="empty-state-sub">Добавьте тайтлы через <a href="/search" style="color: var(--in_progress);">поиск</a></p></div>';
+                    }
+                }
+            }
+        }
+    });
 });
 
 // --- Theme (from base.html) ---
@@ -188,7 +207,9 @@ function refreshTrackingList() {
     if (typeof htmx !== 'undefined') {
         const grid = document.querySelector('.tracking-grid');
         if (grid) {
-            htmx.ajax('GET', '/tracking/partial', {target: grid, swap: 'innerHTML'});
+            const params = new URLSearchParams(window.location.search);
+            const url = '/tracking/partial' + (params.toString() ? '?' + params.toString() : '');
+            htmx.ajax('GET', url, {target: grid, swap: 'innerHTML'});
         }
     }
 }
