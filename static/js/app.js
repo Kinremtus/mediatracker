@@ -79,6 +79,11 @@ function openMediaDrawer(provider, externalId, mediaType) {
             data.drawerContent = html;
             data.drawerOpen = true;
             document.body.style.overflow = 'hidden';
+            // x-html injects raw HTML — HTMX won't process it automatically
+            setTimeout(() => {
+                const el = document.querySelector('.media-drawer-content');
+                if (el && typeof htmx !== 'undefined') htmx.process(el);
+            }, 0);
         })
         .catch(e => console.error('Failed to load media details', e));
 }
