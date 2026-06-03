@@ -1,4 +1,4 @@
-<div class="tracking-card" id="card-{{ entry_with_media.entry.id }}" x-data="{ statusOpen: false }">
+<div class="tracking-card" id="card-{{ entry_with_media.entry.id }}" data-status="{{ entry_with_media.entry.status }}" x-data="{ statusOpen: false }">
     <button hx-delete="/tracking/{{ entry_with_media.entry.id }}/htmx/delete"
             hx-target="#card-{{ entry_with_media.entry.id }}"
             hx-swap="outerHTML"
