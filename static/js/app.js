@@ -107,3 +107,105 @@ function updateTrackingStatus(trackingId, newStatus, clickedBtn) {
         }
     }).catch(() => {});
 }
+
+// --- Increment Progress (+1) ---
+function incrementProgress(trackingId, currentProgress) {
+    const params = new URLSearchParams();
+    params.append('progress', currentProgress + 1);
+    fetch(`/tracking/${trackingId}/htmx`, {
+        method: 'POST',
+        body: params,
+    }).then(r => r.text()).then(html => {
+        // Update progress text in drawer
+        const row = document.querySelector('.drawer-progress-row');
+        if (row) {
+            const text = row.querySelector('.drawer-progress-text');
+            if (text) {
+                const parts = text.textContent.split('/');
+                if (parts.length === 2) {
+                    const unit = parts[1].trim().split(' ').slice(1).join(' ');
+                    text.textContent = `${currentProgress + 1} /${parts[1].trim().split(' ')[0]} ${unit}`;
+                }
+            }
+            // Hide button if completed
+            const btn = row.querySelector('.drawer-btn-increment');
+            if (btn) {
+                const tc = parseInt(text.textContent.split('/')[1]);
+                if (currentProgress + 1 >= tc) btn.remove();
+            }
+        }
+        // Replace card on page
+        const card = document.getElementById(`card-${trackingId}`);
+        if (card && html.trim()) {
+            card.outerHTML = html;
+            const newCard = document.getElementById(`card-${trackingId}`);
+            if (newCard && typeof Alpine !== 'undefined') {
+                Alpine.initTree(newCard);
+            }
+        }
+    }).catch(() => {});
+}
+
+// --- Rating (half-star precision) ---
+function setRatingHalf(trackingId, starIndex, event) {
+    const rect = event.target.getBoundingClientRect();
+    const clickX = event.clientX - rect.left;
+    const isLeftHalf = clickX < rect.width / 2;
+    const rating = isLeftHalf ? starIndex - 0.5 : starIndex;
+
+    const params = new URLSearchParams();
+    params.append('rating', rating);
+    fetch(`/tracking/${trackingId}/htmx`, {
+        method: 'POST',
+        body: params,
+    }).then(() => {
+        // Update star display
+        updateStarsDisplay(rating);
+        // Update rating value text
+        const valEl = document.querySelector('.drawer-rating-value');
+        if (valEl) valEl.textContent = rating.toFixed(1) + '/10';
+    }).catch(() => {});
+}
+
+function updateStarsDisplay(rating) {
+    const stars = document.querySelectorAll('.drawer-stars .drawer-star');
+    stars.forEach((star, idx) => {
+        const starNum = idx + 1;
+        star.classList.remove('active', 'half');
+        if (rating >= starNum) {
+            star.classList.add('active');
+        } else if (rating >= starNum - 0.5) {
+            star.classList.add('half');
+        }
+    });
+}
+
+function previewRating(star, index) {
+    const stars = document.querySelectorAll('.drawer-stars .drawer-star');
+    stars.forEach((s, idx) => {
+        if (idx < index - 1) s.style.color = '#facc15';
+        else if (idx === index - 1) s.style.color = '#facc15';
+    });
+}
+
+function resetRatingPreview() {
+    // Re-render based on current rating
+    const valEl = document.querySelector('.drawer-rating-value');
+    if (valEl) {
+        const text = valEl.textContent.replace('/10', '');
+        if (text !== '—') {
+            updateStarsDisplay(parseFloat(text));
+        }
+    }
+    document.querySelectorAll('.drawer-stars .drawer-star').forEach(s => s.style.color = '');
+}
+
+// --- Refresh Tracking List (after delete from drawer) ---
+function refreshTrackingList() {
+    if (typeof htmx !== 'undefined') {
+        const grid = document.querySelector('.tracking-grid');
+        if (grid) {
+            htmx.ajax('GET', '/tracking/partial', {target: grid, swap: 'innerHTML'});
+        }
+    }
+}
