@@ -17,12 +17,14 @@
                hx-get="/tracking/partial{% if !current_status.is_empty() %}?status={{ current_status }}{% endif %}"
                hx-target="#tracking-grid"
                hx-swap="innerHTML"
+               hx-push-url="true"
                class="filter-dropdown-item {% if current_media_type == "" %}active{% endif %}">Все</a>
             {% for item in media_types %}
             <a href="/tracking?type={{ item.key }}{% if !current_status.is_empty() %}&status={{ current_status }}{% endif %}"
                hx-get="/tracking/partial?type={{ item.key }}{% if !current_status.is_empty() %}&status={{ current_status }}{% endif %}"
                hx-target="#tracking-grid"
                hx-swap="innerHTML"
+               hx-push-url="true"
                class="filter-dropdown-item {% if current_media_type == item.key %}active{% endif %}">{{ item.icon }} {{ item.label }}</a>
             {% endfor %}
         </div>
@@ -41,12 +43,14 @@
                hx-get="/tracking/partial{% if !current_media_type.is_empty() %}?type={{ current_media_type }}{% endif %}"
                hx-target="#tracking-grid"
                hx-swap="innerHTML"
+               hx-push-url="true"
                class="filter-dropdown-item {% if current_status == "" %}active{% endif %}">{{ item.label }}</a>
             {% else %}
             <a href="/tracking?status={{ item.key }}{% if !current_media_type.is_empty() %}&type={{ current_media_type }}{% endif %}"
                hx-get="/tracking/partial?status={{ item.key }}{% if !current_media_type.is_empty() %}&type={{ current_media_type }}{% endif %}"
                hx-target="#tracking-grid"
                hx-swap="innerHTML"
+               hx-push-url="true"
                class="filter-dropdown-item {% if current_status == item.key %}active{% endif %}">{{ item.label }}</a>
             {% endif %}
             {% endfor %}

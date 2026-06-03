@@ -62,19 +62,24 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Remove card from filtered list if its status no longer matches the filter
     document.body.addEventListener('htmx:afterSwap', function(e) {
-        const card = e.detail.target;
-        if (card.classList && card.classList.contains('tracking-card')) {
-            const currentStatus = new URLSearchParams(window.location.search).get('status');
-            if (currentStatus) {
-                const cardStatus = card.getAttribute('data-status');
-                if (cardStatus && cardStatus !== currentStatus) {
-                    card.remove();
-                    // Check if grid is now empty
-                    const grid = document.querySelector('.tracking-grid');
-                    if (grid && grid.children.length === 0) {
-                        grid.outerHTML = '<div class="empty-state"><div class="empty-state-icon"></div><p class="empty-state-text">Список пуст</p><p class="empty-state-sub">Добавьте тайтлы через <a href="/search" style="color: var(--in_progress);">поиск</a></p></div>';
-                    }
-                }
+        const target = e.detail.target;
+        if (!target || !target.classList || !target.classList.contains('tracking-card')) return;
+
+        const currentStatus = new URLSearchParams(window.location.search).get('status');
+        if (!currentStatus) return;
+
+        // After outerHTML swap, e.detail.target is the OLD element (detached).
+        // Find the NEW card in DOM by the same ID.
+        const newCard = document.getElementById(target.id);
+        if (!newCard) return;
+
+        const cardStatus = newCard.getAttribute('data-status');
+        if (cardStatus && cardStatus !== currentStatus) {
+            newCard.remove();
+            // Check if grid is now empty
+            const grid = document.querySelector('.tracking-grid');
+            if (grid && grid.children.length === 0) {
+                grid.outerHTML = '<div class="empty-state"><div class="empty-state-icon"></div><p class="empty-state-text">Список пуст</p><p class="empty-state-sub">Добавьте тайтлы через <a href="/search" style="color: var(--in_progress);">поиск</a></p></div>';
             }
         }
     });
