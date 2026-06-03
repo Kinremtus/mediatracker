@@ -1504,29 +1504,6 @@
     flex-shrink: 0;
 }
 
-.media-drawer-close {
-    position: absolute;
-    top: 0.75rem;
-    right: 0.75rem;
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: var(--radius);
-    background: var(--secondary);
-    border: none;
-    cursor: pointer;
-    color: var(--foreground);
-    font-size: 16px;
-    z-index: 1;
-    transition: background 0.15s ease;
-}
-
-.media-drawer-close:hover {
-    background: var(--accent);
-}
-
 .media-drawer-content {
     padding: 1.5rem;
     flex: 1;
