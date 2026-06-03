@@ -69,11 +69,9 @@
 
     {% if has_progress %}
     <div class="drawer-progress-row">
-        <span class="drawer-progress-text">{{ progress.unwrap_or(0) }}{% if let Some(tc) = total_count %} / {{ tc }}{% endif %} {{ progress_unit }}</span>
-        {% if let Some(tc) = total_count %}
-        {% if progress.unwrap_or(0) < tc %}
-        <button class="drawer-btn-increment" onclick="incrementProgress('{{ tid }}', {{ progress.unwrap_or(0) }})">+1</button>
-        {% endif %}
+        <span class="drawer-progress-text">{{ progress_display }}{{ total_display }} {{ progress_unit }}</span>
+        {% if can_increment %}
+        <button class="drawer-btn-increment" onclick="incrementProgress('{{ tid }}', {{ progress_display }})">+1</button>
         {% endif %}
     </div>
     {% endif %}
@@ -88,7 +86,7 @@
                     onmouseleave="resetRatingPreview(this)">★</button>
             {% endfor %}
         </div>
-        <span class="drawer-rating-value">{% if let Some(r) = rating %}{{ "{:.1}"|format(r) }}{% else %}—{% endif %}/10</span>
+        <span class="drawer-rating-value">{{ rating_display }}/10</span>
     </div>
 </div>
 {% endif %}

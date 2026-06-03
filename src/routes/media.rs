@@ -25,6 +25,10 @@ struct MediaDrawerTemplate {
     has_progress: bool,
     role: String,
     star_classes: Vec<&'static str>,
+    progress_display: i32,
+    total_display: String,
+    rating_display: String,
+    can_increment: bool,
 }
 
 impl MediaDrawerTemplate {
@@ -151,6 +155,17 @@ pub async fn get_media_drawer_content(
                 | "book" | "game"
             );
             let star_classes = MediaDrawerTemplate::compute_star_classes(rating);
+            let progress_display = progress.unwrap_or(0);
+            let total_display = match total_count {
+                Some(tc) => format!(" / {tc}"),
+                None => String::new(),
+            };
+            let rating_display = match rating {
+                Some(r) => format!("{:.1}", r),
+                None => "—".to_string(),
+            };
+            let can_increment = has_progress
+                && progress_display < total_count.unwrap_or(i32::MAX);
             Html(
                 MediaDrawerTemplate {
                     item,
@@ -163,6 +178,10 @@ pub async fn get_media_drawer_content(
                     has_progress,
                     role: user.role,
                     star_classes,
+                    progress_display,
+                    total_display,
+                    rating_display,
+                    can_increment,
                 }
                 .render()
                 .unwrap()
