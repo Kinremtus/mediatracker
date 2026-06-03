@@ -60,6 +60,47 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
+    // Update page title and filter button label when tracking grid is swapped
+    const statusLabels = {
+        '': 'Все списки',
+        'in_progress': 'В процессе',
+        'completed': 'Завершено',
+        'planned': 'Запланировано',
+        'dropped': 'Брошено'
+    };
+    function updateFilterUI() {
+        const params = new URLSearchParams(window.location.search);
+        const status = params.get('status') || '';
+        const mediaType = params.get('type') || '';
+        const label = statusLabels[status] || status;
+
+        // Update page title
+        const title = document.querySelector('.content-title');
+        if (title) title.textContent = label;
+
+        // Update status filter button text
+        const filterBtns = document.querySelectorAll('.filter-btn');
+        if (filterBtns.length >= 2) {
+            const btn = filterBtns[1];
+            const arrow = btn.querySelector('span');
+            btn.textContent = label + ' ';
+            if (arrow) btn.appendChild(arrow);
+        }
+
+        // Update active states in status dropdown
+        const statusItems = document.querySelectorAll('.filter-dropdown-menu:last-child .filter-dropdown-item');
+        statusItems.forEach(item => {
+            const href = item.getAttribute('href') || '';
+            const itemStatus = new URLSearchParams(href.split('?')[1] || '').get('status') || '';
+            item.classList.toggle('active', itemStatus === status);
+        });
+    }
+    document.body.addEventListener('htmx:afterSwap', function(e) {
+        if (e.detail.target && e.detail.target.id === 'tracking-grid') {
+            updateFilterUI();
+        }
+    });
+
     // Remove card from filtered list if its status no longer matches the filter
     document.body.addEventListener('htmx:afterSwap', function(e) {
         const target = e.detail.target;

@@ -1,6 +1,7 @@
 use askama::Template;
 use axum::{
     extract::{Form, Path, Query, State},
+    http::HeaderMap,
     response::{Html, IntoResponse, Redirect, Response},
 };
 use serde::{Deserialize, Deserializer};
@@ -420,7 +421,33 @@ pub async fn htmx_tracking_partial(
     user: CurrentUser,
     State(state): State<AppState>,
     Query(params): Query<TrackingQuery>,
-) -> Html<String> {
+    headers: HeaderMap,
+) -> Response {
+    if !headers.get("hx-request").is_some() {
+        let mut url = "/tracking".to_string();
+        let mut query_parts = Vec::new();
+        if let Some(ref status) = params.status {
+            if !status.is_empty() {
+                query_parts.push(format!("status={}", status));
+            }
+        }
+        if let Some(ref media_type) = params.media_type {
+            if !media_type.is_empty() {
+                query_parts.push(format!("type={}", media_type));
+            }
+        }
+        if let Some(ref q) = params.q {
+            if !q.is_empty() {
+                query_parts.push(format!("q={}", q));
+            }
+        }
+        if !query_parts.is_empty() {
+            url.push('?');
+            url.push_str(&query_parts.join("&"));
+        }
+        return Redirect::to(&url).into_response();
+    }
+
     let status = params.status.as_deref();
     let media_type = params.media_type.as_deref();
     let search_query = params.q.as_deref();
