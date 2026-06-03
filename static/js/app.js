@@ -4,10 +4,10 @@
 
 // --- HTMX Configuration ---
 document.addEventListener('DOMContentLoaded', function() {
-    // Show loading indicator
+    // Show loading indicator (skip for hx-swap="none" elements like drawer buttons)
     document.body.addEventListener('htmx:beforeRequest', function(e) {
         const target = e.detail.target;
-        if (target) {
+        if (target && target.getAttribute('hx-swap') !== 'none') {
             target.style.opacity = '0.6';
             target.style.pointerEvents = 'none';
         }
@@ -16,7 +16,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Hide loading indicator
     document.body.addEventListener('htmx:afterRequest', function(e) {
         const target = e.detail.target;
-        if (target) {
+        if (target && target.getAttribute('hx-swap') !== 'none') {
             target.style.opacity = '1';
             target.style.pointerEvents = '';
         }
@@ -83,67 +83,68 @@ function openMediaDrawer(provider, externalId, mediaType) {
         .catch(e => console.error('Failed to load media details', e));
 }
 
-function updateTrackingStatus(trackingId, newStatus, clickedBtn) {
-    const params = new URLSearchParams();
-    params.append('status', newStatus);
-    fetch(`/tracking/${trackingId}/htmx`, {
-        method: 'POST',
-        body: params,
-    }).then(r => r.text()).then(html => {
-        // Update active chip in drawer
-        const container = clickedBtn.closest('.drawer-status-chips');
-        if (container) {
-            container.querySelectorAll('.drawer-status-chip').forEach(btn => btn.classList.remove('active'));
-            clickedBtn.classList.add('active');
-        }
-        // Replace card on page
-        const card = document.getElementById(`card-${trackingId}`);
-        if (card && html.trim()) {
-            card.outerHTML = html;
-            const newCard = document.getElementById(`card-${trackingId}`);
-            if (newCard && typeof Alpine !== 'undefined') {
-                Alpine.initTree(newCard);
-            }
-        }
-    }).catch(() => {});
+// --- Drawer: HTMX callbacks after status/progress change ---
+function afterStatusChange(btn, newStatus) {
+    // Update active chip in drawer
+    const container = btn.closest('.drawer-status-chips');
+    if (container) {
+        container.querySelectorAll('.drawer-status-chip').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+    }
+    // Refresh tracking grid on the page (if it exists)
+    refreshTrackingList();
 }
 
-// --- Increment Progress (+1) ---
-function incrementProgress(trackingId, currentProgress) {
-    const params = new URLSearchParams();
-    params.append('progress', currentProgress + 1);
-    fetch(`/tracking/${trackingId}/htmx`, {
-        method: 'POST',
-        body: params,
-    }).then(r => r.text()).then(html => {
-        // Update progress text in drawer
-        const row = document.querySelector('.drawer-progress-row');
-        if (row) {
-            const text = row.querySelector('.drawer-progress-text');
-            if (text) {
-                const parts = text.textContent.split('/');
-                if (parts.length === 2) {
-                    const unit = parts[1].trim().split(' ').slice(1).join(' ');
-                    text.textContent = `${currentProgress + 1} /${parts[1].trim().split(' ')[0]} ${unit}`;
-                }
-            }
-            // Hide button if completed
-            const btn = row.querySelector('.drawer-btn-increment');
-            if (btn) {
-                const tc = parseInt(text.textContent.split('/')[1]);
-                if (currentProgress + 1 >= tc) btn.remove();
-            }
+function afterProgressIncrement(btn, newProgress) {
+    // Update progress text in drawer
+    const row = btn.closest('.drawer-progress-row');
+    if (row) {
+        const text = row.querySelector('.drawer-progress-text');
+        if (text) {
+            const current = text.textContent.trim();
+            text.textContent = current.replace(/\d+/, newProgress);
         }
-        // Replace card on page
-        const card = document.getElementById(`card-${trackingId}`);
-        if (card && html.trim()) {
-            card.outerHTML = html;
-            const newCard = document.getElementById(`card-${trackingId}`);
-            if (newCard && typeof Alpine !== 'undefined') {
-                Alpine.initTree(newCard);
-            }
+        // Hide button if reached total
+        const tcMatch = text.textContent.match(/\/\s*(\d+)/);
+        if (tcMatch && newProgress >= parseInt(tcMatch[1])) {
+            btn.remove();
         }
-    }).catch(() => {});
+    }
+    // Refresh tracking grid on the page
+    refreshTrackingList();
+}
+
+function afterDelete() {
+    // Close drawer
+    const appShell = document.querySelector('.app-shell');
+    const data = Alpine.$data(appShell);
+    data.drawerOpen = false;
+    document.body.style.overflow = '';
+    // Refresh tracking grid
+    refreshTrackingList();
+}
+    // Refresh tracking grid on the page (if it exists)
+    refreshTrackingList();
+}
+
+function afterProgressIncrement(btn, newProgress) {
+    // Update progress text in drawer
+    const row = btn.closest('.drawer-progress-row');
+    if (row) {
+        const text = row.querySelector('.drawer-progress-text');
+        if (text) {
+            const current = text.textContent.trim();
+            // Replace the number before "/" with newProgress
+            text.textContent = current.replace(/\d+/, newProgress);
+        }
+        // Hide button if reached total
+        const tcMatch = text.textContent.match(/\/\s*(\d+)/);
+        if (tcMatch && newProgress >= parseInt(tcMatch[1])) {
+            btn.remove();
+        }
+    }
+    // Refresh tracking grid on the page
+    refreshTrackingList();
 }
 
 // --- Rating (half-star precision) ---

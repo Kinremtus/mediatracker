@@ -29,6 +29,8 @@ struct MediaDrawerTemplate {
     total_display: String,
     rating_display: String,
     can_increment: bool,
+    next_progress: i32,
+    status_display: String,
 }
 
 impl MediaDrawerTemplate {
@@ -166,6 +168,8 @@ pub async fn get_media_drawer_content(
             };
             let can_increment = has_progress
                 && progress_display < total_count.unwrap_or(i32::MAX);
+            let next_progress = progress_display + 1;
+            let status_display = current_status.clone().unwrap_or_else(|| "in_progress".to_string());
             Html(
                 MediaDrawerTemplate {
                     item,
@@ -182,6 +186,8 @@ pub async fn get_media_drawer_content(
                     total_display,
                     rating_display,
                     can_increment,
+                    next_progress,
+                    status_display,
                 }
                 .render()
                 .unwrap()
