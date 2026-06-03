@@ -240,9 +240,9 @@ impl TrackingService {
         user_id: Uuid,
         provider: &str,
         external_id: &str,
-    ) -> Result<Option<(Uuid, String)>, anyhow::Error> {
-        let row: Option<(Uuid, String)> = sqlx::query_as(
-            "SELECT te.id, te.status FROM tracking_entries te
+    ) -> Result<Option<(Uuid, String, i32, Option<f64>)>, anyhow::Error> {
+        let row: Option<(Uuid, String, i32, Option<f64>)> = sqlx::query_as(
+            "SELECT te.id, te.status, te.progress, te.rating::double precision FROM tracking_entries te
              JOIN media_items mi ON te.media_id = mi.id
              WHERE te.user_id = $1 AND mi.provider = $2 AND mi.external_id = $3",
         )

@@ -18,7 +18,28 @@ struct MediaDrawerTemplate {
     item: CreateMediaItem,
     tracking_id: Option<Uuid>,
     current_status: Option<String>,
+    progress: Option<i32>,
+    rating: Option<f64>,
+    total_count: Option<i32>,
+    progress_unit: String,
+    has_progress: bool,
     role: String,
+    star_classes: Vec<&'static str>,
+}
+
+impl MediaDrawerTemplate {
+    fn compute_star_classes(rating: Option<f64>) -> Vec<&'static str> {
+        (1..=10).map(|star| {
+            match rating {
+                Some(r) => {
+                    if r >= star as f64 { "active" }
+                    else if r >= (star as f64) - 0.5 { "half" }
+                    else { "" }
+                }
+                None => "",
+            }
+        }).collect()
+    }
 }
 
 #[derive(Template)]
@@ -118,12 +139,33 @@ pub async fn get_media_drawer_content(
     match item {
         Ok(item) => {
             let tracking = state.tracking.find_entry_by_media(user.id, &provider, &external_id).await.unwrap_or(None);
-            let (tracking_id, current_status) = match tracking {
-                Some((id, status)) => (Some(id), Some(status)),
-                None => (None, None),
+            let (tracking_id, current_status, progress, rating) = match tracking {
+                Some((id, status, prog, rat)) => (Some(id), Some(status), Some(prog), rat),
+                None => (None, None, None, None),
             };
+            let total_count = item.total_count();
+            let progress_unit = item.progress_unit_ru().to_string();
+            let has_progress = matches!(item.media_type.as_str(),
+                "anime" | "series" | "cartoons" | "animated-movies"
+                | "manga" | "manhwa" | "manhua" | "novel" | "other-comics"
+                | "book" | "game"
+            );
+            let star_classes = MediaDrawerTemplate::compute_star_classes(rating);
             Html(
-                MediaDrawerTemplate { item, tracking_id, current_status, role: user.role }.render().unwrap()
+                MediaDrawerTemplate {
+                    item,
+                    tracking_id,
+                    current_status,
+                    progress,
+                    rating,
+                    total_count,
+                    progress_unit,
+                    has_progress,
+                    role: user.role,
+                    star_classes,
+                }
+                .render()
+                .unwrap()
             )
             .into_response()
         }

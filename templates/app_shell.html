@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block body %}
-<div class="app-shell" x-data="{ sidebarOpen: typeof window !== 'undefined' && window.innerWidth > 768, isMobile: typeof window !== 'undefined' && window.innerWidth <= 768, drawerOpen: false, drawerContent: '' }" x-init="$watch('sidebarOpen', v => { if (v && isMobile) document.body.style.overflow = 'hidden'; else document.body.style.overflow = ''; })">
+<div class="app-shell" x-data="{ sidebarOpen: typeof window !== 'undefined' && window.innerWidth > 768, isMobile: typeof window !== 'undefined' && window.innerWidth <= 768, drawerOpen: false, drawerContent: '' }" x-init="$watch('sidebarOpen', v => { if (v && isMobile) document.body.style.overflow = 'hidden'; else document.body.style.overflow = ''; })" @keydown.escape.window="if(drawerOpen) { drawerOpen = false; document.body.style.overflow = ''; }">
     <!-- Sidebar Overlay (mobile) -->
     <div class="sidebar-overlay" x-show="sidebarOpen && isMobile" @click="sidebarOpen = false" x-cloak></div>
 
