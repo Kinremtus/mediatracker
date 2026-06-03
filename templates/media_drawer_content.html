@@ -28,7 +28,7 @@
         <span class="drawer-external-rating">★ {{ "{:.2}"|format(score) }} ({{ item.provider }})</span>
         {% endif %}
         <div class="drawer-meta-line">
-            {{ item.media_type }}{% if let Some(f) = item.format_type %} · {{ f }}{% endif %}{% if let Some(tc) = total_count %} · {{ tc }} {{ progress_unit }}{% endif %}{% if let Some(y) = item.year %} · {{ y }}{% endif %}{% if let Some(ref s) = item.status %} · <span class="drawer-meta-badge">{{ s }}</span>{% endif %}
+            {{ item.media_type }}{% if let Some(f) = item.format_type %} · {{ f }}{% endif %}{% if let Some(tc) = total_count %} · {{ tc }} {{ progress_unit }}{% endif %}{% if let Some(y) = item.year %} · {{ y }}{% endif %}{% if item.status.is_some() %} · <span class="drawer-meta-badge">{{ item.status.as_ref().unwrap() }}</span>{% endif %}
         </div>
         <div class="drawer-meta-line">
             {% if !item.studios.is_empty() %}{{ item.studios[0] }}{% endif %}{% if !item.authors.is_empty() %}{% if !item.studios.is_empty() %} · {% endif %}{{ item.authors[0] }}{% endif %}{% if !item.publishers.is_empty() %}{% if !item.studios.is_empty() || !item.authors.is_empty() %} · {% endif %}{{ item.publishers[0] }}{% endif %}{% if !item.platforms.is_empty() %}{% if !item.studios.is_empty() || !item.authors.is_empty() || !item.publishers.is_empty() %} · {% endif %}{{ item.platforms[0] }}{% endif %}
