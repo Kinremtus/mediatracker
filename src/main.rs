@@ -1,9 +1,10 @@
 use mediatracker::app_state::AppState;
 use mediatracker::config::Config;
-use mediatracker::middleware::auth_middleware;
+use mediatracker::middleware::{auth_middleware, static_version_middleware};
 use mediatracker::routes::{admin, auth, calendar, home, media, search, settings, stats, tracking};
 use axum::{middleware::from_fn_with_state, routing::get, Router, Json};
 use serde_json::json;
+use std::sync::Arc;
 use tower_http::services::ServeDir;
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -76,11 +77,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(public_routes)
         .merge(protected_routes)
         .nest_service("/static", ServeDir::new("static"))
-        .with_state(state);
+        .with_state(state.clone())
+        .layer(axum::middleware::from_fn_with_state(
+            Arc::new(()),
+            static_version_middleware,
+        ));
 
     // Start server
     let listener = tokio::net::TcpListener::bind(format!("{}:{}", config.host, config.port)).await?;
     info!("Server listening on {}:{}", config.host, config.port);
+    info!("Static version: {}", mediatracker::middleware::static_version::STATIC_VERSION);
     axum::serve(listener, app).await?;
 
     Ok(())
