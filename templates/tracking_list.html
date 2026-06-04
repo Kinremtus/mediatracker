@@ -12,7 +12,7 @@
             {{ current_type_label }}
             <span style="font-size: 10px; opacity: 0.5;">▼</span>
         </button>
-        <div x-show="typeOpen" x-cloak x-transition class="filter-dropdown-menu">
+        <div x-show="typeOpen" x-cloak x-transition @click="typeOpen = false" class="filter-dropdown-menu">
             <a href="/tracking{% if !current_status.is_empty() %}?status={{ current_status }}{% endif %}"
                hx-get="/tracking/partial{% if !current_status.is_empty() %}?status={{ current_status }}{% endif %}"
                hx-target="#tracking-grid"
@@ -36,7 +36,7 @@
             {{ status_label }}
             <span style="font-size: 10px; opacity: 0.5;">▼</span>
         </button>
-        <div x-show="statusOpen" x-cloak x-transition class="filter-dropdown-menu">
+        <div x-show="statusOpen" x-cloak x-transition @click="statusOpen = false" class="filter-dropdown-menu">
             {% for item in statuses %}
             {% if item.key == "" %}
             <a href="/tracking{% if !current_media_type.is_empty() %}?type={{ current_media_type }}{% endif %}"
