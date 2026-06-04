@@ -29,9 +29,7 @@
         {% endif %}
 
         <div class="media-detail-badges">
-            {% if item.format_type.is_some() %}
-            <span class="badge badge-format">{{ item.format_type.as_ref().unwrap() }}</span>
-            {% endif %}
+            <span class="badge badge-format">{{ item.primary_label() }}</span>
             {% if item.status.is_some() %}
             <span class="badge badge-status {{ item.status_class() }}">{{ item.status.as_ref().unwrap() }}</span>
             {% endif %}
@@ -43,7 +41,7 @@
         <div class="meta-grid">
             <div class="meta-item">
                 <div class="meta-item-label">Тип</div>
-                <div class="meta-item-value">{{ item.media_type }}</div>
+                <div class="meta-item-value">{{ item.media_type_display() }}</div>
             </div>
 
             {% if let Some(ep) = item.episodes %}
