@@ -51,8 +51,7 @@
         <div class="media-card-body">
             <div class="media-card-title">{{ item.title }}</div>
             <div class="media-card-meta">
-                {{ item.media_type }}
-                {% if item.format_type.is_some() %} · {{ item.format_type.as_ref().unwrap() }}{% endif %}
+                {{ item.primary_label() }}
                 {% if let Some(y) = item.year %} · {{ y }}{% endif %}
             </div>
             {% if !item.genres.is_empty() %}

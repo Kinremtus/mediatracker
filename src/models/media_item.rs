@@ -226,6 +226,33 @@ impl MediaItem {
     pub fn status_class(&self) -> &'static str {
         status_release_class(self.status.as_deref())
     }
+
+    /// Human-readable label для `media_type` (slug) — fallback когда `format_type` пуст.
+    pub fn media_type_display(&self) -> &'static str {
+        match self.media_type.as_str() {
+            "anime" => "Anime",
+            "manga" => "Manga",
+            "manhwa" => "Manhwa",
+            "manhua" => "Manhua",
+            "novel" => "Novel",
+            "movie" => "Movie",
+            "series" => "TV Series",
+            "dramas" => "Drama",
+            "cartoons" => "Cartoon",
+            "animated-movies" => "Animated Movie",
+            "game" => "Game",
+            "book" => "Book",
+            "other-comics" => "Other Comics",
+            _ => "Other",
+        }
+    }
+
+    /// Лейбл для UI: `format_type` (от провайдера) → fallback на `media_type_display()`.
+    pub fn primary_label(&self) -> &str {
+        self.format_type
+            .as_deref()
+            .unwrap_or_else(|| self.media_type_display())
+    }
 }
 
 impl MediaItemSlim {
@@ -287,6 +314,33 @@ impl MediaItemSlim {
     pub fn progress_complete_ref(&self, progress: &i32) -> bool {
         self.total_count().map(|t| *progress >= t).unwrap_or(false)
     }
+
+    /// Human-readable label для `media_type` (slug) — fallback когда `format_type` пуст.
+    pub fn media_type_display(&self) -> &'static str {
+        match self.media_type.as_str() {
+            "anime" => "Anime",
+            "manga" => "Manga",
+            "manhwa" => "Manhwa",
+            "manhua" => "Manhua",
+            "novel" => "Novel",
+            "movie" => "Movie",
+            "series" => "TV Series",
+            "dramas" => "Drama",
+            "cartoons" => "Cartoon",
+            "animated-movies" => "Animated Movie",
+            "game" => "Game",
+            "book" => "Book",
+            "other-comics" => "Other Comics",
+            _ => "Other",
+        }
+    }
+
+    /// Лейбл для UI: `format_type` (от провайдера) → fallback на `media_type_display()`.
+    pub fn primary_label(&self) -> &str {
+        self.format_type
+            .as_deref()
+            .unwrap_or_else(|| self.media_type_display())
+    }
 }
 
 impl MediaItemSlim {
@@ -301,6 +355,33 @@ impl MediaItemSlim {
 }
 
 impl CreateMediaItem {
+    /// Human-readable label для `media_type` (slug) — fallback когда `format_type` пуст.
+    pub fn media_type_display(&self) -> &'static str {
+        match self.media_type.as_str() {
+            "anime" => "Anime",
+            "manga" => "Manga",
+            "manhwa" => "Manhwa",
+            "manhua" => "Manhua",
+            "novel" => "Novel",
+            "movie" => "Movie",
+            "series" => "TV Series",
+            "dramas" => "Drama",
+            "cartoons" => "Cartoon",
+            "animated-movies" => "Animated Movie",
+            "game" => "Game",
+            "book" => "Book",
+            "other-comics" => "Other Comics",
+            _ => "Other",
+        }
+    }
+
+    /// Лейбл для UI: `format_type` (от провайдера) → fallback на `media_type_display()`.
+    pub fn primary_label(&self) -> &str {
+        self.format_type
+            .as_deref()
+            .unwrap_or_else(|| self.media_type_display())
+    }
+
     pub fn score_class(&self) -> &'static str {
         match self.score {
             Some(s) if s <= 3.0 => "score-1",
