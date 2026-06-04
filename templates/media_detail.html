@@ -33,7 +33,7 @@
             <span class="badge badge-format">{{ item.format_type.as_ref().unwrap() }}</span>
             {% endif %}
             {% if item.status.is_some() %}
-            <span class="badge badge-status">{{ item.status.as_ref().unwrap() }}</span>
+            <span class="badge badge-status {{ item.status_class() }}">{{ item.status.as_ref().unwrap() }}</span>
             {% endif %}
             {% if item.rating.is_some() %}
             <span class="badge badge-rating">{{ item.rating.as_ref().unwrap() }}</span>

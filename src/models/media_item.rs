@@ -181,6 +181,36 @@ pub struct MediaItemSlim {
     pub year: Option<i16>,
 }
 
+/// Маппит свободный текст статуса выпуска (от провайдеров) в CSS-класс,
+/// совпадающий с цветом соответствующего трекинг-статуса.
+/// Используется для бэйджа в drawer/detail, чтобы цвет текста и фона
+/// совпадал со смыслом: "Завершено" → зелёный, "В процессе" → персиковый и т.д.
+pub fn status_release_class(raw: Option<&str>) -> &'static str {
+    let s = match raw {
+        Some(s) if !s.is_empty() => s.to_lowercase(),
+        _ => return "",
+    };
+    if s.contains("complete") || s.contains("finished") || s.contains("released") || s.contains("ended") {
+        "status-completed"
+    } else if s.contains("ongoing") || s.contains("airing") || s.contains("publishing")
+        || s.contains("in production") || s.contains("returning")
+    {
+        "status-in_progress"
+    } else if s.contains("not yet") || s.contains("announced") || s.contains("planned")
+        || s.contains("anons") || s.contains("pending")
+    {
+        "status-planned"
+    } else if s.contains("hiatus") || s.contains("paused") {
+        "status-paused"
+    } else if s.contains("discontinued") || s.contains("cancelled") || s.contains("canceled")
+        || s.contains("dropped")
+    {
+        "status-dropped"
+    } else {
+        ""
+    }
+}
+
 impl MediaItem {
     pub fn score_class(&self) -> &'static str {
         match self.score {
@@ -191,6 +221,10 @@ impl MediaItem {
             Some(_) => "score-10",
             None => "",
         }
+    }
+
+    pub fn status_class(&self) -> &'static str {
+        status_release_class(self.status.as_deref())
     }
 }
 
@@ -204,6 +238,10 @@ impl MediaItemSlim {
             Some(_) => "score-10",
             None => "",
         }
+    }
+
+    pub fn status_class(&self) -> &'static str {
+        status_release_class(self.status.as_deref())
     }
 
     /// Возвращает "total count" для прогресса в зависимости от media_type.
