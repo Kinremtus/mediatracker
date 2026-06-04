@@ -101,6 +101,18 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
+    // Close filter dropdowns when a filter request is about to fire
+    document.body.addEventListener('htmx:beforeRequest', function(e) {
+        const target = e.detail && e.detail.target;
+        if (target && target.id === 'tracking-grid') {
+            const filterBar = document.querySelector('.filter-bar');
+            if (filterBar && typeof Alpine !== 'undefined') {
+                const data = Alpine.$data(filterBar);
+                if (data) { data.typeOpen = false; data.statusOpen = false; }
+            }
+        }
+    });
+
     // Remove card from filtered list if its status no longer matches the filter
     document.body.addEventListener('htmx:afterSwap', function(e) {
         const target = e.detail.target;
