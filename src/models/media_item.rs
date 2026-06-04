@@ -349,4 +349,8 @@ impl CreateMediaItem {
             None => String::new(),
         }
     }
+
+    pub fn status_class(&self) -> &'static str {
+        status_release_class(self.status.as_deref())
+    }
 }
