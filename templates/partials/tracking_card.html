@@ -1,8 +1,18 @@
 <div class="tracking-card" id="card-{{ entry_with_media.entry.id }}" data-status="{{ entry_with_media.entry.status }}" x-data="{ statusOpen: false }">
-    <button hx-delete="/tracking/{{ entry_with_media.entry.id }}/htmx/delete"
+    <button hx-post="/tracking/{{ entry_with_media.entry.id }}/htmx/delete"
             hx-target="#card-{{ entry_with_media.entry.id }}"
             hx-swap="outerHTML"
-            hx-confirm="Удалить из списка?"
+            hx-on:htmx:before-request="
+                if (!confirm('Удалить из списка?')) {
+                    event.preventDefault();
+                }
+            "
+            hx-on:htmx:after-request="
+                console.log('[card] delete response', event.detail);
+                if (event.detail.successful) {
+                    document.getElementById('card-{{ entry_with_media.entry.id }}')?.remove();
+                }
+            "
             class="tracking-card-delete" title="Удалить">✕</button>
 
     <a @click.prevent="openMediaDrawer('{{ entry_with_media.media.provider }}', '{{ entry_with_media.media.external_id }}')" href="#" class="tracking-card-poster">
