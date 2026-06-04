@@ -1581,6 +1581,32 @@ body.drawer-open {
     color: var(--muted-foreground);
 }
 
+.drawer-meta-badge.status-completed,
+.badge.badge-status.status-completed {
+    background: color-mix(in srgb, var(--completed) 18%, transparent);
+    color: var(--completed);
+}
+.drawer-meta-badge.status-in_progress,
+.badge.badge-status.status-in_progress {
+    background: color-mix(in srgb, var(--in_progress) 18%, transparent);
+    color: var(--in_progress);
+}
+.drawer-meta-badge.status-planned,
+.badge.badge-status.status-planned {
+    background: color-mix(in srgb, var(--planned) 18%, transparent);
+    color: var(--planned);
+}
+.drawer-meta-badge.status-paused,
+.badge.badge-status.status-paused {
+    background: color-mix(in srgb, var(--paused) 18%, transparent);
+    color: var(--paused);
+}
+.drawer-meta-badge.status-dropped,
+.badge.badge-status.status-dropped {
+    background: color-mix(in srgb, var(--dropped) 18%, transparent);
+    color: var(--dropped);
+}
+
 .drawer-chips {
     display: flex;
     flex-wrap: wrap;
