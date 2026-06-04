@@ -115,6 +115,52 @@ fn parse_date(s: &str) -> Option<chrono::NaiveDate> {
         .map(|dt| dt.naive_utc().date())
 }
 
+/// Парсит строку `duration` от MAL в минуты (длительность одного эпизода).
+/// Поддерживает форматы:
+///   "1 hr. 52 min."   → 112
+///   "2 hr."           → 120
+///   "23 min. per ep." → 23
+///   "59 min."         → 59
+///   "45 sec. per ep." → 1   (округление вверх — минимальная единица)
+///   "" / мусор        → None
+fn parse_duration_to_minutes(s: &str) -> Option<i32> {
+    let lower = s.to_lowercase();
+    let mut total: i32 = 0;
+    let mut found = false;
+
+    if let Some(hours) = extract_number_before(&lower, "hr") {
+        total += hours * 60;
+        found = true;
+    }
+    if let Some(minutes) = extract_number_before(&lower, "min") {
+        total += minutes;
+        found = true;
+    } else if let Some(seconds) = extract_number_before(&lower, "sec") {
+        // Секунды округляем вверх до 1 минуты (минимальная единица в БД).
+        total += (seconds + 59) / 60;
+        found = true;
+    }
+
+    if found {
+        Some(total)
+    } else {
+        None
+    }
+}
+
+/// Берёт целое число, стоящее непосредственно перед `unit` в строке.
+/// Например: "1 hr. 52 min." + "hr" → 1, "1 hr. 52 min." + "min" → 52.
+fn extract_number_before(s: &str, unit: &str) -> Option<i32> {
+    let pos = s.find(unit)?;
+    let before = &s[..pos];
+    // Разбиваем по не-цифровым символам и берём последний непустой кусок.
+    let last = before
+        .split(|c: char| !c.is_ascii_digit())
+        .filter(|s| !s.is_empty())
+        .last()?;
+    last.parse().ok()
+}
+
 fn map_full(anime: MalAnimeFull) -> CreateMediaItem {
     let comparison_key = anime.title_english.clone().unwrap_or_else(|| anime.title.clone());
 
@@ -169,14 +215,14 @@ fn map_full(anime: MalAnimeFull) -> CreateMediaItem {
         chapters: None,
         volumes: None,
         pages: None,
-        runtime_minutes: None,
+        runtime_minutes: anime.duration.as_deref().and_then(parse_duration_to_minutes),
         playtime_hours: None,
-        year: None,
+        year: year_i16,
         aired_from,
         aired_to,
         premiered_season: anime.season,
         premiered_year: premiered_year_i16,
-        broadcast: None, // лежит в details.broadcast
+        broadcast: anime.broadcast.as_ref().and_then(|b| b.string.clone()),
         completed: None,
         licensed: None,
         source: anime.source,
@@ -355,5 +401,36 @@ mod tests {
         assert!(item.demographics.contains(&"Shounen".to_string()));
         let details = item.details.expect("details should exist");
         assert_eq!(details.get("aired_string").and_then(|v| v.as_str()), Some("Oct 3, 2002 to Feb 8, 2007"));
+    }
+
+    #[test]
+    fn parses_duration_hours_and_minutes() {
+        assert_eq!(parse_duration_to_minutes("1 hr. 52 min."), Some(112));
+    }
+
+    #[test]
+    fn parses_duration_only_minutes() {
+        assert_eq!(parse_duration_to_minutes("23 min. per ep."), Some(23));
+    }
+
+    #[test]
+    fn parses_duration_only_hours() {
+        assert_eq!(parse_duration_to_minutes("2 hr."), Some(120));
+    }
+
+    #[test]
+    fn parses_duration_seconds_rounds_up() {
+        // 45 секунд → 1 минута (округление вверх)
+        assert_eq!(parse_duration_to_minutes("45 sec. per ep."), Some(1));
+    }
+
+    #[test]
+    fn parses_duration_empty_returns_none() {
+        assert_eq!(parse_duration_to_minutes(""), None);
+    }
+
+    #[test]
+    fn parses_duration_garbage_returns_none() {
+        assert_eq!(parse_duration_to_minutes("Unknown"), None);
     }
 }
