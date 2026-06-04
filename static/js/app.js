@@ -22,6 +22,17 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
+    // Глобальный fallback для delete-кнопки в drawer (на случай если
+    // inline hx-on:htmx:after-request не сработает из-за очередности process/insert)
+    document.body.addEventListener('htmx:afterRequest', function(e) {
+        const target = e.detail.target;
+        if (target && target.classList && target.classList.contains('drawer-action-btn')
+            && target.classList.contains('delete') && e.detail.successful) {
+            console.log('[drawer] delete success, closing drawer');
+            afterDelete();
+        }
+    });
+
     // Flash notification on successful update
     document.body.addEventListener('htmx:oobAfterSwap', function(e) {
         if (e.detail.target.id === 'settings-messages') {
@@ -197,9 +208,18 @@ function afterProgressIncrement(btn, newProgress) {
 }
 
 function afterDelete() {
+    console.log('[drawer] afterDelete called');
     // Close drawer
     const appShell = document.querySelector('.app-shell');
+    if (!appShell) {
+        console.warn('[drawer] .app-shell not found');
+        return;
+    }
     const data = Alpine.$data(appShell);
+    if (!data) {
+        console.warn('[drawer] Alpine data not found on .app-shell');
+        return;
+    }
     data.drawerOpen = false;
     document.body.style.overflow = '';
     // Refresh tracking grid
