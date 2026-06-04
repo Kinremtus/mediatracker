@@ -253,6 +253,15 @@ impl MediaItem {
             .as_deref()
             .unwrap_or_else(|| self.media_type_display())
     }
+
+    /// Год для UI: `year` от API → fallback на `aired_from.year` (для Movie,
+    /// где MAL/Shikimori не возвращают `year`).
+    pub fn display_year(&self) -> Option<i16> {
+        self.year.or_else(|| {
+            self.aired_from
+                .and_then(|d| d.format("%Y").to_string().parse::<i16>().ok())
+        })
+    }
 }
 
 impl MediaItemSlim {
@@ -380,6 +389,15 @@ impl CreateMediaItem {
         self.format_type
             .as_deref()
             .unwrap_or_else(|| self.media_type_display())
+    }
+
+    /// Год для UI: `year` от API → fallback на `aired_from.year` (для Movie,
+    /// где MAL/Shikimori не возвращают `year`).
+    pub fn display_year(&self) -> Option<i16> {
+        self.year.or_else(|| {
+            self.aired_from
+                .and_then(|d| d.format("%Y").to_string().parse::<i16>().ok())
+        })
     }
 
     pub fn score_class(&self) -> &'static str {
