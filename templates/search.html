@@ -67,6 +67,8 @@
                 <input type="hidden" name="provider" value="{{ item.provider }}">
                 <input type="hidden" name="external_id" value="{{ item.external_id }}">
                 <input type="hidden" name="media_type" value="{{ item.media_type }}">
+                {% if item.shikimori_id.is_some() %}<input type="hidden" name="shikimori_id" value="{{ item.shikimori_id.unwrap() }}">{% endif %}
+                {% if item.mal_id.is_some() %}<input type="hidden" name="mal_id" value="{{ item.mal_id.unwrap() }}">{% endif %}
                 <input type="hidden" name="title" value="{{ item.title }}">
                 {% if item.title_english.is_some() %}<input type="hidden" name="title_english" value="{{ item.title_english.as_ref().unwrap() }}">{% endif %}
                 {% if item.title_native.is_some() %}<input type="hidden" name="title_native" value="{{ item.title_native.as_ref().unwrap() }}">{% endif %}

@@ -202,3 +202,57 @@ async fn get_sidebar_stats(state: &AppState, user: &CurrentUser) -> SidebarStats
     let (ip, cp, pp, dp) = state.tracking.get_status_counts(user.id).await.unwrap_or_default();
     SidebarStats { in_progress: ip, completed: cp, planned: pp, dropped: dp, role: user.role.clone() }
 }
+
+#[derive(Template)]
+#[template(path = "partials/_episode_list.html")]
+struct EpisodeListPartial {
+    episodes: Vec<crate::services::episodes::StoredEpisode>,
+}
+
+/// Lazy-loaded endpoint for the drawer's "Episodes" section.
+/// If episodes aren't in the DB yet (e.g. background fetch from
+/// post_add_to_tracking hasn't completed), trigger a synchronous
+/// fetch+store so the drawer doesn't show "Эпизоды не загружены"
+/// on first open. Only for shikimori-sourced anime.
+pub async fn get_episodes(
+    State(state): State<AppState>,
+    Path((provider, external_id)): Path<(String, String)>,
+) -> impl IntoResponse {
+    // Try DB first
+    let existing = crate::services::episodes::get_episodes(
+        &state.db,
+        &provider,
+        &external_id,
+    )
+    .await
+    .unwrap_or_default();
+
+    // If empty AND provider is shikimori, fetch on-demand
+    if existing.is_empty() && provider == "shikimori" {
+        if let Ok(id) = external_id.parse::<i64>() {
+            if let Err(e) = crate::services::episodes::fetch_and_store(
+                state.db.clone(),
+                &state.shikimori,
+                id,
+            )
+            .await
+            {
+                eprintln!("On-demand episode fetch failed: {}", e);
+            }
+        }
+    }
+
+    let episodes = crate::services::episodes::get_episodes(
+        &state.db,
+        &provider,
+        &external_id,
+    )
+    .await
+    .unwrap_or_default();
+
+    let html = EpisodeListPartial { episodes }.render().unwrap_or_else(|e| {
+        eprintln!("Episode list render failed: {}", e);
+        String::new()
+    });
+    Html(html)
+}

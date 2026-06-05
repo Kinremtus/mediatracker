@@ -1,5 +1,5 @@
 use reqwest::Client;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::models::media_item::CreateMediaItem;
@@ -162,6 +162,7 @@ fn map_anime(r: ShikimoriSearchResult) -> CreateMediaItem {
         score: r.score,
         is_tracked: false,
         mal_id: r.mal_id,
+        shikimori_id: Some(r.id),
         comparison_key: Some(comparison_key),
         format_type,
         details: None,
@@ -242,6 +243,33 @@ impl ShikimoriService {
         let r: ShikimoriSearchResult = response.json().await?;
         Ok(map_anime(r))
     }
+
+    /// Fetch the full episode list for an anime from Shikimori.
+    /// Endpoint: GET /api/animes/{id}/episodes — returns ALL episodes
+    /// in a single response (no pagination), each with `number`,
+    /// `name_en`, `name_ru`, `airdate`, `duration`.
+    pub async fn fetch_episodes(&self, shikimori_id: i64) -> Result<Vec<ShikimoriEpisode>, anyhow::Error> {
+        let url = format!("{}/animes/{}/episodes", BASE_URL, shikimori_id);
+        let response = self.client.get(&url).send().await?;
+        if !response.status().is_success() {
+            anyhow::bail!("Shikimori episodes failed: {}", response.status());
+        }
+        let episodes: Vec<ShikimoriEpisode> = response.json().await?;
+        Ok(episodes)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ShikimoriEpisode {
+    pub number: i32,
+    #[serde(default)]
+    pub name_en: Option<String>,
+    #[serde(default)]
+    pub name_ru: Option<String>,
+    #[serde(default)]
+    pub airdate: Option<chrono::NaiveDate>,
+    #[serde(default)]
+    pub duration: Option<i32>,
 }
 
 #[cfg(test)]

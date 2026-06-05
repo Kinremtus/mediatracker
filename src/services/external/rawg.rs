@@ -91,6 +91,7 @@ fn map_details(r: RawgDetails) -> CreateMediaItem {
         score: r.rating,
         is_tracked: false,
         mal_id: None,
+        shikimori_id: None,
         comparison_key: Some(r.name),
         format_type: Some("Game".to_string()),
         details: if details.is_empty() {
@@ -147,6 +148,7 @@ fn map_search(r: &RawgSearchResult) -> CreateMediaItem {
         score: r.rating,
         is_tracked: false,
         mal_id: None,
+        shikimori_id: None,
         comparison_key: Some(r.name.clone()),
         format_type: Some("Game".to_string()),
         details: None,
