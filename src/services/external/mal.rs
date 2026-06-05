@@ -1,5 +1,5 @@
 use reqwest::Client;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::models::media_item::CreateMediaItem;
@@ -84,6 +84,37 @@ struct MalBroadcast {
     string: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JikanEpisode {
+    pub mal_id: i32,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub title_japanese: Option<String>,
+    /// Jikan returns RFC3339 (e.g. "2002-10-03T00:00:00+00:00").
+    /// Stored as `String` and parsed at the persistence layer so
+    /// we can re-use the same `parse_date()` helper that detail
+    /// responses already use.
+    #[serde(default)]
+    pub aired: Option<String>,
+    /// Human-readable duration, e.g. "24 min. per ep.". Parsed
+    /// into minutes by `parse_duration_to_minutes()` at persistence.
+    #[serde(default)]
+    pub duration: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct JikanEpisodesResponse {
+    data: Vec<JikanEpisode>,
+    pagination: JikanPagination,
+}
+
+#[derive(Debug, Deserialize)]
+struct JikanPagination {
+    last_visible_page: i32,
+    has_next_page: bool,
+}
+
 #[derive(Debug, Deserialize)]
 struct MalImages {
     jpg: Option<MalImageSet>,
@@ -123,7 +154,7 @@ fn parse_date(s: &str) -> Option<chrono::NaiveDate> {
 ///   "59 min."         → 59
 ///   "45 sec. per ep." → 1   (округление вверх — минимальная единица)
 ///   "" / мусор        → None
-fn parse_duration_to_minutes(s: &str) -> Option<i32> {
+pub fn parse_duration_to_minutes(s: &str) -> Option<i32> {
     let lower = s.to_lowercase();
     let mut total: i32 = 0;
     let mut found = false;
@@ -341,6 +372,41 @@ impl MalService {
 
         let body: MalAnimeResponse = response.json().await?;
         Ok(map_full(body.data))
+    }
+
+    /// Fetch the full episode list for an anime from Jikan v4.
+    /// Endpoint: `GET /v4/anime/{mal_id}/episodes?page=N` — paginated
+    /// (100 per page, rate-limited to ~3 req/sec and ~60 req/min).
+    /// Iterates pages until `pagination.has_next_page == false`.
+    pub async fn fetch_episodes(&self, mal_id: i64) -> Result<Vec<JikanEpisode>, anyhow::Error> {
+        let mut all = Vec::new();
+        let mut page = 1;
+        loop {
+            let url = format!("{}/anime/{}/episodes?page={}", BASE_URL, mal_id, page);
+            let response = self.client.get(&url).send().await?;
+            if !response.status().is_success() {
+                anyhow::bail!(
+                    "Jikan episodes failed for mal_id={} page={}: {}",
+                    mal_id,
+                    page,
+                    response.status()
+                );
+            }
+            let body: JikanEpisodesResponse = response.json().await?;
+            let got = body.data.len();
+            all.extend(body.data);
+            if got == 0
+                || !body.pagination.has_next_page
+                || page >= body.pagination.last_visible_page
+            {
+                break;
+            }
+            page += 1;
+            // Jikan rate limit: 3 req/sec, 60 req/min. 350 ms keeps us
+            // under the per-second cap with margin.
+            tokio::time::sleep(std::time::Duration::from_millis(350)).await;
+        }
+        Ok(all)
     }
 }
 

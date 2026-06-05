@@ -1,6 +1,7 @@
 use sqlx::PgPool;
 
-use crate::services::external::shikimori::{ShikimoriEpisode, ShikimoriService};
+use crate::services::external::mal::JikanEpisode;
+use crate::services::external::mal::MalService;
 
 /// Episode as returned to the template layer.
 #[derive(Debug, Clone)]
@@ -17,13 +18,29 @@ pub struct StoredEpisode {
 /// Insert or update episodes in the DB. UNIQUE (provider, external_id,
 /// episode_number) makes the operation idempotent — re-fetching the
 /// same anime just refreshes titles and air dates in place.
-pub async fn store_episodes(
+///
+/// Stores under `provider = "mal"`, `external_id = mal_id.to_string()`.
+/// Jikan is our episode source of choice because Shikimori's REST
+/// `/api/animes/{id}/episodes` is currently 404 on both shikimori.one
+/// and shikimori.io, and Shikimori's `?mal_id=` filter is broken
+/// (returns unrelated anime). Jikan's `/v4/anime/{mal_id}/episodes`
+/// is paginated, unauthenticated, and not behind DDoS-Guard.
+pub async fn store_episodes_mal(
     pool: &PgPool,
-    provider: &str,
-    external_id: &str,
-    episodes: &[ShikimoriEpisode],
+    mal_id: i64,
+    episodes: &[JikanEpisode],
 ) -> Result<(), sqlx::Error> {
     for ep in episodes {
+        let air_date = ep
+            .aired
+            .as_deref()
+            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+            .map(|dt| dt.naive_utc().date());
+        let duration_minutes = ep
+            .duration
+            .as_deref()
+            .and_then(crate::services::external::mal::parse_duration_to_minutes);
+
         sqlx::query(
             r#"
             INSERT INTO anime_episodes
@@ -31,19 +48,18 @@ pub async fn store_episodes(
             VALUES ($1, $2, $3, $4, $5, $6, $7)
             ON CONFLICT (provider, external_id, episode_number) DO UPDATE
             SET title_en = EXCLUDED.title_en,
-                title_ru = EXCLUDED.title_ru,
                 air_date = EXCLUDED.air_date,
                 duration_minutes = EXCLUDED.duration_minutes,
                 fetched_at = NOW()
             "#,
         )
-        .bind(provider)
-        .bind(external_id)
-        .bind(ep.number)
-        .bind(&ep.name_en)
-        .bind(&ep.name_ru)
-        .bind(ep.airdate)
-        .bind(ep.duration)
+        .bind("mal")
+        .bind(mal_id.to_string())
+        .bind(ep.mal_id)
+        .bind(&ep.title)
+        .bind(Option::<String>::None) // Jikan has no Russian episode titles
+        .bind(air_date)
+        .bind(duration_minutes)
         .execute(pool)
         .await?;
     }
@@ -95,75 +111,38 @@ pub async fn get_episodes(
         .collect())
 }
 
-/// Resolve the Shikimori id for a media item, regardless of which
-/// provider it was added with. Required because Shikimori's episode
-/// endpoint takes Shikimori's own id, not MAL's.
+/// Fetch episodes from Jikan and persist them.
+/// Returns the number of episodes stored (0 on failure).
+pub async fn fetch_and_store_mal(
+    pool: PgPool,
+    service: &MalService,
+    mal_id: i64,
+) -> Result<usize, anyhow::Error> {
+    let episodes = service.fetch_episodes(mal_id).await?;
+    let count = episodes.len();
+    store_episodes_mal(&pool, mal_id, &episodes).await?;
+    Ok(count)
+}
+
+/// Look up `mal_id` for a media item. Required because we store
+/// episodes keyed on MAL id (under `provider = "mal"`) regardless
+/// of which provider the user originally added the anime with.
 ///
-/// Order of resolution:
-/// 1. `media_items.shikimori_id` already set → return it.
-/// 2. `provider == "shikimori"` → parse `external_id` → return.
-/// 3. `provider == "mal"` with `mal_id` known → ask Shikimori
-///    `GET /api/animes?mal_id={mal_id}` and persist the result.
-pub async fn resolve_shikimori_id(
+/// Returns `None` for anime that don't have a known MAL id
+/// (rare for Shikimori-only entries).
+pub async fn lookup_mal_id(
     pool: &PgPool,
-    service: &ShikimoriService,
     provider: &str,
     external_id: &str,
-    mal_id: Option<i64>,
-) -> Result<Option<i64>, anyhow::Error> {
-    let row: Option<(Option<i64>, Option<i64>)> = sqlx::query_as(
-        "SELECT shikimori_id, mal_id FROM media_items WHERE provider = $1 AND external_id = $2",
+) -> Result<Option<i64>, sqlx::Error> {
+    let row: Option<(Option<i64>,)> = sqlx::query_as(
+        "SELECT mal_id FROM media_items WHERE provider = $1 AND external_id = $2",
     )
     .bind(provider)
     .bind(external_id)
     .fetch_optional(pool)
     .await?;
-
-    let (cached_shiki, stored_mal_id) = row.unwrap_or((None, None));
-    if let Some(id) = cached_shiki {
-        return Ok(Some(id));
-    }
-
-    let result = match provider {
-        "shikimori" => external_id.parse::<i64>().ok(),
-        "mal" => {
-            let id_to_lookup = mal_id.or(stored_mal_id);
-            match id_to_lookup {
-                Some(mid) => service.find_id_by_mal_id(mid).await?,
-                None => None,
-            }
-        }
-        _ => None,
-    };
-
-    if let (Some(shiki_id), true) = (result, provider == "mal") {
-        // Persist for next time so we don't hit Shikimori's API on every
-        // drawer open. Best-effort — if the row was deleted in the
-        // meantime, the UPDATE simply affects 0 rows.
-        let _ = sqlx::query(
-            "UPDATE media_items SET shikimori_id = $1 WHERE provider = $2 AND external_id = $3",
-        )
-        .bind(shiki_id)
-        .bind(provider)
-        .bind(external_id)
-        .execute(pool)
-        .await;
-    }
-
-    Ok(result)
-}
-
-/// Fetch episodes from Shikimori and persist them.
-/// Returns the number of episodes stored (0 on failure or unsupported provider).
-pub async fn fetch_and_store(
-    pool: PgPool,
-    service: &ShikimoriService,
-    shikimori_id: i64,
-) -> Result<usize, anyhow::Error> {
-    let episodes = service.fetch_episodes(shikimori_id).await?;
-    let count = episodes.len();
-    store_episodes(&pool, "shikimori", &shikimori_id.to_string(), &episodes).await?;
-    Ok(count)
+    Ok(row.and_then(|(v,)| v))
 }
 
 #[cfg(test)]
@@ -171,32 +150,35 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_shikimori_episode_json() {
-        let json = r#"[{
-            "id": 1,
-            "number": 1,
-            "name_en": "Enter: Naruto Uzumaki!",
-            "name_ru": "Появляется Наруто Узумаки!",
-            "airdate": "2002-10-03",
-            "duration": 23
-        }]"#;
-        let eps: Vec<ShikimoriEpisode> = serde_json::from_str(json).unwrap();
-        assert_eq!(eps.len(), 1);
-        assert_eq!(eps[0].number, 1);
-        assert_eq!(eps[0].name_ru.as_deref(), Some("Появляется Наруто Узумаки!"));
-        assert_eq!(eps[0].duration, Some(23));
-    }
-
-    #[test]
-    fn parse_shikimori_episode_with_missing_fields() {
-        // Some episodes have no name, no airdate, no duration
-        let json = r#"[{"id": 5, "number": 5}]"#;
-        let eps: Vec<ShikimoriEpisode> = serde_json::from_str(json).unwrap();
-        assert_eq!(eps.len(), 1);
-        assert_eq!(eps[0].number, 5);
-        assert!(eps[0].name_en.is_none());
-        assert!(eps[0].name_ru.is_none());
-        assert!(eps[0].airdate.is_none());
-        assert!(eps[0].duration.is_none());
+    fn parse_jikan_episode_json() {
+        // Real response shape from Jikan v4 /anime/{id}/episodes.
+        let json = r#"{
+            "data": [{
+                "mal_id": 1,
+                "url": "https://myanimelist.net/anime/21/One_Piece/episode/1",
+                "title": "I'm Luffy! The Man Who's Gonna Be King of the Pirates!",
+                "title_japanese": "俺はルフィ！海賊王になる男だ！",
+                "aired": "1999-10-20T00:00:00+00:00",
+                "score": 4.1,
+                "filler": false,
+                "recap": false,
+                "forum_url": "https://myanimelist.net/forum/?topicid=43183"
+            }],
+            "pagination": {
+                "last_visible_page": 12,
+                "has_next_page": true
+            }
+        }"#;
+        #[derive(serde::Deserialize)]
+        struct Resp {
+            data: Vec<JikanEpisode>,
+        }
+        let resp: Resp = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.data.len(), 1);
+        let ep = &resp.data[0];
+        assert_eq!(ep.mal_id, 1);
+        assert!(ep.title.as_deref().unwrap().starts_with("I'm Luffy"));
+        assert!(ep.aired.is_some());
+        assert!(ep.duration.is_none(), "Jikan episodes list has no duration field");
     }
 }

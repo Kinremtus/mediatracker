@@ -213,61 +213,75 @@ struct EpisodeListPartial {
 /// If episodes aren't in the DB yet (e.g. background fetch from
 /// post_add_to_tracking hasn't completed), trigger a synchronous
 /// fetch+store so the drawer doesn't show "Эпизоды не загружены"
-/// on first open. Works for both shikimori and MAL-sourced anime —
-/// `resolve_shikimori_id` handles the MAL → Shikimori id conversion
-/// (and caches the result in `media_items.shikimori_id`).
+/// on first open.
+///
+/// Episode source is always Jikan v4. We store them under
+/// `provider = "mal"`, `external_id = mal_id.to_string()`. For
+/// Shikimori-sourced entries the URL still has the shikimori id
+/// in `external_id`, so we look up `mal_id` from `media_items`
+/// first and key the episode read/fetch on that.
 pub async fn get_episodes(
     State(state): State<AppState>,
     Path((provider, external_id)): Path<(String, String)>,
 ) -> impl IntoResponse {
-    // Try DB first
-    let existing = crate::services::episodes::get_episodes(
-        &state.db,
-        &provider,
-        &external_id,
-    )
-    .await
-    .unwrap_or_default();
-
-    // If empty, resolve the shikimori id (covers MAL → Shikimori lookup)
-    // and fetch on-demand. Resolved id is persisted for next time.
-    if existing.is_empty() {
-        match crate::services::episodes::resolve_shikimori_id(
-            &state.db,
-            &state.shikimori,
-            &provider,
-            &external_id,
-            None,
-        )
-        .await
-        {
-            Ok(Some(shiki_id)) => {
-                if let Err(e) = crate::services::episodes::fetch_and_store(
-                    state.db.clone(),
-                    &state.shikimori,
-                    shiki_id,
-                )
-                .await
-                {
-                    tracing::warn!(provider, external_id, shikimori_id = shiki_id, error = %e, "on-demand episode fetch failed");
+    // Resolve the MAL id (episode key) for this anime.
+    let mal_id: Option<i64> = match provider.as_str() {
+        "mal" => external_id.parse::<i64>().ok(),
+        "shikimori" => {
+            match crate::services::episodes::lookup_mal_id(
+                &state.db, &provider, &external_id,
+            )
+            .await
+            {
+                Ok(id) => id,
+                Err(e) => {
+                    tracing::warn!(provider, external_id, error = %e, "lookup_mal_id failed");
+                    None
                 }
             }
-            Ok(None) => {
-                tracing::debug!(provider, external_id, "no shikimori_id resolvable, skipping episode fetch");
+        }
+        _ => None,
+    };
+
+    // Try DB first (episodes are stored under provider="mal" keyed by mal_id).
+    let mut existing = Vec::new();
+    if let Some(mal_id) = mal_id {
+        existing = crate::services::episodes::get_episodes(
+            &state.db,
+            "mal",
+            &mal_id.to_string(),
+        )
+        .await
+        .unwrap_or_default();
+    }
+
+    // If empty, fetch on-demand via Jikan.
+    if existing.is_empty() {
+        if let Some(mal_id) = mal_id {
+            if let Err(e) = crate::services::episodes::fetch_and_store_mal(
+                state.db.clone(),
+                &state.mal,
+                mal_id,
+            )
+            .await
+            {
+                tracing::warn!(provider, external_id, mal_id, error = %e, "on-demand episode fetch failed");
             }
-            Err(e) => {
-                tracing::warn!(provider, external_id, error = %e, "resolve_shikimori_id failed");
-            }
+        } else {
+            tracing::debug!(provider, external_id, "no mal_id available; cannot fetch episodes");
         }
     }
 
-    let episodes = crate::services::episodes::get_episodes(
-        &state.db,
-        &provider,
-        &external_id,
-    )
-    .await
-    .unwrap_or_default();
+    let episodes = match mal_id {
+        Some(id) => crate::services::episodes::get_episodes(
+            &state.db,
+            "mal",
+            &id.to_string(),
+        )
+        .await
+        .unwrap_or_default(),
+        None => Vec::new(),
+    };
 
     let html = EpisodeListPartial { episodes }.render().unwrap_or_else(|e| {
         tracing::warn!(error = %e, "episode list render failed");
