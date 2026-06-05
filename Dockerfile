@@ -14,10 +14,6 @@ RUN rm -rf src
 # Builder stage: cooks deps from recipe (cached in Docker layer until deps change),
 # then builds the real app on top
 FROM chef AS builder
-ARG MEDIATRACKER_VERSION=dev
-ENV MEDIATRACKER_VERSION=${MEDIATRACKER_VERSION}
-# git is needed by build.rs to derive a cache-bust version from the commit hash
-RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 COPY . .
