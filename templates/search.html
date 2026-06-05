@@ -59,10 +59,11 @@
                 {% for g in item.genres.iter().take(3) %}<span class="chip chip-genre chip-sm">{{ g }}</span>{% endfor %}
             </div>
             {% endif %}
+            <div class="search-status-wrapper">
             {% if item.is_tracked %}
-            <span class="btn btn-secondary" style="width: 100%; height: 32px; font-size: 12px; display: flex; align-items: center; justify-content: center; cursor: default; opacity: 0.6;">✓ Добавлено</span>
+            <span class="btn btn-secondary added-badge">✓ Добавлено</span>
             {% else %}
-            <form method="POST" action="/tracking" onclick="event.stopPropagation();">
+            <form hx-boost="true" hx-target="closest .search-status-wrapper" hx-swap="outerHTML" method="POST" action="/tracking" class="search-status-form" onclick="event.stopPropagation();">
                 <input type="hidden" name="provider" value="{{ item.provider }}">
                 <input type="hidden" name="external_id" value="{{ item.external_id }}">
                 <input type="hidden" name="media_type" value="{{ item.media_type }}">
@@ -101,11 +102,20 @@
                 <input type="hidden" name="themes" value="{{ item.themes.join(",") }}">
                 <input type="hidden" name="demographics" value="{{ item.demographics.join(",") }}">
                 <input type="hidden" name="categories" value="{{ item.categories.join(",") }}">
-                <input type="hidden" name="tracking_status" value="planned">
                 <input type="hidden" name="redirect_to" value="/search?q={{ query }}&type={{ current_type }}&page={{ page }}">
-                <button type="submit" class="btn btn-secondary" style="width: 100%; height: 32px; font-size: 12px;">+ В список</button>
+                <div class="search-status-grid">
+                    <button type="submit" name="tracking_status" value="in_progress" class="search-status-btn" data-status="in_progress" title="В процессе">▶</button>
+                    <button type="submit" name="tracking_status" value="planned" class="search-status-btn" data-status="planned" title="Запланировано">⏰</button>
+                    <button type="submit" name="tracking_status" value="completed" class="search-status-btn" data-status="completed" title="Завершено">✓</button>
+                    <button type="submit" name="tracking_status" value="dropped" class="search-status-btn" data-status="dropped" title="Брошено">✕</button>
+                </div>
+                <div class="search-status-banner search-status-banner--in_progress" aria-hidden="true">В процессе</div>
+                <div class="search-status-banner search-status-banner--planned" aria-hidden="true">Запланировано</div>
+                <div class="search-status-banner search-status-banner--completed" aria-hidden="true">Завершено</div>
+                <div class="search-status-banner search-status-banner--dropped" aria-hidden="true">Брошено</div>
             </form>
             {% endif %}
+            </div>
         </div>
     </a>
     {% endfor %}
