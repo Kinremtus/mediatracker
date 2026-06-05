@@ -129,6 +129,7 @@ fn map_details(r: TmdbDetails, media_type: &str) -> CreateMediaItem {
         score: r.vote_average,
         is_tracked: false,
         mal_id: None,
+        shikimori_id: None,
         comparison_key: Some(title),
         format_type,
         details: if details.is_empty() {
@@ -198,6 +199,7 @@ fn map_search_result(r: &serde_json::Value, media_type: &str) -> Option<CreateMe
         score,
         is_tracked: false,
         mal_id: None,
+        shikimori_id: None,
         comparison_key: Some(title),
         format_type: None,
         details: None,

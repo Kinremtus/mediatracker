@@ -205,6 +205,7 @@ fn map_full(anime: MalAnimeFull) -> CreateMediaItem {
         score: anime.score,
         is_tracked: false,
         mal_id: Some(anime.mal_id),
+        shikimori_id: None,
         comparison_key: Some(comparison_key),
         format_type: anime.anime_type,
         details: if details.is_empty() {
@@ -262,6 +263,7 @@ fn map_search(item: MalAnimeSearchItem) -> CreateMediaItem {
         score: item.score,
         is_tracked: false,
         mal_id: Some(item.mal_id),
+        shikimori_id: None,
         comparison_key: Some(comparison_key),
         format_type: item.anime_type,
         details: None,

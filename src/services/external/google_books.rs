@@ -107,6 +107,7 @@ fn map_item(r: GoogleBooksItem) -> CreateMediaItem {
         score: r.volume_info.average_rating,
         is_tracked: false,
         mal_id: None,
+        shikimori_id: None,
         comparison_key: Some(r.volume_info.title),
         format_type: r.volume_info.print_type.or(Some("Book".to_string())),
         details: if details.is_empty() {

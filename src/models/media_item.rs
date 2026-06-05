@@ -80,6 +80,8 @@ pub struct CreateMediaItem {
     #[serde(default)]
     pub mal_id: Option<i64>,
     #[serde(default)]
+    pub shikimori_id: Option<i64>,
+    #[serde(default)]
     pub comparison_key: Option<String>,
 
     // === Расширенные метаданные ===

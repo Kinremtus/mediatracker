@@ -175,6 +175,7 @@ fn map_game(g: IgdbGame) -> CreateMediaItem {
         score,
         is_tracked: false,
         mal_id: None,
+        shikimori_id: None,
         comparison_key: Some(g.name),
         format_type: Some("Game".to_string()),
         details: if details.is_empty() {

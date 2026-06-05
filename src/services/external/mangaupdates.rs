@@ -254,6 +254,7 @@ fn map_series(series: MangaUpdatesSeries) -> CreateMediaItem {
         score: series.bayesian_rating,
         is_tracked: false,
         mal_id: None,
+        shikimori_id: None,
         comparison_key: Some(title_for_key),
         format_type: series.series_type,
         details: if details.is_empty() {

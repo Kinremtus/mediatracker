@@ -45,6 +45,20 @@
 </div>
 {% endif %}
 
+{# === EPISODES (anime only) === #}
+{% if item.media_type == "anime" %}
+<div class="drawer-divider"></div>
+<div class="drawer-section">
+    <div class="drawer-section-label">Эпизоды</div>
+    <div class="drawer-episodes"
+         hx-get="/api/anime/{{ item.provider }}/{{ item.external_id }}/episodes"
+         hx-trigger="revealed once"
+         hx-swap="innerHTML">
+        <div class="drawer-episodes-loading">Загрузка эпизодов…</div>
+    </div>
+</div>
+{% endif %}
+
 {# === PROGRESS ZONE (only if tracked) === #}
 {% if let Some(tid) = tracking_id %}
 <div class="drawer-divider"></div>

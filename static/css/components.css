@@ -520,6 +520,74 @@
     margin-bottom: 0.5rem;
 }
 
+/* --- Episode List (drawer section) --- */
+.drawer-episodes {
+    min-height: 40px;
+}
+.drawer-episodes-loading,
+.episode-list-empty,
+.episode-list-error {
+    padding: 12px;
+    color: var(--muted-foreground);
+    text-align: center;
+    font-size: 13px;
+}
+.episode-list {
+    display: flex;
+    flex-direction: column;
+    max-height: 360px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+.episode-item {
+    display: grid;
+    grid-template-columns: 40px 1fr;
+    gap: 8px;
+    padding: 8px 10px;
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+}
+.episode-item:last-child {
+    border-bottom: none;
+}
+.episode-item-checkbox {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.episode-item-number {
+    font-size: 12px;
+    color: var(--muted-foreground);
+    font-weight: 500;
+}
+.episode-item-content {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+}
+.episode-item-line1 {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--foreground);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.episode-item-line2,
+.episode-item-line3 {
+    font-size: 11px;
+    color: var(--muted-foreground);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.episode-item--watched .episode-item-line1 {
+    text-decoration: line-through;
+    opacity: 0.5;
+}
+
 /* --- Search status buttons (in media card) ---
    4 icon-buttons ▶ ⏰ ✓ ✕ in a 1×4 grid at the bottom of the card.
    On hover, a label banner appears ABOVE the card (full-width, overlay)

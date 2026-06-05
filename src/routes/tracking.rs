@@ -162,6 +162,10 @@ pub struct AddToTrackingForm {
     pub description: Option<String>,
     pub status: Option<String>,
     pub score: Option<f64>,
+    #[serde(default)]
+    pub mal_id: Option<i64>,
+    #[serde(default)]
+    pub shikimori_id: Option<i64>,
     pub tracking_status: String,
     pub redirect_to: Option<String>,
 
@@ -232,7 +236,8 @@ pub async fn post_add_to_tracking(
         status: form.status,
         score: form.score,
         is_tracked: false,
-        mal_id: None,
+        mal_id: form.mal_id,
+        shikimori_id: form.shikimori_id,
         comparison_key: None,
         format_type: form.format_type,
         details: None,
@@ -286,6 +291,24 @@ pub async fn post_add_to_tracking(
 
     match state.tracking.add_to_list(user.id, &media, status).await {
         Ok(_) => {
+            // For anime sourced from Shikimori, fire-and-forget fetch
+            // of the episode list so the drawer's "Эпизоды" section
+            // has data ready by the time the user opens it. The drawer
+            // also falls back to on-demand fetch if this hasn't completed.
+            if media.media_type == "anime" {
+                if let Some(shiki_id) = form.shikimori_id {
+                    let pool = state.db.clone();
+                    let service = state.shikimori.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = crate::services::episodes::fetch_and_store(
+                            pool, &service, shiki_id,
+                        ).await {
+                            eprintln!("Background episode fetch failed: {}", e);
+                        }
+                    });
+                }
+            }
+
             if is_htmx {
                 let mut resp = Html(ADDED_BADGE_HTML.to_string()).into_response();
                 resp.headers_mut()
