@@ -215,6 +215,7 @@ pub struct AddToTrackingForm {
 pub async fn post_add_to_tracking(
     user: CurrentUser,
     State(state): State<AppState>,
+    headers: HeaderMap,
     Form(form): Form<AddToTrackingForm>,
 ) -> Response {
     let media = crate::models::media_item::CreateMediaItem {
@@ -277,18 +278,40 @@ pub async fn post_add_to_tracking(
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "/tracking".to_string());
 
+    let is_htmx = headers
+        .get("HX-Request")
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v == "true")
+        .unwrap_or(false);
+
     match state.tracking.add_to_list(user.id, &media, status).await {
         Ok(_) => {
-            let url = add_flash_param(&redirect_url, "added");
-            Redirect::to(&url).into_response()
+            if is_htmx {
+                let mut resp = Html(ADDED_BADGE_HTML.to_string()).into_response();
+                resp.headers_mut()
+                    .insert("HX-Trigger", "trackingUpdated".parse().unwrap());
+                resp
+            } else {
+                let url = add_flash_param(&redirect_url, "added");
+                Redirect::to(&url).into_response()
+            }
         }
         Err(e) => {
             eprintln!("Error adding to tracking: {}", e);
-            let url = add_flash_param(&redirect_url, "error");
-            Redirect::to(&url).into_response()
+            if is_htmx {
+                let mut resp = Html(r#"<span class="btn btn-secondary" style="width:100%;height:32px;font-size:12px;display:flex;align-items:center;justify-content:center;cursor:default;opacity:0.6;color:var(--dropped);">✕ Ошибка</span>"#.to_string()).into_response();
+                resp.headers_mut()
+                    .insert("HX-Trigger", "trackingError".parse().unwrap());
+                resp
+            } else {
+                let url = add_flash_param(&redirect_url, "error");
+                Redirect::to(&url).into_response()
+            }
         }
     }
 }
+
+const ADDED_BADGE_HTML: &str = r#"<span class="btn btn-secondary added-badge">✓ Добавлено</span>"#;
 
 fn add_flash_param(url: &str, flash: &str) -> String {
     if url.contains('?') {
