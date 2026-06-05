@@ -213,7 +213,9 @@ struct EpisodeListPartial {
 /// If episodes aren't in the DB yet (e.g. background fetch from
 /// post_add_to_tracking hasn't completed), trigger a synchronous
 /// fetch+store so the drawer doesn't show "Эпизоды не загружены"
-/// on first open. Only for shikimori-sourced anime.
+/// on first open. Works for both shikimori and MAL-sourced anime —
+/// `resolve_shikimori_id` handles the MAL → Shikimori id conversion
+/// (and caches the result in `media_items.shikimori_id`).
 pub async fn get_episodes(
     State(state): State<AppState>,
     Path((provider, external_id)): Path<(String, String)>,
@@ -227,17 +229,34 @@ pub async fn get_episodes(
     .await
     .unwrap_or_default();
 
-    // If empty AND provider is shikimori, fetch on-demand
-    if existing.is_empty() && provider == "shikimori" {
-        if let Ok(id) = external_id.parse::<i64>() {
-            if let Err(e) = crate::services::episodes::fetch_and_store(
-                state.db.clone(),
-                &state.shikimori,
-                id,
-            )
-            .await
-            {
-                eprintln!("On-demand episode fetch failed: {}", e);
+    // If empty, resolve the shikimori id (covers MAL → Shikimori lookup)
+    // and fetch on-demand. Resolved id is persisted for next time.
+    if existing.is_empty() {
+        match crate::services::episodes::resolve_shikimori_id(
+            &state.db,
+            &state.shikimori,
+            &provider,
+            &external_id,
+            None,
+        )
+        .await
+        {
+            Ok(Some(shiki_id)) => {
+                if let Err(e) = crate::services::episodes::fetch_and_store(
+                    state.db.clone(),
+                    &state.shikimori,
+                    shiki_id,
+                )
+                .await
+                {
+                    tracing::warn!(provider, external_id, shikimori_id = shiki_id, error = %e, "on-demand episode fetch failed");
+                }
+            }
+            Ok(None) => {
+                tracing::debug!(provider, external_id, "no shikimori_id resolvable, skipping episode fetch");
+            }
+            Err(e) => {
+                tracing::warn!(provider, external_id, error = %e, "resolve_shikimori_id failed");
             }
         }
     }
@@ -251,7 +270,7 @@ pub async fn get_episodes(
     .unwrap_or_default();
 
     let html = EpisodeListPartial { episodes }.render().unwrap_or_else(|e| {
-        eprintln!("Episode list render failed: {}", e);
+        tracing::warn!(error = %e, "episode list render failed");
         String::new()
     });
     Html(html)

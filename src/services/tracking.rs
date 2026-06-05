@@ -44,7 +44,8 @@ impl TrackingService {
                         source, duration, rating, rating_votes,
                         authors, artists, studios, producers, licensors, publishers,
                         serialized_in, networks, platforms,
-                        genres, themes, demographics, categories
+                        genres, themes, demographics, categories,
+                        mal_id, shikimori_id
                     ) VALUES (
                         $1, $2, $3, $4, $5, $6, $7,
                         $8, $9, $10, $11, $12,
@@ -55,7 +56,8 @@ impl TrackingService {
                         $28, $29, $30, $31,
                         $32, $33, $34, $35, $36, $37,
                         $38, $39, $40,
-                        $41, $42, $43, $44
+                        $41, $42, $43, $44,
+                        $45, $46
                     )
                     RETURNING id
                     "#,
@@ -104,6 +106,8 @@ impl TrackingService {
                 .bind(&media.themes)
                 .bind(&media.demographics)
                 .bind(&media.categories)
+                .bind(media.mal_id)
+                .bind(media.shikimori_id)
                 .fetch_one(&self.db)
                 .await?;
                 new_id

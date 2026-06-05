@@ -291,22 +291,36 @@ pub async fn post_add_to_tracking(
 
     match state.tracking.add_to_list(user.id, &media, status).await {
         Ok(_) => {
-            // For anime sourced from Shikimori, fire-and-forget fetch
-            // of the episode list so the drawer's "Эпизоды" section
-            // has data ready by the time the user opens it. The drawer
-            // also falls back to on-demand fetch if this hasn't completed.
+            // For anime, fire-and-forget fetch of the episode list so the
+            // drawer's "Эпизоды" section has data ready by the time the
+            // user opens it. The drawer also falls back to on-demand fetch
+            // if this hasn't completed. Works for both shikimori and MAL
+            // sources — resolve_shikimori_id handles MAL → Shikimori lookup.
             if media.media_type == "anime" {
-                if let Some(shiki_id) = form.shikimori_id {
-                    let pool = state.db.clone();
-                    let service = state.shikimori.clone();
-                    tokio::spawn(async move {
-                        if let Err(e) = crate::services::episodes::fetch_and_store(
-                            pool, &service, shiki_id,
-                        ).await {
-                            eprintln!("Background episode fetch failed: {}", e);
+                let pool = state.db.clone();
+                let service = state.shikimori.clone();
+                let provider = media.provider.clone();
+                let external_id = media.external_id.clone();
+                let mal_id = media.mal_id;
+                tokio::spawn(async move {
+                    match crate::services::episodes::resolve_shikimori_id(
+                        &pool, &service, &provider, &external_id, mal_id,
+                    ).await {
+                        Ok(Some(shiki_id)) => {
+                            if let Err(e) = crate::services::episodes::fetch_and_store(
+                                pool, &service, shiki_id,
+                            ).await {
+                                tracing::warn!(provider, external_id, shikimori_id = shiki_id, error = %e, "background episode fetch failed");
+                            }
                         }
-                    });
-                }
+                        Ok(None) => {
+                            tracing::debug!(provider, external_id, "no shikimori_id resolvable, skipping background episode fetch");
+                        }
+                        Err(e) => {
+                            tracing::warn!(provider, external_id, error = %e, "background resolve_shikimori_id failed");
+                        }
+                    }
+                });
             }
 
             if is_htmx {
