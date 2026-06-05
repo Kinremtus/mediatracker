@@ -1,6 +1,6 @@
 use askama::Template;
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Form, Path, Query, State},
     response::{Html, IntoResponse},
 };
 use serde::Deserialize;
@@ -207,6 +207,22 @@ async fn get_sidebar_stats(state: &AppState, user: &CurrentUser) -> SidebarStats
 #[template(path = "partials/_episode_list.html")]
 struct EpisodeListPartial {
     episodes: Vec<crate::services::episodes::StoredEpisode>,
+    provider: String,
+    external_id: String,
+}
+
+#[derive(Template)]
+#[template(path = "partials/_episode_item.html")]
+struct EpisodeItemPartial {
+    episode: crate::services::episodes::StoredEpisode,
+    provider: String,
+    external_id: String,
+}
+
+#[derive(Deserialize)]
+pub struct SetWatchedForm {
+    #[serde(default)]
+    pub watched: bool,
 }
 
 /// Lazy-loaded endpoint for the drawer's "Episodes" section.
@@ -283,9 +299,114 @@ pub async fn get_episodes(
         None => Vec::new(),
     };
 
-    let html = EpisodeListPartial { episodes }.render().unwrap_or_else(|e| {
+    let html = EpisodeListPartial {
+        episodes,
+        provider: provider.clone(),
+        external_id: external_id.clone(),
+    }
+    .render()
+    .unwrap_or_else(|e| {
         tracing::warn!(error = %e, "episode list render failed");
         String::new()
     });
     Html(html)
+}
+
+/// Toggle `watched` for a single episode and (if successful) recompute
+/// `tracking_entries.progress = max(progress, max_watched_ep)`.
+///
+/// Always keys on MAL id under the hood, regardless of which
+/// provider the user originally added the anime with. For
+/// Shikimori-sourced items we look up `mal_id` from `media_items`.
+///
+/// Returns the updated row HTML so HTMX can swap it in place, plus
+/// an `HX-Trigger: progressUpdated` event with `{maxWatched: N}` for
+/// the drawer progress text to update without a full refresh.
+pub async fn set_episode_watched(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Path((provider, external_id, episode_number)): Path<(String, String, i32)>,
+    Form(form): Form<SetWatchedForm>,
+) -> impl IntoResponse {
+    // Resolve the MAL id (the actual storage key for episodes).
+    let mal_id: Option<i64> = match provider.as_str() {
+        "mal" => external_id.parse::<i64>().ok(),
+        "shikimori" => match crate::services::episodes::lookup_mal_id(
+            &state.db, &provider, &external_id,
+        )
+        .await
+        {
+            Ok(id) => id,
+            Err(e) => {
+                tracing::warn!(provider, external_id, error = %e, "lookup_mal_id failed");
+                None
+            }
+        },
+        _ => None,
+    };
+
+    let mal_id = match mal_id {
+        Some(id) => id,
+        None => {
+            tracing::debug!(provider, external_id, episode_number, "no mal_id available, ignoring toggle");
+            return Html(String::new()).into_response();
+        }
+    };
+
+    if let Err(e) = crate::services::episodes::set_watched(
+        &state.db, mal_id, episode_number, form.watched,
+    )
+    .await
+    {
+        tracing::warn!(provider, external_id, mal_id, episode_number, error = %e, "set_watched failed");
+        return Html(String::new()).into_response();
+    }
+
+    // Recompute progress for the tracking entry (if any).
+    let max_watched = crate::services::episodes::count_watched(&state.db, mal_id)
+        .await
+        .unwrap_or(0);
+
+    if let Ok(Some(media_id)) = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM media_items WHERE provider = $1 AND external_id = $2",
+    )
+    .bind(&provider)
+    .bind(&external_id)
+    .fetch_optional(&state.db)
+    .await
+    {
+        if let Err(e) = crate::services::episodes::update_progress_from_watched(
+            &state.db, user.id, media_id, max_watched,
+        )
+        .await
+        {
+            tracing::warn!(provider, external_id, error = %e, "update_progress_from_watched failed");
+        }
+    }
+
+    // Render the new row HTML and attach a progressUpdated event.
+    let html = match crate::services::episodes::get_episode(
+        &state.db, mal_id, episode_number,
+    )
+    .await
+    {
+        Ok(Some(ep)) => EpisodeItemPartial {
+            episode: ep,
+            provider: provider.clone(),
+            external_id: external_id.clone(),
+        }
+        .render()
+        .unwrap_or_default(),
+        _ => String::new(),
+    };
+
+    let trigger = serde_json::json!({
+        "progressUpdated": { "maxWatched": max_watched }
+    });
+    let mut resp = Html(html).into_response();
+    resp.headers_mut().insert(
+        "HX-Trigger",
+        trigger.to_string().parse().unwrap(),
+    );
+    resp
 }

@@ -540,9 +540,15 @@
     border: 1px solid var(--border);
     border-radius: var(--radius);
 }
+/* On the full media detail page, allow the list to grow to fit all
+   episodes (One Piece has 1100+) instead of being bounded. */
+.media-detail-episodes .episode-list {
+    max-height: none;
+    overflow: visible;
+}
 .episode-item {
     display: grid;
-    grid-template-columns: 40px 1fr;
+    grid-template-columns: 40px 60px 1fr;
     gap: 8px;
     padding: 8px 10px;
     align-items: center;
@@ -551,10 +557,37 @@
 .episode-item:last-child {
     border-bottom: none;
 }
-.episode-item-checkbox {
+.episode-item-form {
+    margin: 0;
     display: flex;
     align-items: center;
     justify-content: center;
+}
+.episode-item-checkbox {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 1.5px solid var(--border);
+    background: var(--secondary);
+    color: var(--muted-foreground);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+    transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+.episode-item-checkbox:hover {
+    border-color: var(--in-progress);
+    color: var(--in-progress);
+}
+.episode-item-checkbox--checked,
+.episode-item-checkbox--checked:hover {
+    background: var(--in-progress);
+    border-color: var(--in-progress);
+    color: var(--in-progress-foreground, white);
 }
 .episode-item-number {
     font-size: 12px;
@@ -583,9 +616,14 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-.episode-item--watched .episode-item-line1 {
+.episode-item--watched .episode-item-line1,
+.episode-item--watched .episode-item-line2,
+.episode-item--watched .episode-item-line3 {
     text-decoration: line-through;
-    opacity: 0.5;
+    opacity: 0.55;
+}
+.episode-item--watched .episode-item-number {
+    opacity: 0.55;
 }
 
 /* --- Search status buttons (in media card) ---
@@ -1777,6 +1815,7 @@ body.drawer-open {
 }
 
 /* --- Drawer Progress Zone --- */
+[x-cloak] { display: none !important; }
 .drawer-section-label {
     font-size: 12px;
     font-weight: 600;
@@ -1784,6 +1823,49 @@ body.drawer-open {
     letter-spacing: 0.03em;
     color: var(--muted-foreground);
     margin-bottom: 0.5rem;
+}
+.drawer-section-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    background: transparent;
+    border: none;
+    padding: 0;
+    margin-bottom: 0.5rem;
+    cursor: pointer;
+    font: inherit;
+    color: var(--muted-foreground);
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+.drawer-section-toggle:hover {
+    color: var(--foreground);
+}
+.drawer-section-arrow {
+    display: inline-block;
+    transition: transform 0.2s ease;
+    font-size: 14px;
+}
+.drawer-section-arrow.rotated {
+    transform: rotate(180deg);
+}
+.media-detail-section-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: transparent;
+    border: none;
+    padding: 0;
+    margin-bottom: 0.75rem;
+    cursor: pointer;
+    font: inherit;
+    color: inherit;
+}
+.media-detail-section-toggle h3 {
+    margin: 0;
 }
 
 .drawer-status-chips {

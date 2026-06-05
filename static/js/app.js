@@ -59,6 +59,37 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                 }
             }
+        }
+    });
+
+    // Episode checkbox toggle → server pushes HX-Trigger:
+    //   {"progressUpdated": {"maxWatched": N}}
+    // Update the drawer's "X / Y эп." text in place without a refresh.
+    document.body.addEventListener('progressUpdated', function(e) {
+        const maxWatched = e.detail && e.detail.maxWatched;
+        if (maxWatched == null) return;
+        const text = document.querySelector('.drawer-progress-text');
+        if (text) {
+            text.textContent = text.textContent.replace(/^\s*\d+/, String(maxWatched));
+        }
+        const plusBtn = document.querySelector('.drawer-btn-increment');
+        if (plusBtn) {
+            // Re-compute next_progress locally by reading the new current value
+            const newCurrent = maxWatched;
+            const totalMatch = text && text.textContent.match(/\/\s*(\d+)/);
+            const total = totalMatch ? parseInt(totalMatch[1]) : null;
+            if (total != null && newCurrent >= total) {
+                plusBtn.remove();
+            } else {
+                plusBtn.setAttribute('hx-vals', JSON.stringify({ progress: newCurrent + 1 }));
+                // Keep the rendered +N label in sync by re-rendering? Alpine won't see hx-vals changes
+                // automatically, but the label is rendered server-side on drawer load. Live with the
+                // small drift (next click will re-sync via htmx:afterRequest).
+            }
+        }
+    });
+});
+            }
             refreshTrackingList();
         }
     });

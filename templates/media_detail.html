@@ -142,6 +142,21 @@
             {% endif %}
         </div>
 
+        {% if item.media_type == "anime" %}
+        <div class="media-detail-section" x-data="{ episodesOpen: true }">
+            <button class="media-detail-section-toggle" @click="episodesOpen = !episodesOpen" type="button">
+                <h3 style="display: inline;">Эпизоды</h3>
+                <span class="drawer-section-arrow" :class="{ 'rotated': episodesOpen }">▾</span>
+            </button>
+            <div class="media-detail-episodes" x-show="episodesOpen" x-cloak
+                 hx-get="/api/anime/{{ item.provider }}/{{ item.external_id }}/episodes"
+                 hx-trigger="revealed once"
+                 hx-swap="innerHTML">
+                <div class="drawer-episodes-loading">Загрузка эпизодов…</div>
+            </div>
+        </div>
+        {% endif %}
+
         {% if !item.genres.is_empty() || !item.themes.is_empty() || !item.demographics.is_empty() %}
         <div class="media-detail-section">
             {% if !item.genres.is_empty() %}

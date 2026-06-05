@@ -1,4 +1,5 @@
 use sqlx::PgPool;
+use uuid::Uuid;
 
 use crate::services::external::mal::JikanEpisode;
 use crate::services::external::mal::MalService;
@@ -143,6 +144,128 @@ pub async fn lookup_mal_id(
     .fetch_optional(pool)
     .await?;
     Ok(row.and_then(|(v,)| v))
+}
+
+/// Set the `watched` flag on a single episode row. Returns `true`
+/// if a row was actually updated (i.e. the episode exists in the
+/// DB for this MAL id), `false` otherwise. Setting `watched=false`
+/// also clears `watched_at` so the "when did I watch this" data
+/// stays honest.
+pub async fn set_watched(
+    pool: &PgPool,
+    mal_id: i64,
+    episode_number: i32,
+    watched: bool,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        r#"
+        UPDATE anime_episodes
+        SET watched = $1,
+            watched_at = CASE WHEN $1 THEN NOW() ELSE NULL END
+        WHERE provider = 'mal'
+          AND external_id = $2
+          AND episode_number = $3
+        "#,
+    )
+    .bind(watched)
+    .bind(mal_id.to_string())
+    .bind(episode_number)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected() > 0)
+}
+
+/// Highest episode number currently marked watched for an anime.
+/// Returns 0 if nothing is watched (or no episodes exist).
+pub async fn count_watched(
+    pool: &PgPool,
+    mal_id: i64,
+) -> Result<i32, sqlx::Error> {
+    let row: (Option<i32>,) = sqlx::query_as(
+        r#"
+        SELECT MAX(episode_number)
+        FROM anime_episodes
+        WHERE provider = 'mal'
+          AND external_id = $1
+          AND watched = TRUE
+        "#,
+    )
+    .bind(mal_id.to_string())
+    .fetch_one(pool)
+    .await?;
+    Ok(row.0.unwrap_or(0))
+}
+
+/// Bumps `tracking_entries.progress` to at least `watched_count`.
+/// Uses `GREATEST(progress, $1)` so it never regresses — un-checking
+/// the highest episode doesn't drop your progress, you'd have to do
+/// that manually with the +1/-1 buttons.
+pub async fn update_progress_from_watched(
+    pool: &PgPool,
+    user_id: Uuid,
+    media_id: Uuid,
+    watched_count: i32,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        UPDATE tracking_entries
+        SET progress = GREATEST(progress, $1),
+            updated_at = NOW()
+        WHERE user_id = $2
+          AND media_id = $3
+        "#,
+    )
+    .bind(watched_count)
+    .bind(user_id)
+    .bind(media_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Read a single episode by (mal_id, episode_number). Returns `None`
+/// if the row doesn't exist. Used by the toggle endpoint to render
+/// the updated row HTML.
+pub async fn get_episode(
+    pool: &PgPool,
+    mal_id: i64,
+    episode_number: i32,
+) -> Result<Option<StoredEpisode>, sqlx::Error> {
+    let row: Option<(
+        i32,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<chrono::NaiveDate>,
+        Option<i32>,
+        bool,
+    )> = sqlx::query_as(
+        r#"
+        SELECT episode_number, title_en, title_ru, title_jp, air_date, duration_minutes, watched
+        FROM anime_episodes
+        WHERE provider = 'mal'
+          AND external_id = $1
+          AND episode_number = $2
+        "#,
+    )
+    .bind(mal_id.to_string())
+    .bind(episode_number)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row.map(
+        |(episode_number, title_en, title_ru, title_jp, air_date, duration_minutes, watched)| {
+            StoredEpisode {
+                episode_number,
+                title_en,
+                title_ru,
+                title_jp,
+                air_date,
+                duration_minutes,
+                watched,
+            }
+        },
+    ))
 }
 
 #[cfg(test)]

@@ -1,0 +1,36 @@
+<div class="episode-item {% if episode.watched %}episode-item--watched{% endif %}"
+     id="episode-{{ episode.episode_number }}">
+    <form class="episode-item-form"
+          hx-post="/api/anime/{{ provider }}/{{ external_id }}/episodes/{{ episode.episode_number }}/watched"
+          hx-vals='{"watched": {% if episode.watched %}false{% else %}true{% endif %}}'
+          hx-target="#episode-{{ episode.episode_number }}"
+          hx-swap="outerHTML">
+        <button type="submit"
+                class="episode-item-checkbox {% if episode.watched %}episode-item-checkbox--checked{% endif %}"
+                title="{% if episode.watched %}Снять отметку{% else %}Отметить просмотренным{% endif %}">
+            {% if episode.watched %}✓{% else %}○{% endif %}
+        </button>
+    </form>
+    <div class="episode-item-number">Эп. {{ episode.episode_number }}</div>
+    <div class="episode-item-content">
+        {% if let Some(ru) = episode.title_ru %}
+        <div class="episode-item-line1">{{ ru }}</div>
+        {% else if let Some(en) = episode.title_en %}
+        <div class="episode-item-line1">{{ en }}</div>
+        {% else if let Some(jp) = episode.title_jp %}
+        <div class="episode-item-line1">{{ jp }}</div>
+        {% endif %}
+        {% if let Some(en) = episode.title_en %}
+        {% if episode.title_ru.is_some() %}
+        <div class="episode-item-line2">{{ en }}</div>
+        {% endif %}
+        {% endif %}
+        {% if episode.air_date.is_some() || episode.duration_minutes.is_some() %}
+        <div class="episode-item-line3">
+            {% if let Some(d) = episode.air_date %}{{ d.format("%-d %b %Y") }}{% endif %}
+            {% if episode.air_date.is_some() && episode.duration_minutes.is_some() %} · {% endif %}
+            {% if let Some(m) = episode.duration_minutes %}{{ m }} мин{% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
