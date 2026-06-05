@@ -257,6 +257,23 @@ impl ShikimoriService {
         let episodes: Vec<ShikimoriEpisode> = response.json().await?;
         Ok(episodes)
     }
+
+    /// Resolve a MAL id to a Shikimori id via Shikimori's own search API.
+    /// Returns `Ok(None)` if Shikimori has no record for that MAL id
+    /// (uncommon but possible for very new or region-locked titles).
+    /// Endpoint: GET /api/animes?mal_id={mal_id}
+    pub async fn find_id_by_mal_id(&self, mal_id: i64) -> Result<Option<i64>, anyhow::Error> {
+        let mut url = Url::parse(&format!("{}/animes", BASE_URL))?;
+        url.query_pairs_mut()
+            .append_pair("mal_id", &mal_id.to_string())
+            .append_pair("limit", "1");
+        let response = self.client.get(url).send().await?;
+        if !response.status().is_success() {
+            anyhow::bail!("Shikimori mal_id lookup failed: {}", response.status());
+        }
+        let results: Vec<ShikimoriSearchResult> = response.json().await?;
+        Ok(results.first().map(|r| r.id))
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

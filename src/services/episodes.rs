@@ -95,6 +95,64 @@ pub async fn get_episodes(
         .collect())
 }
 
+/// Resolve the Shikimori id for a media item, regardless of which
+/// provider it was added with. Required because Shikimori's episode
+/// endpoint takes Shikimori's own id, not MAL's.
+///
+/// Order of resolution:
+/// 1. `media_items.shikimori_id` already set → return it.
+/// 2. `provider == "shikimori"` → parse `external_id` → return.
+/// 3. `provider == "mal"` with `mal_id` known → ask Shikimori
+///    `GET /api/animes?mal_id={mal_id}` and persist the result.
+pub async fn resolve_shikimori_id(
+    pool: &PgPool,
+    service: &ShikimoriService,
+    provider: &str,
+    external_id: &str,
+    mal_id: Option<i64>,
+) -> Result<Option<i64>, anyhow::Error> {
+    let row: Option<(Option<i64>, Option<i64>)> = sqlx::query_as(
+        "SELECT shikimori_id, mal_id FROM media_items WHERE provider = $1 AND external_id = $2",
+    )
+    .bind(provider)
+    .bind(external_id)
+    .fetch_optional(pool)
+    .await?;
+
+    let (cached_shiki, stored_mal_id) = row.unwrap_or((None, None));
+    if let Some(id) = cached_shiki {
+        return Ok(Some(id));
+    }
+
+    let result = match provider {
+        "shikimori" => external_id.parse::<i64>().ok(),
+        "mal" => {
+            let id_to_lookup = mal_id.or(stored_mal_id);
+            match id_to_lookup {
+                Some(mid) => service.find_id_by_mal_id(mid).await?,
+                None => None,
+            }
+        }
+        _ => None,
+    };
+
+    if let (Some(shiki_id), true) = (result, provider == "mal") {
+        // Persist for next time so we don't hit Shikimori's API on every
+        // drawer open. Best-effort — if the row was deleted in the
+        // meantime, the UPDATE simply affects 0 rows.
+        let _ = sqlx::query(
+            "UPDATE media_items SET shikimori_id = $1 WHERE provider = $2 AND external_id = $3",
+        )
+        .bind(shiki_id)
+        .bind(provider)
+        .bind(external_id)
+        .execute(pool)
+        .await;
+    }
+
+    Ok(result)
+}
+
 /// Fetch episodes from Shikimori and persist them.
 /// Returns the number of episodes stored (0 on failure or unsupported provider).
 pub async fn fetch_and_store(
