@@ -88,11 +88,6 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
     });
-});
-            }
-            refreshTrackingList();
-        }
-    });
 
     // Flash notification on successful update
     document.body.addEventListener('htmx:oobAfterSwap', function(e) {
