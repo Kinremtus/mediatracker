@@ -48,9 +48,12 @@
 {# === EPISODES (anime only) === #}
 {% if item.media_type == "anime" %}
 <div class="drawer-divider"></div>
-<div class="drawer-section">
-    <div class="drawer-section-label">Эпизоды</div>
-    <div class="drawer-episodes"
+<div class="drawer-section drawer-section--collapsible" x-data="{ open: true }">
+    <button class="drawer-section-toggle" @click="open = !open" type="button">
+        Эпизоды
+        <span class="drawer-section-arrow" :class="{ 'rotated': open }">▾</span>
+    </button>
+    <div class="drawer-episodes" x-show="open" x-cloak
          hx-get="/api/anime/{{ item.provider }}/{{ item.external_id }}/episodes"
          hx-trigger="revealed once"
          hx-swap="innerHTML">

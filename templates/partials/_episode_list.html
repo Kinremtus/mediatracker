@@ -2,31 +2,8 @@
 <div class="episode-list-empty">Эпизоды не загружены</div>
 {% else %}
 <div class="episode-list">
-    {% for ep in episodes %}
-    <div class="episode-item {% if ep.watched %}episode-item--watched{% endif %}">
-        <div class="episode-item-checkbox">
-            <span class="episode-item-number">Эп. {{ ep.episode_number }}</span>
-        </div>
-        <div class="episode-item-content">
-            {% if let Some(ru) = ep.title_ru %}
-            <div class="episode-item-line1">{{ ru }}</div>
-            {% else if let Some(en) = ep.title_en %}
-            <div class="episode-item-line1">{{ en }}</div>
-            {% endif %}
-            {% if let Some(en) = ep.title_en %}
-            {% if ep.title_ru.is_some() %}
-            <div class="episode-item-line2">{{ en }}</div>
-            {% endif %}
-            {% endif %}
-            {% if ep.air_date.is_some() || ep.duration_minutes.is_some() %}
-            <div class="episode-item-line3">
-                {% if let Some(d) = ep.air_date %}{{ d.format("%-d %b %Y") }}{% endif %}
-                {% if ep.air_date.is_some() && ep.duration_minutes.is_some() %} · {% endif %}
-                {% if let Some(m) = ep.duration_minutes %}{{ m }} мин{% endif %}
-            </div>
-            {% endif %}
-        </div>
-    </div>
+    {% for episode in episodes %}
+    {% include "partials/_episode_item.html" %}
     {% endfor %}
 </div>
 {% endif %}
