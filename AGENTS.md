@@ -16,6 +16,18 @@
 ## Stack
 Rust 1.95 · Axum 0.8 · SQLx 0.8 · Askama 0.16 · PostgreSQL 17 · Alpine.js · HTMX
 
+## Caching & Cache-Bust
+- **Static files** (JS/CSS/images under `/static/`): nginx serves them and sets
+  `Cache-Control: no-cache, must-revalidate` + `ETag` + `Last-Modified`. Browser
+  revalidates every request; nginx returns 304 (cheap) for unchanged files,
+  200 with new body for changed ones. **No `?v=hash` in URLs, no build.rs.**
+- **HTML pages** (server-rendered by axum): set to `no-cache` by the response
+  from the app; browser always revalidates. Dynamic content (drawer, htmx
+  swaps) is always fresh.
+- **TMDB images** (proxied via `/tmdb-image/`): cached 7 days with
+  `Cache-Control: public, immutable` (intentional — TMDB image URLs are
+  content-addressed, never change).
+
 ## Project Structure
 ```
 ├── src/
