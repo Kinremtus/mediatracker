@@ -61,7 +61,7 @@ pub struct MediaItem {
     pub categories: Vec<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct CreateMediaItem {
     pub provider: String,
     pub external_id: String,
