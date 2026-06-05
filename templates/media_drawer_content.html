@@ -5,8 +5,8 @@
     <button class="drawer-action-btn delete" title="Удалить из списка"
             hx-post="/tracking/{{ tid }}/htmx/delete"
             hx-swap="none"
-            hx-on:htmx:before-request="if(!confirm('Удалить из списка?')) e.preventDefault()"
-            hx-on:htmx:after-request="if(e.detail.successful) afterDelete()">✕</button>
+            hx-on:htmx:before-request="if(!confirm('Удалить из списка?')) event.preventDefault()"
+            hx-on:htmx:after-request="if(event.detail.successful) afterDelete()">✕</button>
 </div>
 {% endif %}
 
@@ -56,28 +56,28 @@
                 hx-post="/tracking/{{ tid }}/htmx"
                 hx-vals='{"status":"planned","progress":{{ progress_display }}}'
                 hx-swap="none"
-                hx-on:htmx:after-request="if(e.detail.successful) afterStatusChange(this, 'planned')">
+                hx-on:htmx:after-request="if(event.detail.successful) afterStatusChange(this, 'planned')">
             Запланировано
         </button>
         <button class="drawer-status-chip in_progress {% if current_status.as_deref() == Some("in_progress") %}active{% endif %}"
                 hx-post="/tracking/{{ tid }}/htmx"
                 hx-vals='{"status":"in_progress","progress":{{ progress_display }}}'
                 hx-swap="none"
-                hx-on:htmx:after-request="if(e.detail.successful) afterStatusChange(this, 'in_progress')">
+                hx-on:htmx:after-request="if(event.detail.successful) afterStatusChange(this, 'in_progress')">
             В процессе
         </button>
         <button class="drawer-status-chip completed {% if current_status.as_deref() == Some("completed") %}active{% endif %}"
                 hx-post="/tracking/{{ tid }}/htmx"
                 hx-vals='{"status":"completed","progress":{{ progress_display }}}'
                 hx-swap="none"
-                hx-on:htmx:after-request="if(e.detail.successful) afterStatusChange(this, 'completed')">
+                hx-on:htmx:after-request="if(event.detail.successful) afterStatusChange(this, 'completed')">
             Завершено
         </button>
         <button class="drawer-status-chip dropped {% if current_status.as_deref() == Some("dropped") %}active{% endif %}"
                 hx-post="/tracking/{{ tid }}/htmx"
                 hx-vals='{"status":"dropped","progress":{{ progress_display }}}'
                 hx-swap="none"
-                hx-on:htmx:after-request="if(e.detail.successful) afterStatusChange(this, 'dropped')">
+                hx-on:htmx:after-request="if(event.detail.successful) afterStatusChange(this, 'dropped')">
             Брошено
         </button>
     </div>
@@ -90,7 +90,7 @@
                 hx-post="/tracking/{{ tid }}/htmx"
                 hx-vals='{"progress":{{ next_progress }}, "status":"{{ status_display }}"}'
                 hx-swap="none"
-                hx-on:htmx:after-request="if(e.detail.successful) afterProgressIncrement(this, {{ next_progress }})">+1</button>
+                hx-on:htmx:after-request="if(event.detail.successful) afterProgressIncrement(this, {{ next_progress }})">+1</button>
         {% endif %}
     </div>
     {% endif %}

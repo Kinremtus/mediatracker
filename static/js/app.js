@@ -33,6 +33,36 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
+    // Глобальный fallback для status-chips в drawer: на случай если inline
+    // hx-on:htmx:after-request упадёт (e.g. event vs e), переключаем active-класс здесь
+    document.body.addEventListener('htmx:afterRequest', function(e) {
+        const target = e.detail.target;
+        if (!target || !target.classList || !e.detail.successful) return;
+        if (target.classList.contains('drawer-status-chip')) {
+            const newStatus = target.classList.contains('planned') ? 'planned'
+                : target.classList.contains('in_progress') ? 'in_progress'
+                : target.classList.contains('completed') ? 'completed'
+                : target.classList.contains('dropped') ? 'dropped' : null;
+            if (newStatus) afterStatusChange(target, newStatus);
+        } else if (target.classList.contains('drawer-btn-increment')) {
+            const btn = target;
+            const row = btn.closest('.drawer-progress-row');
+            if (row) {
+                const text = row.querySelector('.drawer-progress-text');
+                if (text) {
+                    const m = text.textContent.match(/^(\d+)/);
+                    if (m) {
+                        const next = parseInt(m[1]) + 1;
+                        text.textContent = text.textContent.replace(/^\d+/, next);
+                        const totalMatch = text.textContent.match(/\/\s*(\d+)/);
+                        if (totalMatch && next >= parseInt(totalMatch[1])) btn.remove();
+                    }
+                }
+            }
+            refreshTrackingList();
+        }
+    });
+
     // Flash notification on successful update
     document.body.addEventListener('htmx:oobAfterSwap', function(e) {
         if (e.detail.target.id === 'settings-messages') {
