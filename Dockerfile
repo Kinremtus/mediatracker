@@ -17,6 +17,12 @@ FROM chef AS builder
 COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 COPY . .
+# Test gate: unit tests and the JS-syntax/contract test must pass
+# before we build the release binary. The DB-gated integration
+# tests (tracking_persistence, episode_persistence) are #[ignore]'d
+# so they don't run here (no TEST_DATABASE_URL in build).
+# If this fails, the image doesn't build and the deploy rolls back.
+RUN cargo test --release --lib --test app_js_syntax
 RUN cargo build --release
 
 # Runtime stage: minimal debian + the binary + static + migrations
