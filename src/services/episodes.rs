@@ -148,32 +148,56 @@ pub async fn lookup_mal_id(
     Ok(row.and_then(|(v,)| v))
 }
 
-/// Set the `watched` flag on a single episode row. Returns `true`
-/// if a row was actually updated (i.e. the episode exists in the
-/// DB for this MAL id), `false` otherwise. Setting `watched=false`
-/// also clears `watched_at` so the "when did I watch this" data
-/// stays honest.
+/// Set the `watched` flag on one or more episode rows.
+///
+/// **Bulk-fill semantics on watch**: when `watched = true`, every
+/// episode with `episode_number <= episode_number` is marked watched.
+/// This matches the standard "mark ep 200 watched → ep 1..200 watched"
+/// UX of MAL / AniList / Shikimori — users don't want to click 200
+/// checkboxes after binging a long series. Unwatch (`watched = false`)
+/// only flips the one row, by design: the user explicitly marked the
+/// later ones watched, and removing one earlier watched episode
+/// shouldn't silently take down the rest.
+///
+/// Returns `true` if at least one row was updated (i.e. the target
+/// episode exists in the DB for this MAL id), `false` otherwise.
 pub async fn set_watched(
     pool: &PgPool,
     mal_id: i64,
     episode_number: i32,
     watched: bool,
 ) -> Result<bool, sqlx::Error> {
-    let result = sqlx::query(
-        r#"
-        UPDATE anime_episodes
-        SET watched = $1,
-            watched_at = CASE WHEN $1 THEN NOW() ELSE NULL END
-        WHERE provider = 'mal'
-          AND external_id = $2
-          AND episode_number = $3
-        "#,
-    )
-    .bind(watched)
-    .bind(mal_id.to_string())
-    .bind(episode_number)
-    .execute(pool)
-    .await?;
+    let result = if watched {
+        sqlx::query(
+            r#"
+            UPDATE anime_episodes
+            SET watched = TRUE,
+                watched_at = NOW()
+            WHERE provider = 'mal'
+              AND external_id = $1
+              AND episode_number <= $2
+            "#,
+        )
+        .bind(mal_id.to_string())
+        .bind(episode_number)
+        .execute(pool)
+        .await?
+    } else {
+        sqlx::query(
+            r#"
+            UPDATE anime_episodes
+            SET watched = FALSE,
+                watched_at = NULL
+            WHERE provider = 'mal'
+              AND external_id = $1
+              AND episode_number = $2
+            "#,
+        )
+        .bind(mal_id.to_string())
+        .bind(episode_number)
+        .execute(pool)
+        .await?
+    };
     Ok(result.rows_affected() > 0)
 }
 

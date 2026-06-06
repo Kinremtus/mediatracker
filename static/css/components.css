@@ -1961,7 +1961,9 @@ body.drawer-open {
 
 /* Inline variant: user rating rendered inside drawer-hero-info.
  * The label sits next to the stars (not above) and the row wraps
- * to a second line if the column is too narrow. */
+ * to a second line if the column is too narrow. We also drop
+ * the section-label's uppercase transform here — the hero zone
+ * is dense and screaming caps look out of place. */
 .drawer-rating--inline {
     margin-top: 0.5rem;
 }
@@ -1969,6 +1971,8 @@ body.drawer-open {
     display: inline;
     margin-bottom: 0;
     margin-right: 0.25rem;
+    text-transform: none;
+    letter-spacing: 0;
 }
 .drawer-rating--inline .drawer-stars {
     margin: 0;
