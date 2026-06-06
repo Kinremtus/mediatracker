@@ -16,7 +16,7 @@ struct ShikimoriSearchResult {
     russian: Option<String>,
     image: Option<ShikimoriImage>,
     kind: Option<String>,
-    #[serde(deserialize_with = "deserialize_optional_f64")]
+    #[serde(default, deserialize_with = "deserialize_optional_f64")]
     score: Option<f64>,
     status: Option<String>,
     episodes: Option<i32>,
@@ -288,6 +288,10 @@ mod tests {
 
     #[test]
     fn parses_genres_themes_demographics() {
+        // Note: no `score` field on purpose — exercises the
+        // `#[serde(default)]` on ShikimoriSearchResult.score, which
+        // is what keeps us alive when Shikimori omits it (older
+        // entries, ranking not yet computed, etc.).
         let json = r#"{
             "id": 20,
             "name": "Naruto",
@@ -308,5 +312,6 @@ mod tests {
         assert!(item.genres.contains(&"Action".to_string()));
         assert!(item.themes.contains(&"Martial Arts".to_string()));
         assert!(item.demographics.contains(&"Shounen".to_string()));
+        assert!(item.score.is_none(), "missing score must default to None");
     }
 }
