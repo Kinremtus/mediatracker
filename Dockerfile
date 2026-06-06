@@ -22,7 +22,10 @@ COPY . .
 # tests (tracking_persistence, episode_persistence) are #[ignore]'d
 # so they don't run here (no TEST_DATABASE_URL in build).
 # If this fails, the image doesn't build and the deploy rolls back.
-RUN cargo test --release --lib --test app_js_syntax
+# (cargo test doesn't accept --lib and --test <name> in the same
+# invocation, so we run them as two separate commands.)
+RUN cargo test --lib
+RUN cargo test --test app_js_syntax
 RUN cargo build --release
 
 # Runtime stage: minimal debian + the binary + static + migrations
