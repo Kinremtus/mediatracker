@@ -367,14 +367,17 @@ pub async fn set_episode_watched(
         .await
         .unwrap_or(0);
 
-    if let Ok(Some(media_id)) = sqlx::query_scalar::<_, Uuid>(
+    // Resolve media_id once (for both progress sync and HX-Trigger broadcast).
+    let media_id: Option<Uuid> = sqlx::query_scalar(
         "SELECT id FROM media_items WHERE provider = $1 AND external_id = $2",
     )
     .bind(&provider)
     .bind(&external_id)
     .fetch_optional(&state.db)
     .await
-    {
+    .unwrap_or(None);
+
+    if let Some(media_id) = media_id {
         if let Err(e) = crate::services::episodes::update_progress_from_watched(
             &state.db, user.id, media_id, max_watched,
         )
@@ -400,9 +403,14 @@ pub async fn set_episode_watched(
         _ => String::new(),
     };
 
-    let trigger = serde_json::json!({
-        "progressUpdated": { "maxWatched": max_watched }
+    let mut trigger = serde_json::json!({
+        "progressUpdated": {
+            "maxWatched": max_watched,
+        }
     });
+    if let Some(media_id) = media_id {
+        trigger["progressUpdated"]["mediaId"] = serde_json::Value::String(media_id.to_string());
+    }
     let mut resp = Html(html).into_response();
     resp.headers_mut().insert(
         "HX-Trigger",

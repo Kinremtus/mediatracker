@@ -63,8 +63,9 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // Episode checkbox toggle → server pushes HX-Trigger:
-    //   {"progressUpdated": {"maxWatched": N}}
-    // Update the drawer's "X / Y эп." text in place without a refresh.
+    //   {"progressUpdated": {"maxWatched": N, "mediaId": "<uuid>"}}
+    // Update the drawer's "X / Y эп." text and any visible tracking
+    // card for the same media, in place without a refresh.
     document.body.addEventListener('progressUpdated', function(e) {
         const maxWatched = e.detail && e.detail.maxWatched;
         if (maxWatched == null) return;
@@ -86,6 +87,16 @@ document.addEventListener('DOMContentLoaded', function() {
                 // automatically, but the label is rendered server-side on drawer load. Live with the
                 // small drift (next click will re-sync via htmx:afterRequest).
             }
+        }
+        // Also patch any matching tracking card on the /tracking list.
+        // mediaId is set when the toggle came from the drawer for a media
+        // the user is tracking; cards match via data-media-id on the root.
+        const mediaId = e.detail && e.detail.mediaId;
+        if (mediaId) {
+            const valueEl = document.querySelector(
+                '.tracking-card[data-media-id="' + CSS.escape(mediaId) + '"] .tracking-progress-value'
+            );
+            if (valueEl) valueEl.textContent = String(maxWatched);
         }
     });
 
