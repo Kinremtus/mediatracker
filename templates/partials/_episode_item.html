@@ -13,16 +13,16 @@
     </form>
     <div class="episode-item-number">Эп. {{ episode.episode_number }}</div>
     <div class="episode-item-content">
-        {% if let Some(ru) = episode.title_ru %}
-        <div class="episode-item-line1">{{ ru }}</div>
-        {% else if let Some(en) = episode.title_en %}
+        {% if let Some(en) = episode.title_en %}
         <div class="episode-item-line1">{{ en }}</div>
         {% else if let Some(jp) = episode.title_jp %}
         <div class="episode-item-line1">{{ jp }}</div>
+        {% else if let Some(ru) = episode.title_ru %}
+        <div class="episode-item-line1">{{ ru }}</div>
         {% endif %}
-        {% if let Some(en) = episode.title_en %}
-        {% if episode.title_ru.is_some() %}
-        <div class="episode-item-line2">{{ en }}</div>
+        {% if let Some(jp) = episode.title_jp %}
+        {% if episode.title_en.is_some() %}
+        <div class="episode-item-line2">{{ jp }}</div>
         {% endif %}
         {% endif %}
         {% if episode.air_date.is_some() || episode.duration_minutes.is_some() %}

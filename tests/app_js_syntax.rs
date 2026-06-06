@@ -316,7 +316,11 @@ fn app_js_closes_dom_content_loaded_exactly_once() {
         .enumerate()
         .skip(dom_open_line)
         .take(end_line - dom_open_line)
-        .filter(|(_, l)| l.trim() == "});")
+        // Strict column-0 match. `l.trim() == "});"` would also
+        // catch `});` lines that are inside callbacks (just
+        // indented); we only care about the top-level close of
+        // the DOMContentLoaded callback itself.
+        .filter(|(_, l)| *l == "});")
         .map(|(i, _)| i + 1)
         .collect();
     assert_eq!(

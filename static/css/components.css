@@ -559,35 +559,40 @@
 }
 .episode-item-form {
     margin: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    display: grid;
+    place-items: center;
+    line-height: 0;
 }
 .episode-item-checkbox {
     width: 28px;
     height: 28px;
     border-radius: 50%;
-    border: 1.5px solid var(--border);
-    background: var(--secondary);
+    border: 2px solid var(--muted-foreground);
+    opacity: 0.55;
+    background: transparent;
     color: var(--muted-foreground);
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    display: grid;
+    place-items: center;
+    line-height: 0;
     font-size: 14px;
-    line-height: 1;
     cursor: pointer;
     padding: 0;
-    transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+    margin: 0;
+    transition: background-color 0.15s, border-color 0.15s, color 0.15s, opacity 0.15s;
+    -webkit-appearance: none;
+    appearance: none;
 }
 .episode-item-checkbox:hover {
     border-color: var(--in-progress);
     color: var(--in-progress);
+    opacity: 1;
 }
 .episode-item-checkbox--checked,
 .episode-item-checkbox--checked:hover {
     background: var(--in-progress);
     border-color: var(--in-progress);
     color: var(--in-progress-foreground, white);
+    opacity: 1;
 }
 .episode-item-number {
     font-size: 12px;

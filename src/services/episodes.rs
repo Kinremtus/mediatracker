@@ -45,10 +45,11 @@ pub async fn store_episodes_mal(
         sqlx::query(
             r#"
             INSERT INTO anime_episodes
-                (provider, external_id, episode_number, title_en, title_ru, air_date, duration_minutes)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+                (provider, external_id, episode_number, title_en, title_ru, title_jp, air_date, duration_minutes)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             ON CONFLICT (provider, external_id, episode_number) DO UPDATE
             SET title_en = EXCLUDED.title_en,
+                title_jp = EXCLUDED.title_jp,
                 air_date = EXCLUDED.air_date,
                 duration_minutes = EXCLUDED.duration_minutes,
                 fetched_at = NOW()
@@ -59,6 +60,7 @@ pub async fn store_episodes_mal(
         .bind(ep.mal_id)
         .bind(&ep.title)
         .bind(Option::<String>::None) // Jikan has no Russian episode titles
+        .bind(&ep.title_japanese)
         .bind(air_date)
         .bind(duration_minutes)
         .execute(pool)
