@@ -45,7 +45,7 @@
 
         {% if let Some(tid) = tracking_id %}
         <div class="drawer-rating drawer-rating--inline">
-            <span class="drawer-section-label">Твоя оценка</span>
+            <span class="drawer-section-label">Моя оценка</span>
             <div class="drawer-stars">
                 {% for cls in star_classes %}
                 <button class="drawer-star {{ cls }}"
@@ -60,12 +60,13 @@
     </div>
 </div>
 
-{# === DESCRIPTION (above episodes, collapsible) === #}
+{# === DESCRIPTION (above episodes, collapsible — same arrow style as episodes) === #}
 {% if item.description.is_some() %}
 <div class="drawer-divider"></div>
-<div class="drawer-description" x-data="{ open: false }">
-    <button class="drawer-description-toggle" @click="open = !open">
-        Описание <span class="drawer-description-arrow" :class="{ 'rotated': open }">▾</span>
+<div class="drawer-section drawer-section--collapsible" x-data="{ open: false }">
+    <button class="drawer-section-toggle" @click="open = !open" type="button">
+        Описание
+        <span class="drawer-section-arrow" :class="{ 'rotated': open }">▾</span>
     </button>
     <div class="drawer-description-content" :class="{ 'expanded': open }">
         <p>{{ item.description.as_ref().unwrap() }}</p>
