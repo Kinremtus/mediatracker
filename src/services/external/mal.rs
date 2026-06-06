@@ -378,22 +378,37 @@ impl MalService {
     /// Endpoint: `GET /v4/anime/{mal_id}/episodes?page=N` — paginated
     /// (100 per page, rate-limited to ~3 req/sec and ~60 req/min).
     /// Iterates pages until `pagination.has_next_page == false`.
+    ///
+    /// On 429 / 5xx for a single page we log and return what we
+    /// have so far instead of bailing — long-running series
+    /// (One Piece: 1100+ eps = 12 pages) shouldn't lose every
+    /// page just because the last one rate-limited us.
     pub async fn fetch_episodes(&self, mal_id: i64) -> Result<Vec<JikanEpisode>, anyhow::Error> {
         let mut all = Vec::new();
         let mut page = 1;
         loop {
             let url = format!("{}/anime/{}/episodes?page={}", BASE_URL, mal_id, page);
-            let response = self.client.get(&url).send().await?;
-            if !response.status().is_success() {
-                anyhow::bail!(
-                    "Jikan episodes failed for mal_id={} page={}: {}",
-                    mal_id,
-                    page,
-                    response.status()
-                );
+            let response = match self.client.get(&url).send().await {
+                Ok(r) => r,
+                Err(e) => {
+                    tracing::warn!(mal_id, page, error = %e, "jikan episodes: request failed, stopping");
+                    break;
+                }
+            };
+            let status = response.status();
+            if !status.is_success() {
+                tracing::warn!(mal_id, page, %status, "jikan episodes: non-2xx, stopping");
+                break;
             }
-            let body: JikanEpisodesResponse = response.json().await?;
+            let body: JikanEpisodesResponse = match response.json().await {
+                Ok(b) => b,
+                Err(e) => {
+                    tracing::warn!(mal_id, page, error = %e, "jikan episodes: json parse failed, stopping");
+                    break;
+                }
+            };
             let got = body.data.len();
+            tracing::info!(mal_id, page, got, total_so_far = all.len() + got, "jikan episodes page");
             all.extend(body.data);
             if got == 0
                 || !body.pagination.has_next_page
@@ -402,9 +417,10 @@ impl MalService {
                 break;
             }
             page += 1;
-            // Jikan rate limit: 3 req/sec, 60 req/min. 350 ms keeps us
-            // under the per-second cap with margin.
-            tokio::time::sleep(std::time::Duration::from_millis(350)).await;
+            // Jikan rate limit: 3 req/sec, 60 req/min. 250 ms keeps us
+            // under the per-second cap with small margin. 12 pages
+            // for One Piece = ~3s of sleep, ~10s of network round-trips.
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
         }
         Ok(all)
     }

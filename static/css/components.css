@@ -564,35 +564,32 @@
     line-height: 0;
 }
 .episode-item-checkbox {
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    border: 2px solid var(--muted-foreground);
-    opacity: 0.55;
+    width: 32px;
+    height: 32px;
     background: transparent;
     color: var(--muted-foreground);
     display: grid;
     place-items: center;
     line-height: 0;
-    font-size: 14px;
+    font-size: 18px;
     cursor: pointer;
     padding: 0;
     margin: 0;
-    transition: background-color 0.15s, border-color 0.15s, color 0.15s, opacity 0.15s;
+    border: 0;
+    transition: color 0.15s, transform 0.1s;
     -webkit-appearance: none;
     appearance: none;
+    outline: none;
 }
 .episode-item-checkbox:hover {
-    border-color: var(--in-progress);
     color: var(--in-progress);
-    opacity: 1;
+}
+.episode-item-checkbox:active {
+    transform: scale(0.9);
 }
 .episode-item-checkbox--checked,
 .episode-item-checkbox--checked:hover {
-    background: var(--in-progress);
-    border-color: var(--in-progress);
-    color: var(--in-progress-foreground, white);
-    opacity: 1;
+    color: var(--in-progress);
 }
 .episode-item-number {
     font-size: 12px;
