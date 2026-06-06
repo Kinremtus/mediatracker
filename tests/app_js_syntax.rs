@@ -258,7 +258,7 @@ fn app_js_is_structurally_balanced() {
         ob, cb,
         "app.js: brace imbalance: {ob} '{{' vs {cb} '}}'\n\
          (this kind of mismatch is what broke `openMediaDrawer` on 2026-06-05 \
-          — usually an extra `});` left over from a botched edit)"
+          — usually an extra `}});` left over from a botched edit)"
     );
     assert_eq!(op, cp, "app.js: paren imbalance: {op} '(' vs {cp} ')'");
     assert_eq!(
@@ -326,9 +326,9 @@ fn app_js_closes_dom_content_loaded_exactly_once() {
     assert_eq!(
         closes_inside.len(),
         1,
-        "app.js: expected exactly 1 `});` at column 0 between `DOMContentLoaded` \
+        "app.js: expected exactly 1 `}});` at column 0 between `DOMContentLoaded` \
          (line {}) and the next top-level helper (line {}); found {}: {:?}. \
-         Extra `});` at column 0 means a fragment of the previous code stayed \
+         Extra `}});` at column 0 means a fragment of the previous code stayed \
          behind when an edit replaced the closing braces — delete the orphan lines.",
         dom_open_line + 1,
         end_line,
