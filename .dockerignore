@@ -5,7 +5,11 @@ target
 .idea
 *.md
 AGENTS.md
-tests
+# NOTE: do NOT exclude `tests/` — it contains integration
+# tests that `cargo test --test <name>` in the Dockerfile
+# needs to compile and run as a build-time gate. Excluding
+# this dir made cargo fail with "no test target named
+# `app_js_syntax` in default-run packages".
 legacy-python
 frontend
 backend
