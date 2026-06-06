@@ -180,6 +180,56 @@ async fn set_watched_roundtrip() {
     assert!(!updated, "set_watched on missing episode must return false");
 }
 
+/// Bulk-fill semantics: marking ep N watched also marks 1..N watched,
+/// matching MAL / AniList UX for long series. Unwatch stays single-row
+/// so removing one earlier watched ep doesn't silently take down the
+/// later ones the user explicitly marked.
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL"]
+async fn set_watched_fills_below_on_watch_but_not_on_unwatch() {
+    let pool = setup().await;
+    for n in 1..=5 {
+        insert_episode(&pool, n, false).await;
+    }
+
+    // Mark ep 3 watched → 1, 2, 3 all watched.
+    let updated = set_watched(&pool, MAL_ID, 3, true).await.expect("mark 3");
+    assert!(updated);
+    for n in 1..=3 {
+        assert!(
+            read_watched_at(&pool, n).await.is_some(),
+            "ep {n} must be watched after bulk-fill from ep 3"
+        );
+    }
+    for n in 4..=5 {
+        assert!(
+            read_watched_at(&pool, n).await.is_none(),
+            "ep {n} must remain unwatched (above the bulk-fill point)"
+        );
+    }
+
+    // Mark ep 5 watched → 1..5 all watched.
+    let updated = set_watched(&pool, MAL_ID, 5, true).await.expect("mark 5");
+    assert!(updated);
+    for n in 1..=5 {
+        assert!(
+            read_watched_at(&pool, n).await.is_some(),
+            "ep {n} must be watched after bulk-fill to ep 5"
+        );
+    }
+
+    // Unwatch ep 2 → ONLY ep 2 cleared, 1, 3, 4, 5 still watched.
+    let updated = set_watched(&pool, MAL_ID, 2, false).await.expect("unwatch 2");
+    assert!(updated);
+    assert!(read_watched_at(&pool, 2).await.is_none(), "ep 2 unwatched");
+    for n in [1, 3, 4, 5] {
+        assert!(
+            read_watched_at(&pool, n).await.is_some(),
+            "ep {n} must stay watched after unwatching ep 2"
+        );
+    }
+}
+
 #[tokio::test]
 #[ignore = "requires TEST_DATABASE_URL"]
 async fn count_watched_returns_max_episode_number() {
