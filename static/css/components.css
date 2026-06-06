@@ -1811,6 +1811,13 @@ body.drawer-open {
     margin-top: 0.75rem;
 }
 
+/* Inline variant: genres / rating rendered inside drawer-hero-info
+ * (right column, next to the poster). Slightly tighter top margin
+ * so they sit close to the meta lines above. */
+.drawer-chips--inline {
+    margin-top: 0.5rem;
+}
+
 .drawer-divider {
     border-top: 1px solid var(--border);
     margin: 0.75rem 0;
@@ -1950,6 +1957,21 @@ body.drawer-open {
     align-items: center;
     gap: 0.5rem;
     flex-wrap: wrap;
+}
+
+/* Inline variant: user rating rendered inside drawer-hero-info.
+ * The label sits next to the stars (not above) and the row wraps
+ * to a second line if the column is too narrow. */
+.drawer-rating--inline {
+    margin-top: 0.5rem;
+}
+.drawer-rating--inline .drawer-section-label {
+    display: inline;
+    margin-bottom: 0;
+    margin-right: 0.25rem;
+}
+.drawer-rating--inline .drawer-stars {
+    margin: 0;
 }
 
 .drawer-stars {

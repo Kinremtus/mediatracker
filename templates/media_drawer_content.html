@@ -36,12 +36,40 @@
         <div class="drawer-meta-line">
             {% if !item.studios.is_empty() %}{{ item.studios[0] }}{% endif %}{% if !item.authors.is_empty() %}{% if !item.studios.is_empty() %} · {% endif %}{{ item.authors[0] }}{% endif %}{% if !item.publishers.is_empty() %}{% if !item.studios.is_empty() || !item.authors.is_empty() %} · {% endif %}{{ item.publishers[0] }}{% endif %}{% if !item.platforms.is_empty() %}{% if !item.studios.is_empty() || !item.authors.is_empty() || !item.publishers.is_empty() %} · {% endif %}{{ item.platforms[0] }}{% endif %}
         </div>
+
+        {% if !item.genres.is_empty() %}
+        <div class="drawer-chips drawer-chips--inline">
+            {% for g in item.genres.iter().take(5) %}<span class="chip chip-genre chip-sm">{{ g }}</span>{% endfor %}
+        </div>
+        {% endif %}
+
+        {% if let Some(tid) = tracking_id %}
+        <div class="drawer-rating drawer-rating--inline">
+            <span class="drawer-section-label">Твоя оценка</span>
+            <div class="drawer-stars">
+                {% for cls in star_classes %}
+                <button class="drawer-star {{ cls }}"
+                        onclick="setRatingHalf('{{ tid }}', {{ loop.index }}, event)"
+                        onmouseenter="previewRating(this, {{ loop.index }})"
+                        onmouseleave="resetRatingPreview(this)">★</button>
+                {% endfor %}
+            </div>
+            <span class="drawer-rating-value">{{ rating_display }}/10</span>
+        </div>
+        {% endif %}
     </div>
 </div>
 
-{% if !item.genres.is_empty() %}
-<div class="drawer-chips">
-    {% for g in item.genres.iter().take(5) %}<span class="chip chip-genre chip-sm">{{ g }}</span>{% endfor %}
+{# === DESCRIPTION (above episodes, collapsible) === #}
+{% if item.description.is_some() %}
+<div class="drawer-divider"></div>
+<div class="drawer-description" x-data="{ open: false }">
+    <button class="drawer-description-toggle" @click="open = !open">
+        Описание <span class="drawer-description-arrow" :class="{ 'rotated': open }">▾</span>
+    </button>
+    <div class="drawer-description-content" :class="{ 'expanded': open }">
+        <p>{{ item.description.as_ref().unwrap() }}</p>
+    </div>
 </div>
 {% endif %}
 
@@ -62,7 +90,7 @@
 </div>
 {% endif %}
 
-{# === PROGRESS ZONE (only if tracked) === #}
+{# === PROGRESS ZONE (only if tracked) — rating moved to hero === #}
 {% if let Some(tid) = tracking_id %}
 <div class="drawer-divider"></div>
 <div class="drawer-progress">
@@ -111,31 +139,5 @@
         {% endif %}
     </div>
     {% endif %}
-
-    <div class="drawer-rating">
-        <span class="drawer-section-label">Оценка</span>
-        <div class="drawer-stars">
-            {% for cls in star_classes %}
-            <button class="drawer-star {{ cls }}"
-                    onclick="setRatingHalf('{{ tid }}', {{ loop.index }}, event)"
-                    onmouseenter="previewRating(this, {{ loop.index }})"
-                    onmouseleave="resetRatingPreview(this)">★</button>
-            {% endfor %}
-        </div>
-        <span class="drawer-rating-value">{{ rating_display }}/10</span>
-    </div>
-</div>
-{% endif %}
-
-{# === INFO ZONE === #}
-{% if item.description.is_some() %}
-<div class="drawer-divider"></div>
-<div class="drawer-description" x-data="{ open: false }">
-    <button class="drawer-description-toggle" @click="open = !open">
-        Описание <span class="drawer-description-arrow" :class="{ 'rotated': open }">▾</span>
-    </button>
-    <div class="drawer-description-content" :class="{ 'expanded': open }">
-        <p>{{ item.description.as_ref().unwrap() }}</p>
-    </div>
 </div>
 {% endif %}

@@ -55,6 +55,15 @@ struct Cli {
     dry_run: bool,
     limit: Option<i64>,
     provider: Option<String>,
+    /// `--force`: re-fetch episodes for rows that already have `mal_id`.
+    /// Default mode targets only `mal_id IS NULL` rows. With `--force`
+    /// the target is `mal_id IS NOT NULL` rows (we skip the resolve +
+    /// UPDATE steps and go straight to `fetch_and_store_mal`). Useful
+    /// for refetching after a buggy Jikan fetch truncated a long series
+    /// (e.g. One Piece getting 200 of 1100+ episodes because of an
+    /// early 429). The UPSERT in `store_episodes_mal` is idempotent —
+    /// existing rows are updated in place, missing rows are inserted.
+    force: bool,
 }
 
 fn parse_args() -> Cli {
@@ -62,6 +71,7 @@ fn parse_args() -> Cli {
         dry_run: false,
         limit: None,
         provider: None,
+        force: false,
     };
     let mut args = env::args().skip(1);
     while let Some(a) = args.next() {
@@ -81,6 +91,7 @@ fn parse_args() -> Cli {
                 let v = args.next().expect("--provider requires a value");
                 cli.provider = Some(v);
             }
+            "--force" => cli.force = true,
             "--help" | "-h" => {
                 print_help();
                 std::process::exit(0);
@@ -100,10 +111,11 @@ fn print_help() {
         "backfill_anime — backfill mal_id and episodes for anime added before the Jikan migration\n\
          \n\
          USAGE:\n  \
-             backfill_anime [--dry-run] [--limit N] [--provider <name>]\n\
+             backfill_anime [--dry-run] [--force] [--limit N] [--provider <name>]\n\
          \n\
          OPTIONS:\n  \
              --dry-run        Show what would change without writing to DB or external APIs\n  \
+             --force          Re-fetch episodes for rows that already have a mal_id (UPSERT, idempotent)\n  \
              --limit N        Only process the first N rows (for smoke-testing)\n  \
              --provider NAME  Filter by provider (e.g. shikimori, mal)\n  \
              -h, --help       Show this message\n\
@@ -122,6 +134,7 @@ struct Summary {
     episodes_failed: i64,
     skipped: i64,
     failed: i64,
+    force_refetched: i64,
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -185,10 +198,15 @@ async fn run(
     // Build the SELECT. Provider filter is bound; LIMIT is inlined
     // (sqlx doesn't allow parameterised LIMIT, but we validated it
     // as a non-negative integer in parse_args).
-    let mut sql = String::from(
-        "SELECT id, provider, external_id, shikimori_id, title \
+    //
+    // Default mode targets `mal_id IS NULL` rows that need resolve+fetch.
+    // `--force` mode targets `mal_id IS NOT NULL` rows that just need
+    // a fresh episode fetch (UPSERT, idempotent).
+    let mal_id_filter = if cli.force { "IS NOT NULL" } else { "IS NULL" };
+    let mut sql = format!(
+        "SELECT id, provider, external_id, shikimori_id, title, mal_id \
          FROM media_items \
-         WHERE media_type = 'anime' AND mal_id IS NULL",
+         WHERE media_type = 'anime' AND mal_id {mal_id_filter}"
     );
     if cli.provider.is_some() {
         sql.push_str(" AND provider = $1");
@@ -214,6 +232,7 @@ async fn run(
     tracing::info!(
         total = summary.total,
         dry_run = cli.dry_run,
+        force = cli.force,
         limit = ?cli.limit,
         provider = ?cli.provider,
         "candidates selected"
@@ -232,6 +251,40 @@ async fn run(
         let external_id: String = row.get("external_id");
         let shikimori_id: Option<i64> = row.get("shikimori_id");
         let title: String = row.get("title");
+        let existing_mal_id: Option<i64> = row.get("mal_id");
+
+        // --force short-circuit: skip resolve+UPDATE, go straight to fetch.
+        if cli.force {
+            let Some(mal_id) = existing_mal_id else {
+                // Defensive: shouldn't happen because of the WHERE filter.
+                tracing::warn!(%id, "force mode: row has NULL mal_id, skipping");
+                summary.skipped += 1;
+                continue;
+            };
+            tracing::info!(
+                index = i + 1,
+                total = summary.total,
+                %provider,
+                %external_id,
+                mal_id,
+                "force refetching episodes"
+            );
+            if !cli.dry_run {
+                match episodes::fetch_and_store_mal(pool.clone(), mal, mal_id).await {
+                    Ok(n) => {
+                        summary.episodes_stored += n as i64;
+                        summary.force_refetched += 1;
+                        tracing::info!(mal_id, episodes = n, "episodes stored (force)");
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, mal_id, "force refetch failed");
+                        summary.episodes_failed += 1;
+                    }
+                }
+                tokio::time::sleep(BETWEEN_ITEMS_PAUSE).await;
+            }
+            continue;
+        }
 
         let cand = BackfillCandidate {
             id,
