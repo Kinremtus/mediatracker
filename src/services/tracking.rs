@@ -169,7 +169,20 @@ impl TrackingService {
         qb.push_bind(entry_id);
         qb.push(" AND user_id = ");
         qb.push_bind(user_id);
-        qb.push(" RETURNING *");
+        // Cast rating to float8 so sqlx can decode it into TrackingEntry's
+        // Option<f64>. tracking_entries.rating is NUMERIC(2,1) by the
+        // migration; decoding NUMERIC -> f64 needs the bigdecimal feature
+        // which we don't enable. get_user_entries already does this cast
+        // (see the SELECT in that fn) — we forgot it here, so an update on
+        // any entry with a rating set would 500 with 'mismatched types'
+        // even though the UPDATE itself succeeded. The 500 then caused
+        // htmx_update_tracking to issue a 303 Redirect, leaving UI and DB
+        // inconsistent.
+        qb.push(
+            " RETURNING id, user_id, media_id, status, \
+             rating::double precision AS rating, \
+             progress, created_at, updated_at",
+        );
 
         let entry = qb
             .build_query_as::<TrackingEntry>()
