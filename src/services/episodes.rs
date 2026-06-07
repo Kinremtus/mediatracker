@@ -66,6 +66,32 @@ pub async fn store_episodes_mal(
         .execute(pool)
         .await?;
     }
+
+    // Sync media_items.episodes = MAX(episode_number) of what we just
+    // stored, so the tracking card "X / Y эп." denominator matches
+    // reality. Jikan's /anime/{id}/episodes endpoint doesn't return the
+    // total; using the actual max from our own table is exact and
+    // doesn't need an extra Jikan round-trip. If we wrote zero episodes
+    // (e.g. movie), leave the column untouched — Shikimori/TMDB may
+    // have populated it correctly on add.
+    if !episodes.is_empty() {
+        sqlx::query(
+            r#"
+            UPDATE media_items
+            SET episodes = sub.max_ep
+            FROM (
+                SELECT MAX(episode_number) AS max_ep
+                FROM anime_episodes
+                WHERE provider = 'mal' AND external_id = $1
+            ) AS sub
+            WHERE media_items.provider = 'mal'
+              AND media_items.external_id = $1
+            "#,
+        )
+        .bind(mal_id.to_string())
+        .execute(pool)
+        .await?;
+    }
     Ok(())
 }
 
