@@ -16,6 +16,7 @@
 // dropped) per test run, so existing data is not touched.
 
 use mediatracker::models::media_item::CreateMediaItem;
+use mediatracker::models::tracking_entry::UpdateTracking;
 use mediatracker::services::tracking::TrackingService;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -170,4 +171,110 @@ async fn add_to_list_persists_shikimori_id_when_present() {
 
     assert_eq!(mal_id, Some(21));
     assert_eq!(shikimori_id, Some(21));
+}
+
+/// Regression test: tracking_entries.rating is NUMERIC(2,1) in the
+/// schema (so SQLx without the `bigdecimal` feature can't decode it
+/// into Rust `f64` directly). update_entry used to do `RETURNING *`
+/// which made `fetch_one::<TrackingEntry>` fail with
+/// "mismatched types: ... Option<f64> ... not compatible with NUMERIC"
+/// the moment any row had a rating set — even though the UPDATE
+/// itself succeeded. The 500 made htmx_update_tracking fall through
+/// to a 303 Redirect, leaving UI and DB inconsistent and producing
+/// the "press + on a card and the page breaks" bug. Fix: cast
+/// `rating::double precision AS rating` in the RETURNING list, same
+/// as get_user_entries already does.
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL"]
+async fn update_entry_decodes_numeric_rating_to_f64() {
+    let (pool, user_id) = setup().await;
+    let svc = TrackingService::new(pool.clone());
+
+    // Add the entry, then set a rating via direct SQL (mimics the
+    // user clicking a star in the drawer).
+    let media = fixture_mal_anime();
+    svc.add_to_list(user_id, &media, "in_progress")
+        .await
+        .expect("add_to_list");
+    let entry_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM tracking_entries WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .fetch_one(&pool)
+    .await
+    .expect("tracking entry exists");
+    sqlx::query("UPDATE tracking_entries SET rating = 9.0 WHERE id = $1")
+        .bind(entry_id)
+        .execute(&pool)
+        .await
+        .expect("set rating");
+
+    // Now bump progress — this is exactly what the + button does.
+    // Pre-fix: fetch_one fails on the NUMERIC rating column.
+    let update = UpdateTracking {
+        status: None,
+        rating: None,
+        progress: Some(1),
+    };
+    let returned = svc
+        .update_entry(entry_id, user_id, &update)
+        .await
+        .expect("update_entry must decode NUMERIC rating to Option<f64>");
+
+    assert_eq!(returned.progress, 1, "progress must be applied");
+    assert_eq!(
+        returned.rating,
+        Some(9.0),
+        "rating must be preserved (not reset, not corrupted) by update_entry"
+    );
+
+    // Verify in DB too — guards against update_entry silently
+    // overwriting rating because of a wrong UPDATE column list.
+    // Read rating as text to avoid pulling in the `bigdecimal` feature.
+    let (db_progress, db_rating): (i32, Option<String>) = sqlx::query_as(
+        "SELECT progress, rating::text FROM tracking_entries WHERE id = $1",
+    )
+    .bind(entry_id)
+    .fetch_one(&pool)
+    .await
+    .expect("read back");
+    assert_eq!(db_progress, 1);
+    assert_eq!(
+        db_rating.expect("rating set"),
+        "9.0",
+        "rating must be unchanged in DB"
+    );
+}
+
+/// Companion test: when no rating is set, update_entry still works
+/// (regression check for the cast-not-breaking-Option path).
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL"]
+async fn update_entry_with_null_rating_succeeds() {
+    let (pool, user_id) = setup().await;
+    let svc = TrackingService::new(pool.clone());
+
+    svc.add_to_list(user_id, &fixture_mal_anime(), "planned")
+        .await
+        .expect("add_to_list");
+    let entry_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM tracking_entries WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .fetch_one(&pool)
+    .await
+    .expect("entry exists");
+
+    let update = UpdateTracking {
+        status: Some("in_progress".to_string()),
+        rating: None,
+        progress: Some(5),
+    };
+    let returned = svc
+        .update_entry(entry_id, user_id, &update)
+        .await
+        .expect("update_entry with null rating must succeed");
+    assert_eq!(returned.progress, 5);
+    assert_eq!(returned.rating, None);
+    assert_eq!(returned.status, "in_progress");
 }
