@@ -63,9 +63,11 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // Episode checkbox toggle → server pushes HX-Trigger:
-    //   {"progressUpdated": {"maxWatched": N, "mediaId": "<uuid>"}}
-    // Update the drawer's "X / Y эп." text and any visible tracking
-    // card for the same media, in place without a refresh.
+    //   {"progressUpdated": {"maxWatched": N, "mediaId": "<uuid>"},
+    //    "episodesChanged": {"states": [[n, watched], ...]}}
+    // Update the drawer's "X / Y эп." text, sync every visible checkbox
+    // in the drawer to authoritative server state, and patch any tracking
+    // card for the same media — all without a refresh.
     document.body.addEventListener('progressUpdated', function(e) {
         const maxWatched = e.detail && e.detail.maxWatched;
         if (maxWatched == null) return;
@@ -98,6 +100,57 @@ document.addEventListener('DOMContentLoaded', function() {
             );
             if (valueEl) valueEl.textContent = String(maxWatched);
         }
+    });
+
+    // Server pushes authoritative per-episode state after every toggle.
+    // bulk-fill on watch flips 1..N rows; the HTMX response only swaps
+    // the clicked row's HTML, so the other checkboxes stay stale until
+    // we patch them here. states is an array of [episode_number, watched].
+    document.body.addEventListener('episodesChanged', function(e) {
+        const states = e.detail && e.detail.states;
+        if (!Array.isArray(states)) return;
+        // Only patch episodes currently rendered in the drawer/list.
+        // EpisodeItem root has data-episode-n="<n>".
+        const items = document.querySelectorAll('.episode-item[data-episode-n]');
+        if (items.length === 0) return;
+        // Build a lookup of visible episode numbers to avoid touching
+        // episodes that aren't in the DOM (e.g. collapsed sections).
+        const stateMap = new Map();
+        for (let i = 0; i < states.length; i++) {
+            const s = states[i];
+            if (Array.isArray(s) && s.length >= 2) {
+                stateMap.set(Number(s[0]), Boolean(s[1]));
+            }
+        }
+        items.forEach(function(item) {
+            const n = Number(item.getAttribute('data-episode-n'));
+            if (!stateMap.has(n)) return;
+            const watched = stateMap.get(n);
+            // Toggle the row's "watched" class.
+            if (watched) item.classList.add('episode-item--watched');
+            else item.classList.remove('episode-item--watched');
+            // Toggle the checkbox's class + glyph + title.
+            const btn = item.querySelector('.episode-item-checkbox');
+            if (btn) {
+                if (watched) btn.classList.add('episode-item-checkbox--checked');
+                else btn.classList.remove('episode-item-checkbox--checked');
+                btn.textContent = watched ? '\u2713' : '\u25CB';
+                btn.setAttribute(
+                    'title',
+                    watched ? 'Снять отметку' : 'Отметить просмотренным'
+                );
+            }
+            // Flip the form's hx-vals so the next click sends the inverse.
+            // htmx reads hx-vals on the next request, so just rewriting the
+            // attribute is enough — no need to call htmx.process.
+            const form = item.querySelector('form.episode-item-form');
+            if (form) {
+                form.setAttribute(
+                    'hx-vals',
+                    JSON.stringify({ watched: !watched })
+                );
+            }
+        });
     });
 
     // Flash notification on successful update

@@ -201,6 +201,30 @@ pub async fn set_watched(
     Ok(result.rows_affected() > 0)
 }
 
+/// Returns `(episode_number, watched)` pairs for every episode of an
+/// anime, ordered by `episode_number` ASC. Used by the toggle endpoint
+/// to broadcast authoritative state to the drawer so all visible
+/// checkboxes stay in sync with the DB (bulk-fill on watch can flip
+/// many rows in one go).
+pub async fn get_episode_states(
+    pool: &PgPool,
+    mal_id: i64,
+) -> Result<Vec<(i32, bool)>, sqlx::Error> {
+    let rows: Vec<(i32, bool)> = sqlx::query_as(
+        r#"
+        SELECT episode_number, watched
+        FROM anime_episodes
+        WHERE provider = 'mal'
+          AND external_id = $1
+        ORDER BY episode_number ASC
+        "#,
+    )
+    .bind(mal_id.to_string())
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
 /// Highest episode number currently marked watched for an anime.
 /// Returns 0 if nothing is watched (or no episodes exist).
 pub async fn count_watched(

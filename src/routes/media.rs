@@ -403,13 +403,29 @@ pub async fn set_episode_watched(
         _ => String::new(),
     };
 
+    // Pull authoritative state for ALL episodes so the drawer can sync
+    // every visible checkbox (bulk-fill on watch flips 1..N rows; the
+    // single-row HTMX swap only refreshes the clicked one).
+    let states = crate::services::episodes::get_episode_states(&state.db, mal_id)
+        .await
+        .unwrap_or_default();
+    let states_json: Vec<[serde_json::Value; 2]> = states
+        .into_iter()
+        .map(|(n, w)| [serde_json::Value::from(n), serde_json::Value::from(w)])
+        .collect();
+
     let mut trigger = serde_json::json!({
         "progressUpdated": {
             "maxWatched": max_watched,
+        },
+        "episodesChanged": {
+            "states": states_json,
         }
     });
     if let Some(media_id) = media_id {
-        trigger["progressUpdated"]["mediaId"] = serde_json::Value::String(media_id.to_string());
+        let id_str = serde_json::Value::String(media_id.to_string());
+        trigger["progressUpdated"]["mediaId"] = id_str.clone();
+        trigger["episodesChanged"]["mediaId"] = id_str;
     }
     let mut resp = Html(html).into_response();
     resp.headers_mut().insert(

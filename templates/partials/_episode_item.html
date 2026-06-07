@@ -1,5 +1,6 @@
 <div class="episode-item {% if episode.watched %}episode-item--watched{% endif %}"
-     id="episode-{{ episode.episode_number }}">
+     id="episode-{{ episode.episode_number }}"
+     data-episode-n="{{ episode.episode_number }}">
     <form class="episode-item-form"
           hx-post="/api/anime/{{ provider }}/{{ external_id }}/episodes/{{ episode.episode_number }}/watched"
           hx-vals='{"watched": {% if episode.watched %}false{% else %}true{% endif %}}'
