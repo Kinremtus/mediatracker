@@ -154,10 +154,15 @@ pub async fn lookup_mal_id(
 /// episode with `episode_number <= episode_number` is marked watched.
 /// This matches the standard "mark ep 200 watched → ep 1..200 watched"
 /// UX of MAL / AniList / Shikimori — users don't want to click 200
-/// checkboxes after binging a long series. Unwatch (`watched = false`)
-/// only flips the one row, by design: the user explicitly marked the
-/// later ones watched, and removing one earlier watched episode
-/// shouldn't silently take down the rest.
+/// checkboxes after binging a long series.
+///
+/// **Reverse bulk-fill on unwatch**: when `watched = false`, every
+/// episode with `episode_number >= episode_number` is marked unwatched.
+/// Un-checking is the mirror of checking: if I "haven't seen this one
+/// yet" I haven't seen anything past it either, so a single click rolls
+/// progress back. The same call is symmetric on both ends — the user
+/// gets one consistent mental model ("I am at episode N"), and `progress`
+/// follows naturally.
 ///
 /// Returns `true` if at least one row was updated (i.e. the target
 /// episode exists in the DB for this MAL id), `false` otherwise.
@@ -190,7 +195,7 @@ pub async fn set_watched(
                 watched_at = NULL
             WHERE provider = 'mal'
               AND external_id = $1
-              AND episode_number = $2
+              AND episode_number >= $2
             "#,
         )
         .bind(mal_id.to_string())
