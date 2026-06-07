@@ -180,13 +180,14 @@ async fn set_watched_roundtrip() {
     assert!(!updated, "set_watched on missing episode must return false");
 }
 
-/// Bulk-fill semantics: marking ep N watched also marks 1..N watched,
-/// matching MAL / AniList UX for long series. Unwatch stays single-row
-/// so removing one earlier watched ep doesn't silently take down the
-/// later ones the user explicitly marked.
+/// Bulk-fill semantics on watch AND reverse bulk-fill on unwatch.
+/// Marking ep N watched also marks 1..N watched (MAL / AniList UX for
+/// long series). Un-watching ep N is the mirror: it clears N and
+/// everything after it, matching the user's mental model of "I am at
+/// episode N" (if I haven't seen N, I haven't seen N+1, N+2, …).
 #[tokio::test]
 #[ignore = "requires TEST_DATABASE_URL"]
-async fn set_watched_fills_below_on_watch_but_not_on_unwatch() {
+async fn set_watched_bulk_fills_below_on_watch_and_cascades_above_on_unwatch() {
     let pool = setup().await;
     for n in 1..=5 {
         insert_episode(&pool, n, false).await;
@@ -218,15 +219,29 @@ async fn set_watched_fills_below_on_watch_but_not_on_unwatch() {
         );
     }
 
-    // Unwatch ep 2 → ONLY ep 2 cleared, 1, 3, 4, 5 still watched.
-    let updated = set_watched(&pool, MAL_ID, 2, false).await.expect("unwatch 2");
+    // Unwatch ep 3 → 3, 4, 5 all cleared; 1, 2 stay watched (reverse
+    // bulk-fill: "I am at ep 2, so 3+ are unwatched").
+    let updated = set_watched(&pool, MAL_ID, 3, false).await.expect("unwatch 3");
     assert!(updated);
-    assert!(read_watched_at(&pool, 2).await.is_none(), "ep 2 unwatched");
-    for n in [1, 3, 4, 5] {
+    for n in 1..=2 {
         assert!(
             read_watched_at(&pool, n).await.is_some(),
-            "ep {n} must stay watched after unwatching ep 2"
+            "ep {n} must stay watched (below the un-check point)"
         );
+    }
+    for n in 3..=5 {
+        assert!(
+            read_watched_at(&pool, n).await.is_none(),
+            "ep {n} must cascade-unwrap to the un-check point"
+        );
+    }
+
+    // Unwatch at the bottom: no-op below, but rows_affected > 0 because
+    // ep 1 itself flips.
+    let updated = set_watched(&pool, MAL_ID, 1, false).await.expect("unwatch 1");
+    assert!(updated);
+    for n in 1..=2 {
+        assert!(read_watched_at(&pool, n).await.is_none(), "ep {n} unwatched");
     }
 }
 
