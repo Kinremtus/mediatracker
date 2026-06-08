@@ -70,15 +70,16 @@ document.addEventListener('DOMContentLoaded', function() {
     // card for the same media — all without a refresh.
     document.body.addEventListener('progressUpdated', function(e) {
         const maxWatched = e.detail && e.detail.maxWatched;
-        if (maxWatched == null) return;
+        const maxRead = e.detail && e.detail.maxRead;
+        const progressValue = maxWatched != null ? maxWatched : maxRead;
+        if (progressValue == null) return;
         const text = document.querySelector('.drawer-progress-text');
         if (text) {
-            text.textContent = text.textContent.replace(/^\s*\d+/, String(maxWatched));
+            text.textContent = text.textContent.replace(/^\s*\d+/, String(progressValue));
         }
         const plusBtn = document.querySelector('.drawer-btn-increment');
         if (plusBtn) {
-            // Re-compute next_progress locally by reading the new current value
-            const newCurrent = maxWatched;
+            const newCurrent = progressValue;
             const totalMatch = text && text.textContent.match(/\/\s*(\d+)/);
             const total = totalMatch ? parseInt(totalMatch[1]) : null;
             if (total != null && newCurrent >= total) {
@@ -98,7 +99,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const valueEl = document.querySelector(
                 '.tracking-card[data-media-id="' + CSS.escape(mediaId) + '"] .tracking-progress-value'
             );
-            if (valueEl) valueEl.textContent = String(maxWatched);
+            if (valueEl) valueEl.textContent = String(progressValue);
         }
     });
 
@@ -148,6 +149,46 @@ document.addEventListener('DOMContentLoaded', function() {
                 form.setAttribute(
                     'hx-vals',
                     JSON.stringify({ watched: !watched })
+                );
+            }
+        });
+    });
+
+    // Chapter checkbox toggle — mirror of episodesChanged but for manga.
+    // Server pushes {"chaptersChanged": {"states": [[chapter_number, read], ...]}}
+    document.body.addEventListener('chaptersChanged', function(e) {
+        const states = e.detail && e.detail.states;
+        if (!Array.isArray(states)) return;
+        const items = document.querySelectorAll('.chapter-item[data-chapter-n]');
+        if (items.length === 0) return;
+        const stateMap = new Map();
+        for (let i = 0; i < states.length; i++) {
+            const s = states[i];
+            if (Array.isArray(s) && s.length >= 2) {
+                stateMap.set(Number(s[0]), Boolean(s[1]));
+            }
+        }
+        items.forEach(function(item) {
+            const n = Number(item.getAttribute('data-chapter-n'));
+            if (!stateMap.has(n)) return;
+            const read = stateMap.get(n);
+            if (read) item.classList.add('chapter-item--read');
+            else item.classList.remove('chapter-item--read');
+            const btn = item.querySelector('.chapter-item-checkbox');
+            if (btn) {
+                if (read) btn.classList.add('chapter-item-checkbox--checked');
+                else btn.classList.remove('chapter-item-checkbox--checked');
+                btn.textContent = read ? '\u2713' : '\u25CB';
+                btn.setAttribute(
+                    'title',
+                    read ? 'Снять отметку' : 'Отметить прочитанным'
+                );
+            }
+            const form = item.querySelector('form.chapter-item-form');
+            if (form) {
+                form.setAttribute(
+                    'hx-vals',
+                    JSON.stringify({ read: !read })
                 );
             }
         });

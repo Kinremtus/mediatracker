@@ -91,6 +91,23 @@
 </div>
 {% endif %}
 
+{# === CHAPTERS (manga-like types) === #}
+{% if item.media_type == "manga" || item.media_type == "manhwa" || item.media_type == "manhua" || item.media_type == "novel" || item.media_type == "other-comics" %}
+<div class="drawer-divider"></div>
+<div class="drawer-section drawer-section--collapsible" x-data="{ open: true }">
+    <button class="drawer-section-toggle" @click="open = !open" type="button">
+        Главы
+        <span class="drawer-section-arrow" :class="{ 'rotated': open }">▾</span>
+    </button>
+    <div class="drawer-chapters" x-show="open" x-cloak
+         hx-get="/api/manga/{{ item.provider }}/{{ item.external_id }}/chapters"
+         hx-trigger="revealed once"
+         hx-swap="innerHTML">
+        <div class="drawer-episodes-loading">Загрузка глав…</div>
+    </div>
+</div>
+{% endif %}
+
 {# === PROGRESS ZONE (only if tracked) — rating moved to hero === #}
 {% if let Some(tid) = tracking_id %}
 <div class="drawer-divider"></div>

@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod backfill;
+pub mod chapters;
 pub mod episodes;
 pub mod external;
 pub mod notifications;

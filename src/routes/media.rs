@@ -434,3 +434,209 @@ pub async fn set_episode_watched(
     );
     resp
 }
+
+// ─── CHAPTERS (manga-like types) ──────────────────────────────
+
+#[derive(Template)]
+#[template(path = "partials/_chapter_list.html")]
+struct ChapterListPartial {
+    chapters: Vec<crate::services::chapters::StoredChapter>,
+    provider: String,
+    external_id: String,
+}
+
+#[derive(Template)]
+#[template(path = "partials/_chapter_item.html")]
+struct ChapterItemPartial {
+    chapter: crate::services::chapters::StoredChapter,
+    formatted_chapter: String,
+    provider: String,
+    external_id: String,
+}
+
+#[derive(Deserialize)]
+pub struct SetReadForm {
+    #[serde(default)]
+    pub read: bool,
+}
+
+/// Lazy-loaded chapter list for manga-like drawer sections.
+/// Chapters are stored under provider="mangaupdates", external_id=series_id.
+/// If chapters aren't in the DB yet, trigger a synchronous fetch from
+/// MangaUpdates `latest_chapter` to build the skeleton.
+pub async fn get_chapters(
+    State(state): State<AppState>,
+    Path((provider, external_id)): Path<(String, String)>,
+) -> impl IntoResponse {
+    // For mangaupdates the storage key is (provider, external_id) as-is.
+    // For other sources we'd need a lookup — for now handle mangaupdates directly.
+    let (mu_provider, mu_id) = match provider.as_str() {
+        "mangaupdates" => ("mangaupdates", external_id.clone()),
+        _ => {
+            // Attempt to find the mangaupdates series_id via media_items.
+            let lookup: Option<(String, String)> = sqlx::query_as(
+                r#"
+                SELECT provider, external_id FROM media_items
+                WHERE id IN (
+                    SELECT mi2.id FROM media_items mi2
+                    WHERE mi2.provider = 'mangaupdates'
+                      AND mi2.title ILIKE (
+                          SELECT title FROM media_items WHERE provider = $1 AND external_id = $2
+                      )
+                    LIMIT 1
+                )
+                "#,
+            )
+            .bind(&provider)
+            .bind(&external_id)
+            .fetch_optional(&state.db)
+            .await
+            .unwrap_or(None);
+            match lookup {
+                Some((p, eid)) => (p, eid),
+                None => ("mangaupdates", external_id.clone()),
+            }
+        }
+    };
+
+    // Try DB first.
+    let existing = crate::services::chapters::get_chapters(
+        &state.db, &mu_provider, &mu_id,
+    )
+    .await
+    .unwrap_or_default();
+
+    // If empty, try to fetch the latest_chapter from MangaUpdates and build skeleton.
+    if existing.is_empty() {
+        if let Ok(series_id_num) = mu_id.parse::<i64>() {
+            let details = crate::services::external::mangaupdates::MangaUpdatesService::new()
+                .get_details(&mu_id)
+                .await;
+
+            if let Ok(details) = details {
+                let lc = details.chapters.map(|v| v as i32).unwrap_or(0);
+                if lc > 0 {
+                    if let Err(e) = crate::services::chapters::store_chapters_mu(
+                        &state.db, series_id_num, lc,
+                    )
+                    .await
+                    {
+                        tracing::warn!(series_id_num, error = %e, "store_chapters_mu failed");
+                    }
+                }
+            }
+        }
+    }
+
+    let chapters = crate::services::chapters::get_chapters(
+        &state.db, &mu_provider, &mu_id,
+    )
+    .await
+    .unwrap_or_default();
+
+    let html = ChapterListPartial {
+        chapters,
+        provider: mu_provider.to_string(),
+        external_id: mu_id,
+    }
+    .render()
+    .unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "chapter list render failed");
+        String::new()
+    });
+    Html(html)
+}
+
+/// Toggle `read` for a single chapter with bulk-fill semantics:
+/// read N → 1..N marked read; unread N → N..max marked unread.
+///
+/// Emits `progressUpdated` + `chaptersChanged` HX-Trigger events.
+pub async fn set_chapter_read(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Path((provider, external_id, chapter_number)): Path<(String, String, i32)>,
+    Form(form): Form<SetReadForm>,
+) -> impl IntoResponse {
+    // Resolve media_items.id for this chapter.
+    let media_id: Option<Uuid> = crate::services::chapters::lookup_media_id(
+        &state.db, &provider, &external_id,
+    )
+    .await
+    .unwrap_or(None);
+
+    if let Err(e) = crate::services::chapters::set_read(
+        &state.db, &provider, &external_id, chapter_number, form.read,
+    )
+    .await
+    {
+        tracing::warn!(provider, external_id, chapter_number, error = %e, "set_read failed");
+        return Html(String::new()).into_response();
+    }
+
+    // Recompute progress.
+    let max_read = crate::services::chapters::count_read(
+        &state.db, &provider, &external_id,
+    )
+    .await
+    .unwrap_or(0);
+
+    if let Some(media_id) = media_id {
+        if let Err(e) = crate::services::chapters::update_progress_from_read(
+            &state.db, user.id, media_id, max_read,
+        )
+        .await
+        {
+            tracing::warn!(error = %e, "update_progress_from_read failed");
+        }
+    }
+
+    // Render updated row.
+    let chapter = crate::services::chapters::get_chapter(
+        &state.db, &provider, &external_id, chapter_number,
+    )
+    .await
+    .unwrap_or(None);
+
+    let html = match chapter {
+        Some(ch) => ChapterItemPartial {
+            formatted_chapter: crate::services::chapters::format_chapter(ch.chapter_number),
+            chapter: ch,
+            provider: provider.clone(),
+            external_id: external_id.clone(),
+        }
+        .render()
+        .unwrap_or_default(),
+        None => String::new(),
+    };
+
+    // Build HX-Trigger with full chapter states.
+    let states = crate::services::chapters::get_chapter_states(
+        &state.db, &provider, &external_id,
+    )
+    .await
+    .unwrap_or_default();
+    let states_json: Vec<[serde_json::Value; 2]> = states
+        .into_iter()
+        .map(|(n, r)| [serde_json::Value::from(n), serde_json::Value::from(r)])
+        .collect();
+
+    let mut trigger = serde_json::json!({
+        "progressUpdated": {
+            "maxRead": max_read,
+        },
+        "chaptersChanged": {
+            "states": states_json,
+        }
+    });
+    if let Some(media_id) = media_id {
+        let id_str = serde_json::Value::String(media_id.to_string());
+        trigger["progressUpdated"]["mediaId"] = id_str.clone();
+        trigger["chaptersChanged"]["mediaId"] = id_str;
+    }
+    let mut resp = Html(html).into_response();
+    resp.headers_mut().insert(
+        "HX-Trigger",
+        trigger.to_string().parse().unwrap(),
+    );
+    resp
+}
