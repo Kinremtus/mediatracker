@@ -470,7 +470,7 @@ pub async fn get_chapters(
     // For mangaupdates the storage key is (provider, external_id) as-is.
     // For other sources we'd need a lookup — for now handle mangaupdates directly.
     let (mu_provider, mu_id) = match provider.as_str() {
-        "mangaupdates" => ("mangaupdates", external_id.clone()),
+        "mangaupdates" => ("mangaupdates".to_string(), external_id.clone()),
         _ => {
             // Attempt to find the mangaupdates series_id via media_items.
             let lookup: Option<(String, String)> = sqlx::query_as(
