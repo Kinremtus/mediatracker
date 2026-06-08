@@ -13,7 +13,7 @@
         </button>
     </form>
     <div class="chapter-item-number">
-        {% if chapter.volume.is_some() %}<span class="chapter-item-volume">T{{ chapter.volume.unwrap() }}</span> {% endif %}Гл. {{ formatted_chapter }}
+        {% if chapter.volume.is_some() %}<span class="chapter-item-volume">T{{ chapter.volume.unwrap() }}</span> {% endif %}Гл. {{ chapter.formatted() }}
     </div>
     <div class="chapter-item-content">
         {% if let Some(en) = chapter.title_en %}

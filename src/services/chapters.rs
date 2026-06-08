@@ -1,6 +1,6 @@
 use sqlx::PgPool;
 
-use crate::services::external::mangaupdates::MangaUpdatesService;
+
 
 /// Chapter as returned to the template layer.
 #[derive(Debug, Clone)]
@@ -11,6 +11,12 @@ pub struct StoredChapter {
     pub title_ru: Option<String>,
     pub release_date: Option<chrono::NaiveDate>,
     pub read: bool,
+}
+
+impl StoredChapter {
+    pub fn formatted(&self) -> String {
+        format_chapter(self.chapter_number)
+    }
 }
 
 /// Chapter number stored in DB as integer * 10 (105 = chapter 10.5).
@@ -112,7 +118,7 @@ pub async fn store_chapters_mu(
         .await?;
     }
 
-    Ok(count)
+    Ok(count as usize)
 }
 
 /// Read all chapters for one manga, sorted by number ascending.

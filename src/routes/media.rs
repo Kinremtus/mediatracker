@@ -449,7 +449,6 @@ struct ChapterListPartial {
 #[template(path = "partials/_chapter_item.html")]
 struct ChapterItemPartial {
     chapter: crate::services::chapters::StoredChapter,
-    formatted_chapter: String,
     provider: String,
     external_id: String,
 }
@@ -494,7 +493,7 @@ pub async fn get_chapters(
             .unwrap_or(None);
             match lookup {
                 Some((p, eid)) => (p, eid),
-                None => ("mangaupdates", external_id.clone()),
+                None => ("mangaupdates".to_string(), external_id.clone()),
             }
         }
     };
@@ -537,7 +536,7 @@ pub async fn get_chapters(
     let html = ChapterListPartial {
         chapters,
         provider: mu_provider.to_string(),
-        external_id: mu_id,
+        external_id: mu_id.to_string(),
     }
     .render()
     .unwrap_or_else(|e| {
@@ -599,7 +598,6 @@ pub async fn set_chapter_read(
 
     let html = match chapter {
         Some(ch) => ChapterItemPartial {
-            formatted_chapter: crate::services::chapters::format_chapter(ch.chapter_number),
             chapter: ch,
             provider: provider.clone(),
             external_id: external_id.clone(),
