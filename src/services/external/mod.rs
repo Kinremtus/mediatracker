@@ -1,6 +1,7 @@
 pub mod google_books;
 pub mod igdb;
 pub mod mal;
+pub mod mangadex;
 pub mod mangaupdates;
 pub mod openlibrary;
 pub mod rawg;

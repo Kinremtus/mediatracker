@@ -1,4 +1,6 @@
+use crate::services::external::mangadex::MangaDexService;
 use sqlx::PgPool;
+use std::collections::HashMap;
 
 
 
@@ -343,6 +345,86 @@ pub async fn lookup_media_id(
     Ok(row.map(|(v,)| v))
 }
 
+/// Enrich chapter titles from MangaDex.
+/// Searches MangaDex by the manga title from media_items,
+/// fetches chapter list, and updates title_en/title_ru/volume
+/// for matching chapter numbers.
+pub async fn enrich_from_mangadex(
+    pool: &PgPool,
+    provider: &str,
+    external_id: &str,
+) -> Result<usize, anyhow::Error> {
+    // Get manga title from media_items
+    let title: Option<String> = sqlx::query_scalar(
+        "SELECT title FROM media_items WHERE provider = $1 AND external_id = $2",
+    )
+    .bind(provider)
+    .bind(external_id)
+    .fetch_optional(pool)
+    .await?;
+
+    let Some(title) = title else {
+        return Ok(0);
+    };
+
+    // Search MangaDex
+    let md = MangaDexService::new();
+    let search_results = md.search_manga(&title).await?;
+    if search_results.is_empty() {
+        return Ok(0);
+    }
+
+    // Use first result
+    let manga_id = &search_results[0].id;
+    let md_chapters = md.get_chapters(manga_id).await?;
+
+    // Build lookup: chapter_number_10 -> (title_en, title_ru, volume)
+    let mut md_map: HashMap<i32, (Option<String>, Option<String>, Option<i32>)> = HashMap::new();
+    for ch in md_chapters {
+        if let Some(ch_num_10) = ch.chapter_number_10() {
+            let vol = ch.volume.as_ref().and_then(|v| v.parse::<i32>().ok());
+            let (en, ru) = match ch.translated_language.as_str() {
+                "en" => (ch.title.clone(), None),
+                "ru" => (None, ch.title.clone()),
+                _ => (None, None),
+            };
+            md_map
+                .entry(ch_num_10)
+                .and_modify(|(e, r, v)| {
+                    if e.is_none() { *e = en.clone(); }
+                    if r.is_none() { *r = ru.clone(); }
+                    if v.is_none() { *v = vol; }
+                })
+                .or_insert((en, ru, vol));
+        }
+    }
+
+    // Update series_chapters
+    let mut updated = 0;
+    for (ch_num_10, (en, ru, vol)) in md_map {
+        let result = sqlx::query(
+            r#"
+            UPDATE series_chapters
+            SET title_en = COALESCE(title_en, $3),
+                title_ru = COALESCE(title_ru, $4),
+                volume = COALESCE(volume, $5)
+            WHERE provider = $1 AND external_id = $2 AND chapter_number = $3
+            "#,
+        )
+        .bind(provider)
+        .bind(external_id)
+        .bind(ch_num_10)
+        .bind(&en)
+        .bind(&ru)
+        .bind(vol)
+        .execute(pool)
+        .await?;
+        updated += result.rows_affected() as usize;
+    }
+
+    Ok(updated)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -380,5 +462,42 @@ mod tests {
         assert_eq!(parse_chapter("abc"), None);
         assert_eq!(parse_chapter(""), None);
         assert_eq!(parse_chapter("1.2.3"), None);
+    }
+
+    #[test]
+    fn stored_chapter_formatted() {
+        let ch = StoredChapter {
+            chapter_number: 105,
+            volume: Some(10),
+            title_en: Some("Test".to_string()),
+            title_ru: None,
+            release_date: None,
+            read: false,
+        };
+        assert_eq!(ch.formatted(), "10.5");
+
+        let ch2 = StoredChapter {
+            chapter_number: 20,
+            volume: None,
+            title_en: None,
+            title_ru: None,
+            release_date: None,
+            read: true,
+        };
+        assert_eq!(ch2.formatted(), "2");
+    }
+
+    #[test]
+    fn parse_chapter_edge_cases() {
+        // Multiple digits after decimal - only first counts
+        assert_eq!(parse_chapter("10.50"), Some(105));
+        assert_eq!(parse_chapter("10.05"), Some(100));
+        assert_eq!(parse_chapter("10.99"), Some(109));
+        // Leading zeros in fractional part
+        assert_eq!(parse_chapter("1.05"), Some(10));
+        // No whole part
+        assert_eq!(parse_chapter(".5"), None);
+        // Negative not supported
+        assert_eq!(parse_chapter("-1"), None);
     }
 }
