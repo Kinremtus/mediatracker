@@ -34,6 +34,7 @@ pub fn format_chapter(chapter_number: i32) -> String {
 }
 
 /// Parse a chapter string like "10" or "10.5" into the stored integer.
+/// Only first digit after decimal is kept (tenths): "10.5" → 105, "10.05" → 100.
 pub fn parse_chapter(s: &str) -> Option<i32> {
     let s = s.trim();
     let parts: Vec<&str> = s.split('.').collect();
@@ -44,14 +45,9 @@ pub fn parse_chapter(s: &str) -> Option<i32> {
         }
         2 => {
             let whole: i32 = parts[0].parse().ok()?;
-            let mut frac_str = parts[1].to_string();
-            // Normalize: "5" → "50", "50" → "50", "500" → "500" (but cap at 1 digit)
-            if frac_str.len() == 1 {
-                frac_str.push('0');
-            } else if frac_str.len() > 2 {
-                frac_str.truncate(2);
-            }
-            let frac: i32 = frac_str.parse().ok()?;
+            let frac_str = parts[1];
+            // Take only first digit (tenths). "5"→5, "50"→5, "05"→0.
+            let frac: i32 = frac_str.chars().next()?.to_digit(10)? as i32;
             Some(whole * 10 + frac)
         }
         _ => None,
