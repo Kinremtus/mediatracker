@@ -1,9 +1,7 @@
-use crate::models::media_item::CreateMediaItem;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::collections::HashMap;
-use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct MangaDexService {
@@ -43,8 +41,8 @@ impl MangaDexService {
                 break;
             }
 
-            for chapter in data.data {
-                chapters.push(chapter.attributes);
+            for chapter in &data.data {
+                chapters.push(chapter.attributes.clone());
             }
 
             if data.data.len() < LIMIT as usize {

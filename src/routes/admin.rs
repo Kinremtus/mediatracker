@@ -5,7 +5,7 @@ use axum::{
     Form,
 };
 use serde::Deserialize;
-use sqlx::PgPool;
+use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::app_state::AppState;
