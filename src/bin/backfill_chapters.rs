@@ -9,11 +9,11 @@
 //!   --external-id    Enrich single manga by external_id
 //!   --limit          Max items to process (default: 100)
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use clap::Parser;
 use mediatracker::config::Config;
 use mediatracker::services::chapters::enrich_from_mangadex;
-use sqlx::PgPool;
+use sqlx::{PgPool, Row};
 use std::time::Duration;
 use tracing::{info, warn};
 
@@ -49,7 +49,7 @@ async fn main() -> Result<()> {
         .init();
 
     let args = Args::parse();
-    let config = Config::from_env()?;
+    let config = Config::from_env().map_err(|e| anyhow!("config error: {}", e))?;
 
     let pool = PgPool::connect(&config.database_url).await?;
     sqlx::migrate!("./migrations").run(&pool).await?;
