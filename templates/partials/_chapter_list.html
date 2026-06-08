@@ -1,0 +1,9 @@
+{% if chapters.is_empty() %}
+<div class="chapter-list-empty">Главы не загружены</div>
+{% else %}
+<div class="chapter-list">
+    {% for chapter in chapters %}
+    {% include "partials/_chapter_item.html" %}
+    {% endfor %}
+</div>
+{% endif %}

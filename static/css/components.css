@@ -628,6 +628,104 @@
     opacity: 0.55;
 }
 
+/* --- Chapter items (manga-like types: identical structure to episodes) --- */
+.chapter-list {
+    max-height: 400px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+}
+.chapter-list-empty {
+    padding: 1rem;
+    text-align: center;
+    color: var(--muted-foreground);
+    font-size: 0.9em;
+}
+.chapter-item {
+    display: grid;
+    grid-template-columns: 40px 70px 1fr;
+    gap: 8px;
+    padding: 8px 10px;
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+}
+.chapter-item:last-child {
+    border-bottom: none;
+}
+.chapter-item-form {
+    margin: 0;
+    display: grid;
+    place-items: center;
+    line-height: 0;
+}
+.chapter-item-checkbox {
+    width: 32px;
+    height: 32px;
+    background: transparent;
+    color: var(--muted-foreground);
+    display: grid;
+    place-items: center;
+    line-height: 0;
+    font-size: 18px;
+    cursor: pointer;
+    padding: 0;
+    margin: 0;
+    border: 0;
+    transition: color 0.15s, transform 0.1s;
+    -webkit-appearance: none;
+    appearance: none;
+    outline: none;
+}
+.chapter-item-checkbox:hover {
+    color: var(--in-progress);
+}
+.chapter-item-checkbox:active {
+    transform: scale(0.9);
+}
+.chapter-item-checkbox--checked,
+.chapter-item-checkbox--checked:hover {
+    color: var(--in-progress);
+}
+.chapter-item-number {
+    font-size: 12px;
+    color: var(--muted-foreground);
+    font-weight: 500;
+}
+.chapter-item-volume {
+    font-size: 10px;
+    background: var(--surface-elevated);
+    padding: 1px 4px;
+    border-radius: var(--radius-sm);
+}
+.chapter-item-content {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+}
+.chapter-item-line1 {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--foreground);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.chapter-item-line2 {
+    font-size: 11px;
+    color: var(--muted-foreground);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.chapter-item--read .chapter-item-line1,
+.chapter-item--read .chapter-item-line2 {
+    text-decoration: line-through;
+    opacity: 0.55;
+}
+.chapter-item--read .chapter-item-number {
+    opacity: 0.55;
+}
+
 /* --- Search status buttons (in media card) ---
    4 icon-buttons ▶ ⏰ ✓ ✕ in a 1×4 grid at the bottom of the card.
    On hover, a label banner appears ABOVE the card (full-width, overlay)

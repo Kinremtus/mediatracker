@@ -1,0 +1,31 @@
+<div class="chapter-item {% if chapter.read %}chapter-item--read{% endif %}"
+     id="chapter-{{ chapter.chapter_number }}"
+     data-chapter-n="{{ chapter.chapter_number }}">
+    <form class="chapter-item-form"
+          hx-post="/api/manga/{{ provider }}/{{ external_id }}/chapters/{{ chapter.chapter_number }}/read"
+          hx-vals='{"read": {% if chapter.read %}false{% else %}true{% endif %}}'
+          hx-target="#chapter-{{ chapter.chapter_number }}"
+          hx-swap="outerHTML">
+        <button type="submit"
+                class="chapter-item-checkbox {% if chapter.read %}chapter-item-checkbox--checked{% endif %}"
+                title="{% if chapter.read %}Снять отметку{% else %}Отметить прочитанным{% endif %}">
+            {% if chapter.read %}✓{% else %}○{% endif %}
+        </button>
+    </form>
+    <div class="chapter-item-number">
+        {% if chapter.volume.is_some() %}<span class="chapter-item-volume">T{{ chapter.volume.unwrap() }}</span> {% endif %}Гл. {{ formatted_chapter }}
+    </div>
+    <div class="chapter-item-content">
+        {% if let Some(en) = chapter.title_en %}
+        <div class="chapter-item-line1">{{ en }}</div>
+        {% endif %}
+        {% if let Some(ru) = chapter.title_ru %}
+        <div class="chapter-item-line1">{% if chapter.title_en.is_none() %}{{ ru }}{% endif %}</div>
+        {% endif %}
+        {% if chapter.release_date.is_some() %}
+        <div class="chapter-item-line2">
+            {% if let Some(d) = chapter.release_date %}{{ d.format("%-d %b %Y") }}{% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
