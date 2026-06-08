@@ -11,6 +11,7 @@ use uuid::Uuid;
 use crate::app_state::AppState;
 use crate::middleware::CurrentUser;
 use crate::models::media_item::CreateMediaItem;
+use crate::services::chapters::enrich_from_mangadex;
 use super::home::SidebarStats;
 
 #[derive(Template)]
@@ -252,6 +253,88 @@ async fn render_with_error(
         error,
         refreshed: None,
         total: None,
+    };
+    Html(template.render().unwrap()).into_response()
+}
+
+#[derive(Deserialize)]
+pub struct EnrichChaptersForm {
+    #[serde(default)]
+    pub provider: Option<String>,
+    #[serde(default)]
+    pub external_id: Option<String>,
+}
+
+pub async fn post_enrich_chapters(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Form(form): Form<EnrichChaptersForm>,
+) -> impl IntoResponse {
+    if !require_admin(&user) {
+        return Redirect::to("/").into_response();
+    }
+
+    let db: &PgPool = &state.db;
+
+    let query = if let (Some(provider), Some(external_id)) = (form.provider, form.external_id) {
+        // Single manga
+        sqlx::query("SELECT provider, external_id FROM media_items WHERE provider = $1 AND external_id = $2 AND media_type IN ('manga','manhwa','manhua','novel','other-comics')")
+            .bind(&provider)
+            .bind(&external_id)
+            .fetch_all(db)
+            .await
+    } else {
+        // All manga-like items without titles
+        sqlx::query(
+            r#"
+            SELECT mi.provider, mi.external_id FROM media_items mi
+            WHERE mi.media_type IN ('manga','manhwa','manhua','novel','other-comics')
+            AND NOT EXISTS (
+                SELECT 1 FROM series_chapters sc
+                WHERE sc.provider = mi.provider AND sc.external_id = mi.external_id
+                AND (sc.title_en IS NOT NULL OR sc.title_ru IS NOT NULL)
+                LIMIT 1
+            )
+            "#,
+        )
+        .fetch_all(db)
+        .await
+    };
+
+    let rows = match query {
+        Ok(r) => r,
+        Err(e) => {
+            return render_with_error(&state, &user, format!("DB error: {}", e)).await;
+        }
+    };
+
+    let total = rows.len();
+    let mut enriched = 0usize;
+    let mut failed = 0usize;
+
+    for row in rows {
+        let (provider, external_id): (String, String) = (row.get(0), row.get(1));
+        match enrich_from_mangadex(db, &provider, &external_id).await {
+            Ok(count) => enriched += count,
+            Err(e) => {
+                tracing::warn!("enrich_from_mangadex failed for {}/{}: {}", provider, external_id, e);
+                failed += 1;
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+
+    let stats = get_sidebar_stats(&state, &user).await;
+    let message = format!("Обогащено глав: {} (объектов: {}, ошибок: {})", enriched, total, failed);
+    let template = AdminTemplate {
+        username: user.username,
+        role: user.role,
+        stats,
+        active_page: "admin".to_string(),
+        message,
+        error: String::new(),
+        refreshed: Some(enriched),
+        total: Some(total),
     };
     Html(template.render().unwrap()).into_response()
 }

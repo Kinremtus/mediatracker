@@ -533,6 +533,19 @@ pub async fn get_chapters(
     .await
     .unwrap_or_default();
 
+    // Auto-enrich from MangaDex if chapters lack titles (async, non-blocking)
+    let needs_enrich = chapters.iter().any(|c| c.title_en.is_none() && c.title_ru.is_none());
+    if needs_enrich {
+        let db = state.db.clone();
+        let prov = mu_provider.to_string();
+        let ext_id = mu_id.to_string();
+        tokio::spawn(async move {
+            if let Err(e) = crate::services::chapters::enrich_from_mangadex(&db, &prov, &ext_id).await {
+                tracing::warn!(provider=%prov, external_id=%ext_id, error=%e, "MangaDex enrichment failed");
+            }
+        });
+    }
+
     let html = ChapterListPartial {
         chapters,
         provider: mu_provider.to_string(),

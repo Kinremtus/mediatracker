@@ -72,6 +72,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/settings/telegram/test", axum::routing::post(settings::htmx_test_telegram))
         .route("/admin", get(admin::get_admin_panel))
         .route("/admin/refresh-details", axum::routing::post(admin::post_refresh_details))
+        .route("/admin/enrich-chapters", axum::routing::post(admin::post_enrich_chapters))
         .layer(from_fn_with_state(state.clone(), auth_middleware));
 
     // Combine routes
