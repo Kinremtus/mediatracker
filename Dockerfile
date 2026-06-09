@@ -26,7 +26,7 @@ COPY . .
 # invocation, so we run them as two separate commands.)
 RUN cargo test --lib
 RUN cargo test --test app_js_syntax
-RUN cargo build --release --bin mediatracker --bin backfill_anime
+RUN cargo build --release --bin mediatracker --bin backfill_anime --bin backfill_chapters
 
 # Runtime stage: minimal debian + the binary + static + migrations
 FROM debian:bookworm-slim
@@ -35,6 +35,7 @@ RUN adduser --disabled-password --no-create-home appuser
 WORKDIR /app
 COPY --from=builder /app/target/release/mediatracker /app/mediatracker
 COPY --from=builder /app/target/release/backfill_anime /app/backfill_anime
+COPY --from=builder /app/target/release/backfill_chapters /app/backfill_chapters
 COPY --from=builder /app/static /app/static
 COPY --from=builder /app/migrations /app/migrations
 RUN chown -R appuser:appuser /app
