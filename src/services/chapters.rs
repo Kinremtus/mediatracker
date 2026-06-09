@@ -415,9 +415,9 @@ pub async fn enrich_from_mangadex(
         let result = sqlx::query(
             r#"
             UPDATE series_chapters
-            SET title_en = COALESCE(title_en, $3),
-                title_ru = COALESCE(title_ru, $4),
-                volume = COALESCE(volume, $5)
+            SET title_en = COALESCE(title_en, $4),
+                title_ru = COALESCE(title_ru, $5),
+                volume = COALESCE(volume, $6)
             WHERE provider = $1 AND external_id = $2 AND chapter_number = $3
             "#,
         )
