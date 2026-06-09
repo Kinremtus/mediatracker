@@ -22,7 +22,6 @@ COPY . .
 # Test gate + release build with BuildKit cache mounts for incremental reuse
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/app/target \
     cargo test --lib && \
     cargo test --test app_js_syntax && \
     cargo build --release --bin mediatracker --bin backfill_anime --bin backfill_chapters
