@@ -28,17 +28,22 @@ jobs:
             echo "📌 Synced to: $(git rev-parse --short HEAD)"
 
             # Build with layer cache (survives docker system prune -a)
-            mkdir -p /tmp/docker-cache /tmp/docker-cache-new
+            mkdir -p /tmp/docker-cache-new
             docker buildx create --use --name mediatracker-builder \
               --driver docker-container --bootstrap 2>/dev/null || true
-            docker buildx build \
-              --cache-from type=local,src=/tmp/docker-cache \
+            if [ -f /tmp/docker-cache/index.json ]; then
+              CACHE_FROM="--cache-from type=local,src=/tmp/docker-cache"
+            else
+              CACHE_FROM=""
+              echo "⚠️  Cache пуст, полная сборка с нуля"
+            fi
+            docker buildx build $CACHE_FROM \
               --cache-to type=local,dest=/tmp/docker-cache-new,mode=max \
               -t mediatracker_app:latest \
               --load .
 
             # Atomic cache swap
-            rm -rf /tmp/docker-cache && mv /tmp/docker-cache-new /tmp/docker-cache
+            rm -rf /tmp/docker-cache 2>/dev/null; mv /tmp/docker-cache-new /tmp/docker-cache
 
             docker compose down -t 0
             docker rm -f mediatracker-db-1 mediatracker-app-1 mediatracker-nginx-1 2>/dev/null || true
