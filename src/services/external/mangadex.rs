@@ -131,7 +131,9 @@ pub struct MangaDexChapter {
     pub title: Option<String>,
     pub chapter: String,
     pub volume: Option<String>,
+    #[serde(rename = "translatedLanguage")]
     pub translated_language: String,
+    #[serde(rename = "publishAt")]
     pub publish_at: Option<String>,
 }
 
