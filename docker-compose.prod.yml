@@ -1,6 +1,7 @@
 services:
   app:
     build: .
+    image: mediatracker_app:latest
     expose:
       - "8080"
     env_file:

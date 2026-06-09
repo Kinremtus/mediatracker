@@ -27,11 +27,24 @@ jobs:
             git reset --hard origin/main
             echo "📌 Synced to: $(git rev-parse --short HEAD)"
 
+            # Build with layer cache (survives docker system prune -a)
+            mkdir -p /tmp/docker-cache /tmp/docker-cache-new
+            docker buildx create --use --name mediatracker-builder \
+              --driver docker-container --bootstrap 2>/dev/null || true
+            docker buildx build \
+              --cache-from type=local,src=/tmp/docker-cache \
+              --cache-to type=local,dest=/tmp/docker-cache-new,mode=max \
+              -t mediatracker_app:latest \
+              --load .
+
+            # Atomic cache swap
+            rm -rf /tmp/docker-cache && mv /tmp/docker-cache-new /tmp/docker-cache
+
             docker compose down -t 0
             docker rm -f mediatracker-db-1 mediatracker-app-1 mediatracker-nginx-1 2>/dev/null || true
             sleep 3
 
-            DOCKER_BUILDKIT=1 docker compose up --build -d
+            docker compose up -d
 
             echo "⏳ Ждём запуска сервиса..."
             sleep 15
