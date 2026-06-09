@@ -10,16 +10,35 @@ pub struct MangaDexService {
 
 impl MangaDexService {
     pub fn new() -> Self {
-        Self {
-            client: Client::new(),
-        }
+        let client = Client::builder()
+            .user_agent("MediaTracker/1.0 (+https://github.com/Kinremtus/mediatracker)")
+            .build()
+            .unwrap_or_else(|_| Client::new());
+        Self { client }
     }
 
-    /// Get chapter list for a manga by MangaDex ID.
-    /// Returns (title_en, title_ru, chapter_number, volume) for each chapter.
+    /// Search manga by title to find MangaDex UUID.
+    pub async fn search_manga(&self, query: &str) -> Result<Vec<MangaDexSearchResult>> {
+        let url = format!(
+            "https://api.mangadex.org/manga?title={}&limit=10",
+            urlencoding::encode(query)
+        );
+
+        let response = self.client.get(&url).send().await?;
+        if !response.status().is_success() {
+            let body = response.text().await.unwrap_or_default();
+            anyhow::bail!("MangaDex search failed: {} - {}", response.status(), body);
+        }
+
+        let data: MangaDexSearchResponse = response.json().await?;
+        Ok(data.data)
+    }
+
+    /// Get chapter list for a manga by MangaDex UUID.
+    /// Uses the v2 API: /chapter?manga=<UUID>&translatedLanguage[]=en&translatedLanguage[]=ru
     pub async fn get_chapters(
         &self,
-        manga_id: &str,
+        manga_uuid: &str,
     ) -> Result<Vec<MangaDexChapter>> {
         let mut chapters = Vec::new();
         let mut offset = 0;
@@ -27,16 +46,17 @@ impl MangaDexService {
 
         loop {
             let url = format!(
-                "https://api.mangadex.org/manga/{}/feed?limit={}&offset={}&order[chapter]=asc&translatedLanguage[]=en&translatedLanguage[]=ru",
-                manga_id, LIMIT, offset
+                "https://api.mangadex.org/chapter?manga={}&limit={}&offset={}&order[chapter]=asc&translatedLanguage[]=en&translatedLanguage[]=ru",
+                manga_uuid, LIMIT, offset
             );
 
             let response = self.client.get(&url).send().await?;
             if !response.status().is_success() {
-                anyhow::bail!("MangaDex chapters failed: {}", response.status());
+                let body = response.text().await.unwrap_or_default();
+                anyhow::bail!("MangaDex chapters failed: {} - {}", response.status(), body);
             }
 
-            let data: MangaDexFeedResponse = response.json().await?;
+            let data: MangaDexChapterResponse = response.json().await?;
             if data.data.is_empty() {
                 break;
             }
@@ -52,22 +72,6 @@ impl MangaDexService {
         }
 
         Ok(chapters)
-    }
-
-    /// Search manga by title to find MangaDex ID.
-    pub async fn search_manga(&self, query: &str) -> Result<Vec<MangaDexSearchResult>> {
-        let url = format!(
-            "https://api.mangadex.org/manga?title={}&limit=10",
-            urlencoding::encode(query)
-        );
-
-        let response = self.client.get(&url).send().await?;
-        if !response.status().is_success() {
-            anyhow::bail!("MangaDex search failed: {}", response.status());
-        }
-
-        let data: MangaDexSearchResponse = response.json().await?;
-        Ok(data.data)
     }
 }
 
@@ -88,8 +92,11 @@ pub struct MangaDexMangaAttributes {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct MangaDexFeedResponse {
+pub struct MangaDexChapterResponse {
     pub data: Vec<MangaDexChapterWrapper>,
+    pub limit: u32,
+    pub offset: u32,
+    pub total: u32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -104,6 +111,7 @@ pub struct MangaDexChapter {
     pub chapter: String,
     pub volume: Option<String>,
     pub translated_language: String,
+    pub publish_at: Option<String>,
 }
 
 impl MangaDexChapter {
@@ -118,12 +126,12 @@ mod tests {
 
     #[test]
     fn parse_chapter_number_from_mangadex() {
-        // MangaDex returns chapter as string, e.g. "1", "1.5", "10", "100"
         let ch = MangaDexChapter {
             title: None,
             chapter: "1".to_string(),
             volume: None,
             translated_language: "en".to_string(),
+            publish_at: None,
         };
         assert_eq!(ch.chapter_number_10(), Some(10));
 
@@ -132,6 +140,7 @@ mod tests {
             chapter: "1.5".to_string(),
             volume: None,
             translated_language: "en".to_string(),
+            publish_at: None,
         };
         assert_eq!(ch.chapter_number_10(), Some(15));
 
@@ -140,6 +149,7 @@ mod tests {
             chapter: "10.5".to_string(),
             volume: None,
             translated_language: "en".to_string(),
+            publish_at: None,
         };
         assert_eq!(ch.chapter_number_10(), Some(105));
     }
