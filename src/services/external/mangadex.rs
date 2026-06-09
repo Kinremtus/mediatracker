@@ -31,7 +31,14 @@ impl MangaDexService {
             anyhow::bail!("MangaDex search failed: {} - {}", status, body);
         }
 
-        let data: MangaDexSearchResponse = response.json().await?;
+        let response_text = response.text().await?;
+        let data: MangaDexSearchResponse = match serde_json::from_str(&response_text) {
+            Ok(d) => d,
+            Err(e) => {
+                tracing::error!(url=%url, error=%e, response=%response_text, "MangaDex search JSON decode failed");
+                anyhow::bail!("MangaDex search JSON decode failed: {}", e);
+            }
+        };
         Ok(data.data)
     }
 
@@ -58,7 +65,14 @@ impl MangaDexService {
                 anyhow::bail!("MangaDex chapters failed: {} - {}", status, body);
             }
 
-            let data: MangaDexChapterResponse = response.json().await?;
+            let response_text = response.text().await?;
+            let data: MangaDexChapterResponse = match serde_json::from_str(&response_text) {
+                Ok(d) => d,
+                Err(e) => {
+                    tracing::error!(url=%url, error=%e, response=%response_text, "MangaDex JSON decode failed");
+                    anyhow::bail!("MangaDex JSON decode failed: {}", e);
+                }
+            };
             if data.data.is_empty() {
                 break;
             }
@@ -95,6 +109,8 @@ pub struct MangaDexMangaAttributes {
 
 #[derive(Debug, Deserialize)]
 pub struct MangaDexChapterResponse {
+    pub result: String,
+    pub response: String,
     pub data: Vec<MangaDexChapterWrapper>,
     pub limit: u32,
     pub offset: u32,
@@ -104,7 +120,10 @@ pub struct MangaDexChapterResponse {
 #[derive(Debug, Deserialize)]
 pub struct MangaDexChapterWrapper {
     pub id: String,
+    #[serde(rename = "type")]
+    pub chapter_type: String,
     pub attributes: MangaDexChapter,
+    pub relationships: Option<Vec<serde_json::Value>>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
