@@ -29,3 +29,9 @@ url = "2"
 regex = "1"
 urlencoding = "2"
 clap = { version = "4", features = ["derive"] }
+
+[profile.release]
+opt-level = "z"
+lto = "thin"
+strip = true
+codegen-units = 1

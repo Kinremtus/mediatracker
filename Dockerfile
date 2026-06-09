@@ -19,12 +19,13 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     cargo chef cook --release --recipe-path recipe.json
 COPY . .
-# Test gate + release build with BuildKit cache mounts for incremental reuse
+# Release build first, then tests reuse release artifacts
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    cargo test --lib && \
-    cargo test --test app_js_syntax && \
-    cargo build --release --bin mediatracker --bin backfill_anime --bin backfill_chapters
+    CARGO_BUILD_JOBS=1 \
+    cargo build --release --bin mediatracker --bin backfill_anime --bin backfill_chapters && \
+    cargo test --release --lib && \
+    cargo test --release --test app_js_syntax
 
 # Runtime stage: minimal debian + the binary + static + migrations
 FROM debian:bookworm-slim
