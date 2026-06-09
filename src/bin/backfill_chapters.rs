@@ -116,7 +116,7 @@ async fn main() -> Result<()> {
     let mut enriched = 0usize;
     let mut failed = 0usize;
 
-    for row in rows {
+    for row in &rows {
         let provider: String = row.get(0);
         let external_id: String = row.get(1);
         let title: String = row.get(2);
