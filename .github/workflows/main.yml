@@ -22,22 +22,29 @@ jobs:
             set -euo pipefail
             cd ${{ secrets.TARGET_DIR }}
 
-            # Force-push-safe sync. 'git pull' fails on non-fast-forward
-            # (e.g. after a local `git reset --hard` + force-push), but
-            # the script continues without `set -e` and silently deploys
-            # the old code. Reset to origin/main is idempotent.
+            # Force-push-safe sync
             git fetch origin main
             git reset --hard origin/main
             echo "📌 Synced to: $(git rev-parse --short HEAD)"
 
-            # Создаём volumes для кэша Cargo (если ещё нет)
+            # Persistent cargo cache volumes (survive container recreation)
             docker volume create cargo-registry 2>/dev/null || true
             docker volume create cargo-git 2>/dev/null || true
+
+            # BuildKit cache directory on host (survives between runs)
+            mkdir -p /tmp/docker-buildkit-cache
 
             docker compose down -t 0
             docker rm -f mediatracker-db-1 mediatracker-app-1 mediatracker-nginx-1 2>/dev/null || true
             sleep 3
-            DOCKER_BUILDKIT=1 docker compose up --build -d
+
+            # Build with BuildKit inline cache (stored on host)
+            DOCKER_BUILDKIT=1 docker compose build \
+              --build-arg BUILDKIT_INLINE_CACHE=1 \
+              --cache-from type=local,src=/tmp/docker-buildkit-cache \
+              --cache-to type=local,dest=/tmp/docker-buildkit-cache,mode=max
+
+            docker compose up -d
 
             echo "⏳ Ждём запуска сервиса..."
             sleep 15
