@@ -25,9 +25,10 @@ impl MangaDexService {
         );
 
         let response = self.client.get(&url).send().await?;
-        if !response.status().is_success() {
+        let status = response.status();
+        if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
-            anyhow::bail!("MangaDex search failed: {} - {}", response.status(), body);
+            anyhow::bail!("MangaDex search failed: {} - {}", status, body);
         }
 
         let data: MangaDexSearchResponse = response.json().await?;
@@ -51,9 +52,10 @@ impl MangaDexService {
             );
 
             let response = self.client.get(&url).send().await?;
-            if !response.status().is_success() {
+            let status = response.status();
+            if !status.is_success() {
                 let body = response.text().await.unwrap_or_default();
-                anyhow::bail!("MangaDex chapters failed: {} - {}", response.status(), body);
+                anyhow::bail!("MangaDex chapters failed: {} - {}", status, body);
             }
 
             let data: MangaDexChapterResponse = response.json().await?;
