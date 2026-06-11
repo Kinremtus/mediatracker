@@ -54,6 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/anime/{provider}/{external_id}/episodes/{n}/watched", axum::routing::post(media::set_episode_watched))
         .route("/api/manga/{provider}/{external_id}/chapters", get(media::get_chapters))
         .route("/api/manga/{provider}/{external_id}/chapters/{n}/read", axum::routing::post(media::set_chapter_read))
+        .route("/api/search/suggestions", get(search::get_search_suggestions))
         .route("/tracking", get(tracking::get_tracking_list).post(tracking::post_add_to_tracking))
         .route("/tracking/{id}", axum::routing::post(tracking::post_update_tracking))
         .route("/tracking/{id}/delete", axum::routing::post(tracking::post_delete_tracking))

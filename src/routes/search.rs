@@ -1,13 +1,13 @@
 use askama::Template;
 use axum::{
     extract::{Query, State},
-    response::Html,
+    response::{Html, Json},
 };
 use serde::Deserialize;
 
 use crate::app_state::AppState;
 use crate::middleware::CurrentUser;
-use crate::models::media_item::CreateMediaItem;
+use crate::models::media_item::{CreateMediaItem, SearchSuggestion};
 use crate::services::search;
 use super::home::SidebarStats;
 
@@ -110,6 +110,54 @@ pub async fn get_search(
     .render()
     .unwrap()
     .into()
+}
+
+#[derive(Deserialize)]
+pub struct SuggestionsQuery {
+    q: Option<String>,
+}
+
+pub async fn get_search_suggestions(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Query(params): Query<SuggestionsQuery>,
+) -> Json<Vec<SearchSuggestion>> {
+    let query = match params.q {
+        Some(q) if !q.trim().is_empty() => q.trim().to_string(),
+        _ => return Json(Vec::new()),
+    };
+
+    if query.len() < 2 {
+        return Json(Vec::new());
+    }
+
+    let mut results = search::by_media_type(&state, &query, "").await;
+
+    for item in &mut results {
+        if let Ok(Some(_)) = state.tracking.find_entry_by_media(
+            user.id, &item.provider, &item.external_id,
+        ).await {
+            item.is_tracked = true;
+        }
+    }
+
+    let suggestions: Vec<SearchSuggestion> = results
+        .into_iter()
+        .take(10)
+        .map(|item| SearchSuggestion {
+            provider: item.provider,
+            external_id: item.external_id,
+            media_type: item.media_type,
+            title: item.title,
+            title_english: item.title_english,
+            poster_url: item.poster_url,
+            year: item.year,
+            score: item.score,
+            is_tracked: item.is_tracked,
+        })
+        .collect();
+
+    Json(suggestions)
 }
 
 async fn get_sidebar_stats(state: &AppState, user: &CurrentUser) -> SidebarStats {
