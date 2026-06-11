@@ -452,3 +452,64 @@ function refreshTrackingList() {
         }
     }
 }
+
+// --- Search Dropdown (Alpine component) ---
+function searchDropdown() {
+    return {
+        open: false,
+        query: '',
+        results: [],
+        loading: false,
+        recentSearches: JSON.parse(localStorage.getItem('searchHistory') || '[]'),
+
+        openDropdown() {
+            this.open = true;
+            this.recentSearches = JSON.parse(localStorage.getItem('searchHistory') || '[]');
+        },
+
+        async search() {
+            if (this.query.length < 2) {
+                this.results = [];
+                return;
+            }
+            this.loading = true;
+            try {
+                const resp = await fetch('/api/search/suggestions?q=' + encodeURIComponent(this.query));
+                if (resp.ok) {
+                    this.results = await resp.json();
+                }
+            } catch (e) {
+                this.results = [];
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        submitSearch() {
+            const q = this.query.trim();
+            if (q) {
+                this.addToHistory(q);
+                window.location.href = '/search?q=' + encodeURIComponent(q);
+            }
+        },
+
+        clickResult(item) {
+            this.open = false;
+            openMediaDrawer(item.provider, item.external_id, item.media_type);
+        },
+
+        addToHistory(q) {
+            q = q.trim();
+            if (!q) return;
+            let h = JSON.parse(localStorage.getItem('searchHistory') || '[]');
+            h = [q, ...h.filter(i => i !== q)].slice(0, 10);
+            localStorage.setItem('searchHistory', JSON.stringify(h));
+            this.recentSearches = h;
+        },
+
+        clearHistory() {
+            localStorage.removeItem('searchHistory');
+            this.recentSearches = [];
+        }
+    };
+}
