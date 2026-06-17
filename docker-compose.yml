@@ -29,12 +29,10 @@ services:
   nginx:
     image: nginx:alpine
     ports:
-      - "2083:443"
+      - "127.0.0.1:8081:80"
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf
       - ./static:/usr/share/nginx/html:ro
-      - /etc/ssl/cloudflare.pem:/etc/ssl/cloudflare.pem:ro
-      - /etc/ssl/cloudflare.key:/etc/ssl/cloudflare.key:ro
     depends_on:
       - app
 
