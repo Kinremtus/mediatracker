@@ -22,34 +22,32 @@ jobs:
             set -euo pipefail
             cd ${{ secrets.TARGET_DIR }}
 
-            # Force-push-safe sync
             git fetch origin main
             git reset --hard origin/main
             echo "📌 Synced to: $(git rev-parse --short HEAD)"
 
-            # Build with layer cache (survives docker system prune -a)
-            mkdir -p /tmp/docker-cache-new
-            docker buildx create --use --name mediatracker-builder \
+            sudo mkdir -p /tmp/docker-cache-new
+
+            sudo docker buildx create --use --name mediatracker-builder \
               --driver docker-container --bootstrap 2>/dev/null || true
+
             if [ -f /tmp/docker-cache/index.json ]; then
               CACHE_FROM="--cache-from type=local,src=/tmp/docker-cache"
             else
               CACHE_FROM=""
               echo "⚠️  Cache пуст, полная сборка с нуля"
             fi
-            docker buildx build $CACHE_FROM \
+
+            sudo docker buildx build $CACHE_FROM \
               --cache-to type=local,dest=/tmp/docker-cache-new,mode=max \
               -t mediatracker_app:latest \
               --load .
 
-            # Atomic cache swap
-            rm -rf /tmp/docker-cache 2>/dev/null; mv /tmp/docker-cache-new /tmp/docker-cache
+            sudo rm -rf /tmp/docker-cache 2>/dev/null
+            sudo mv /tmp/docker-cache-new /tmp/docker-cache
 
-            docker compose down -t 0
-            docker rm -f mediatracker-db-1 mediatracker-app-1 mediatracker-nginx-1 2>/dev/null || true
-            sleep 3
-
-            docker compose up -d
+            sudo docker compose down -t 0 || true
+            sudo docker compose up -d
 
             echo "⏳ Ждём запуска сервиса..."
             sleep 15
@@ -63,8 +61,8 @@ jobs:
             else
               echo "❌ Healthcheck провалился!"
               echo "=== APP LOGS ==="
-              docker compose logs --tail=50 app
+              sudo docker compose logs --tail=50 app
               echo "=== NGINX LOGS ==="
-              docker compose logs --tail=50 nginx
+              sudo docker compose logs --tail=50 nginx
               exit 1
             fi
