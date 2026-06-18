@@ -22,6 +22,7 @@ struct ShikimoriSearchResult {
     episodes: Option<i32>,
     episodes_aired: Option<i32>,
     description: Option<String>,
+    #[serde(rename = "myanimelist_id")]
     mal_id: Option<i64>,
     aired_on: Option<chrono::NaiveDate>,
     released_on: Option<chrono::NaiveDate>,
