@@ -5,13 +5,13 @@
 - App runs **only on remote server** via Docker Compose
 - **DO NOT** run docker compose locally — no .env, no nginx
 - Deploy: `git push` → GitHub Actions → auto-deploy
-- Verify: `ssh VPN_Server`
+- Verify: `ssh VPS1`
 
 ## Critical Rules
 - DB: user=`Kin`, db=`tracker`
 - After `migrations/` changes: migrations auto-run on startup via `sqlx::migrate!()`
-- Deploy: `docker compose up -d --build`
-- Logs: `docker compose logs --tail=50 app|db`
+- Deploy: `sudo docker compose up -d --build`
+- Logs: `sudo docker compose logs --tail=50 app|db`
 
 ## Stack
 Rust 1.95 · Axum 0.8 · SQLx 0.8 · Askama 0.16 · PostgreSQL 17 · Alpine.js · HTMX
@@ -27,31 +27,6 @@ Rust 1.95 · Axum 0.8 · SQLx 0.8 · Askama 0.16 · PostgreSQL 17 · Alpine.js �
 - **TMDB images** (proxied via `/tmdb-image/`): cached 7 days with
   `Cache-Control: public, immutable` (intentional — TMDB image URLs are
   content-addressed, never change).
-
-## Project Structure
-```
-├── src/
-│   ├── main.rs              # Entry point
-│   ├── config.rs            # Config from env
-│   ├── app_state.rs         # AppState (DB + services)
-│   ├── routes/              # auth, home, media, search, tracking, stats, settings, calendar
-│   ├── services/            # auth, search, tracking, stats, release_schedule
-│   │   ├── external/        # shikimori, mal, mangaupdates, tmdb, rawg, igdb, google_books, openlibrary
-│   │   └── notifications/   # telegram
-│   ├── models/              # user, session, media_item, tracking_entry, stats, schedule
-│   ├── middleware/           # auth
-│   └── utils/               # activity_calendar
-├── templates/               # Askama HTML (base, app_shell, pages, partials/)
-├── static/
-│   ├── css/                 # main.css, components.css, animations.css, utilities.css, themes/
-│   └── js/                  # alpine.min.js, htmx.min.js, app.js
-├── migrations/              # 001-007 SQL
-├── docker-compose.yml       # Dev
-├── docker-compose.prod.yml  # Prod (restart, limits, healthcheck)
-├── nginx.conf               # SSL, gzip, security headers, rate limit
-├── .env.example             # Variable template
-└── scripts/                 # backup-db.sh, restore-db.sh
-```
 
 ## External Providers
 | Type | Provider |
@@ -70,6 +45,18 @@ Rust 1.95 · Axum 0.8 · SQLx 0.8 · Askama 0.16 · PostgreSQL 17 · Alpine.js �
 - Themes: light, graphite (default), dark → `localStorage['mediatracker-theme']`
 - HTMX: `/tracking/partial`, `/tracking/{id}/htmx`, `/settings/*/htmx`
 - Telegram: `TELEGRAM_BOT_TOKEN` in `.env`, notifications via `notify_new_episodes()`
+- JS: HTMX-first (server-rendered). Alpine.js only when unavoidable. No custom JS/TS.
+- Routes: `src/routes/<domain>.rs`, HTML-шаблоны в `templates/`
+- External API клиенты: `src/services/external/<provider>.rs`
+- Статика: `static/css/`, `static/js/` (nginx, ETag cache-bust)
+- Миграции: `migrations/*.sql`, авто-применение при старте
+- Скрипты: `scripts/` (backup, restore, backfill)
+
+## CI / Deploy
+- Workflow: `.github/workflows/main.yml`
+- Docker buildx с локальным кэшем (быстрые пересборки)
+- Cloudflare Tunnel → nginx (port 80) → app (8080)
+- Healthcheck: `GET /health` → `{"status":"ok"}`
 
 ## Commands
 ```bash
@@ -77,16 +64,11 @@ Rust 1.95 · Axum 0.8 · SQLx 0.8 · Askama 0.16 · PostgreSQL 17 · Alpine.js �
 cargo check / cargo build --release
 
 # Server
-docker compose up -d --build
-docker compose -f docker-compose.prod.yml up -d --build
-docker compose exec db psql -U Kin -d tracker
+sudo docker compose up -d --build
+sudo docker compose -f docker-compose.prod.yml up -d --build
+sudo docker compose exec db psql -U Kin -d tracker
 
 # Backup
 ./scripts/backup-db.sh
 ./scripts/restore-db.sh backups/20240101_120000.sql.gz
 ```
-
-## Deployment
-- GitHub Actions on push to `main`
-- Healthcheck: `GET /health` → `{"status":"ok"}`
-- Nginx: 8443 (Cloudflare), SSL, TMDB image proxy
