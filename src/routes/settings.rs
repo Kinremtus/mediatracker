@@ -12,6 +12,7 @@ use super::home::SidebarStats;
 
 #[derive(Template)]
 #[template(path = "settings.html")]
+#[expect(dead_code)]
 struct SettingsTemplate {
     username: String,
     role: String,

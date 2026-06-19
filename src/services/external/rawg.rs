@@ -22,6 +22,7 @@ struct RawgPlatformWrap {
 }
 
 #[derive(Debug, Deserialize)]
+#[expect(dead_code)]
 struct RawgSearchResult {
     id: i64,
     name: String,

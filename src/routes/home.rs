@@ -13,6 +13,7 @@ use crate::models::schedule::ReleaseEntry;
 
 #[derive(Template)]
 #[template(path = "home.html")]
+#[expect(dead_code)]
 struct HomeTemplate {
     username: String,
     role: String,

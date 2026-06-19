@@ -68,11 +68,10 @@ fn parse_published_date(s: Option<&str>) -> Option<chrono::NaiveDate> {
     if let Ok(d) = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d") {
         return Some(d);
     }
-    if let Ok(y) = s.parse::<i32>() {
-        if let Some(d) = chrono::NaiveDate::from_ymd_opt(y, 1, 1) {
+    if let Ok(y) = s.parse::<i32>()
+        && let Some(d) = chrono::NaiveDate::from_ymd_opt(y, 1, 1) {
             return Some(d);
         }
-    }
     None
 }
 
@@ -221,6 +220,12 @@ fn map_work(id: &str, work: OpenLibraryWork) -> Result<CreateMediaItem, anyhow::
 #[derive(Clone)]
 pub struct OpenLibraryService {
     client: Client,
+}
+
+impl Default for OpenLibraryService {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl OpenLibraryService {

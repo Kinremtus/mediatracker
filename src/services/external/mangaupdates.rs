@@ -50,11 +50,13 @@ struct MangaUpdatesSeries {
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
+#[expect(dead_code)]
 struct MangaUpdatesAssociated {
     title: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
+#[expect(dead_code)]
 struct MangaUpdatesImage {
     url: Option<MangaUpdatesImageUrl>,
     height: Option<i32>,
@@ -62,6 +64,7 @@ struct MangaUpdatesImage {
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
+#[expect(dead_code)]
 struct MangaUpdatesImageUrl {
     original: Option<String>,
     thumb: Option<String>,
@@ -103,6 +106,7 @@ struct MangaUpdatesAuthor {
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
+#[expect(dead_code)]
 struct MangaUpdatesPublisher {
     publisher_name: String,
     #[serde(rename = "type")]
@@ -111,12 +115,14 @@ struct MangaUpdatesPublisher {
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
+#[expect(dead_code)]
 struct MangaUpdatesPublication {
     publication_name: String,
     publisher_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
+#[expect(dead_code)]
 struct MangaUpdatesTime {
     as_rfc3339: Option<String>,
 }
@@ -298,6 +304,12 @@ fn map_series(series: MangaUpdatesSeries) -> CreateMediaItem {
 #[derive(Clone)]
 pub struct MangaUpdatesService {
     client: Client,
+}
+
+impl Default for MangaUpdatesService {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MangaUpdatesService {

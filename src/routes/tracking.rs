@@ -14,6 +14,7 @@ use super::home::SidebarStats;
 
 #[derive(Template)]
 #[template(path = "tracking_list.html")]
+#[expect(dead_code)]
 struct TrackingListTemplate {
     username: String,
     role: String,
@@ -402,6 +403,7 @@ struct TrackingCardPartial {
 
 #[derive(Template)]
 #[template(path = "partials/tracking_grid.html")]
+#[expect(dead_code)]
 struct TrackingGridPartial {
     entries: Vec<TrackingEntryWithMedia>,
     current_status: String,
@@ -429,7 +431,7 @@ pub async fn htmx_update_tracking(
     };
 
     match state.tracking.update_entry(id, user.id, &update).await {
-        Ok(entry) => {
+        Ok(_entry) => {
             let entries = state.tracking.get_user_entries(user.id, None, None, None).await.unwrap_or_default();
             let entry_with_media = entries.iter().find(|e| e.entry.id == id).cloned();
             match entry_with_media {
@@ -475,24 +477,21 @@ pub async fn htmx_tracking_partial(
     Query(params): Query<TrackingQuery>,
     headers: HeaderMap,
 ) -> Response {
-    if !headers.get("hx-request").is_some() {
+    if headers.get("hx-request").is_none() {
         let mut url = "/tracking".to_string();
         let mut query_parts = Vec::new();
-        if let Some(ref status) = params.status {
-            if !status.is_empty() {
+        if let Some(ref status) = params.status
+            && !status.is_empty() {
                 query_parts.push(format!("status={}", status));
             }
-        }
-        if let Some(ref media_type) = params.media_type {
-            if !media_type.is_empty() {
+        if let Some(ref media_type) = params.media_type
+            && !media_type.is_empty() {
                 query_parts.push(format!("type={}", media_type));
             }
-        }
-        if let Some(ref q) = params.q {
-            if !q.is_empty() {
+        if let Some(ref q) = params.q
+            && !q.is_empty() {
                 query_parts.push(format!("q={}", q));
             }
-        }
         if !query_parts.is_empty() {
             url.push('?');
             url.push_str(&query_parts.join("&"));

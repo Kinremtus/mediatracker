@@ -79,7 +79,9 @@ impl ReleaseScheduleService {
         user_id: Uuid,
         limit: i64,
     ) -> Result<Vec<ReleaseEntry>, anyhow::Error> {
-        let rows: Vec<(String, String, String, Option<String>, i32, DateTime<Utc>)> = sqlx::query_as(
+        type Row = (String, String, String, Option<String>, i32, DateTime<Utc>);
+        #[allow(clippy::type_complexity)]
+        let rows: Vec<Row> = sqlx::query_as(
             r#"
             SELECT DISTINCT ON (r.id)
                 r.provider, r.external_id, r.title, r.poster_url,
@@ -119,7 +121,9 @@ impl ReleaseScheduleService {
         from: DateTime<Utc>,
         to: DateTime<Utc>,
     ) -> Result<Vec<ReleaseEntry>, anyhow::Error> {
-        let rows: Vec<(String, String, String, Option<String>, i32, DateTime<Utc>)> = sqlx::query_as(
+        type Row = (String, String, String, Option<String>, i32, DateTime<Utc>);
+        #[allow(clippy::type_complexity)]
+        let rows: Vec<Row> = sqlx::query_as(
             r#"
             SELECT DISTINCT ON (r.id)
                 r.provider, r.external_id, r.title, r.poster_url,

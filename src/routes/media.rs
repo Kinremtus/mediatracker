@@ -14,6 +14,7 @@ use super::home::SidebarStats;
 
 #[derive(Template)]
 #[template(path = "media_drawer_content.html")]
+#[expect(dead_code)]
 struct MediaDrawerTemplate {
     item: CreateMediaItem,
     tracking_id: Option<Uuid>,
@@ -50,6 +51,7 @@ impl MediaDrawerTemplate {
 
 #[derive(Template)]
 #[template(path = "media_detail.html")]
+#[expect(dead_code)]
 struct MediaDetailTemplate {
     username: String,
     role: String,
@@ -377,15 +379,14 @@ pub async fn set_episode_watched(
     .await
     .unwrap_or(None);
 
-    if let Some(media_id) = media_id {
-        if let Err(e) = crate::services::episodes::update_progress_from_watched(
+    if let Some(media_id) = media_id
+        && let Err(e) = crate::services::episodes::update_progress_from_watched(
             &state.db, user.id, media_id, max_watched,
         )
         .await
         {
             tracing::warn!(provider, external_id, error = %e, "update_progress_from_watched failed");
         }
-    }
 
     // Render the new row HTML and attach a progressUpdated event.
     let html = match crate::services::episodes::get_episode(
@@ -506,26 +507,24 @@ pub async fn get_chapters(
     .unwrap_or_default();
 
     // If empty, try to fetch the latest_chapter from MangaUpdates and build skeleton.
-    if existing.is_empty() {
-        if let Ok(series_id_num) = mu_id.parse::<i64>() {
+    if existing.is_empty()
+        && let Ok(series_id_num) = mu_id.parse::<i64>() {
             let details = crate::services::external::mangaupdates::MangaUpdatesService::new()
                 .get_details(&mu_id)
                 .await;
 
             if let Ok(details) = details {
-                let lc = details.chapters.map(|v| v as i32).unwrap_or(0);
-                if lc > 0 {
-                    if let Err(e) = crate::services::chapters::store_chapters_mu(
+                let lc = details.chapters.unwrap_or(0);
+                if lc > 0
+                    && let Err(e) = crate::services::chapters::store_chapters_mu(
                         &state.db, series_id_num, lc,
                     )
                     .await
                     {
                         tracing::warn!(series_id_num, error = %e, "store_chapters_mu failed");
                     }
-                }
             }
         }
-    }
 
     let chapters = crate::services::chapters::get_chapters(
         &state.db, &mu_provider, &mu_id,
@@ -592,15 +591,14 @@ pub async fn set_chapter_read(
     .await
     .unwrap_or(0);
 
-    if let Some(media_id) = media_id {
-        if let Err(e) = crate::services::chapters::update_progress_from_read(
+    if let Some(media_id) = media_id
+        && let Err(e) = crate::services::chapters::update_progress_from_read(
             &state.db, user.id, media_id, max_read,
         )
         .await
         {
             tracing::warn!(error = %e, "update_progress_from_read failed");
         }
-    }
 
     // Render updated row.
     let chapter = crate::services::chapters::get_chapter(

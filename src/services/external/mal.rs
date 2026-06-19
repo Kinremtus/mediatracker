@@ -187,8 +187,7 @@ fn extract_number_before(s: &str, unit: &str) -> Option<i32> {
     // Разбиваем по не-цифровым символам и берём последний непустой кусок.
     let last = before
         .split(|c: char| !c.is_ascii_digit())
-        .filter(|s| !s.is_empty())
-        .last()?;
+        .rfind(|s| !s.is_empty())?;
     last.parse().ok()
 }
 
@@ -207,16 +206,14 @@ fn map_full(anime: MalAnimeFull) -> CreateMediaItem {
         .and_then(parse_date);
 
     let mut details = serde_json::Map::new();
-    if let Some(a) = anime.aired.as_ref() {
-        if let Some(s) = a.string.as_ref() {
+    if let Some(a) = anime.aired.as_ref()
+        && let Some(s) = a.string.as_ref() {
             details.insert("aired_string".to_string(), serde_json::Value::String(s.clone()));
         }
-    }
-    if let Some(b) = anime.broadcast.as_ref() {
-        if let Some(s) = b.string.as_ref() {
+    if let Some(b) = anime.broadcast.as_ref()
+        && let Some(s) = b.string.as_ref() {
             details.insert("broadcast".to_string(), serde_json::Value::String(s.clone()));
         }
-    }
 
     let year_i16: Option<i16> = anime.year.and_then(|y| i16::try_from(y).ok());
     let premiered_year_i16 = year_i16;
@@ -334,6 +331,12 @@ fn map_search(item: MalAnimeSearchItem) -> CreateMediaItem {
 #[derive(Clone)]
 pub struct MalService {
     client: Client,
+}
+
+impl Default for MalService {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MalService {

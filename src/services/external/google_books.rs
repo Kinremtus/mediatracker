@@ -59,11 +59,10 @@ fn parse_published_date(s: Option<&str>) -> Option<chrono::NaiveDate> {
         return Some(d);
     }
     // YYYY
-    if let Ok(y) = s.parse::<i32>() {
-        if let Some(d) = chrono::NaiveDate::from_ymd_opt(y, 1, 1) {
+    if let Ok(y) = s.parse::<i32>()
+        && let Some(d) = chrono::NaiveDate::from_ymd_opt(y, 1, 1) {
             return Some(d);
         }
-    }
     None
 }
 
@@ -151,6 +150,12 @@ fn map_item(r: GoogleBooksItem) -> CreateMediaItem {
 #[derive(Clone)]
 pub struct GoogleBooksService {
     client: Client,
+}
+
+impl Default for GoogleBooksService {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl GoogleBooksService {

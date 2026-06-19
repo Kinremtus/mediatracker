@@ -7,18 +7,21 @@ use crate::models::media_item::CreateMediaItem;
 const BASE_URL: &str = "https://api.themoviedb.org/3";
 
 #[derive(Debug, Deserialize)]
+#[expect(dead_code)]
 struct TmdbGenre {
     id: i64,
     name: String,
 }
 
 #[derive(Debug, Deserialize)]
+#[expect(dead_code)]
 struct TmdbCompany {
     id: i64,
     name: String,
 }
 
 #[derive(Debug, Deserialize)]
+#[expect(dead_code)]
 struct TmdbNetwork {
     id: i64,
     name: String,

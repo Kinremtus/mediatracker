@@ -8,6 +8,12 @@ pub struct MangaDexService {
     client: Client,
 }
 
+impl Default for MangaDexService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MangaDexService {
     pub fn new() -> Self {
         let client = Client::builder()

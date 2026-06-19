@@ -16,6 +16,7 @@ use super::home::SidebarStats;
 
 #[derive(Template)]
 #[template(path = "admin.html")]
+#[expect(dead_code)]
 struct AdminTemplate {
     username: String,
     role: String,
@@ -104,33 +105,29 @@ pub async fn post_refresh_details(
     let mut param_idx = 1;
     let mut bind_count = 0;
 
-    if let Some(mt) = &form.media_type {
-        if !mt.is_empty() {
+    if let Some(mt) = &form.media_type
+        && !mt.is_empty() {
             query.push_str(&format!(" AND media_type = ${}", param_idx));
             param_idx += 1;
             bind_count += 1;
         }
-    }
-    if let Some(p) = &form.provider {
-        if !p.is_empty() {
+    if let Some(p) = &form.provider
+        && !p.is_empty() {
             query.push_str(&format!(" AND provider = ${}", param_idx));
             bind_count += 1;
         }
-    }
     query.push_str(&format!(" ORDER BY created_at ASC LIMIT {}", limit));
     let _ = (param_idx, bind_count);
 
     let mut q = sqlx::query_as::<_, (Uuid, String, String, String)>(&query);
-    if let Some(mt) = &form.media_type {
-        if !mt.is_empty() {
+    if let Some(mt) = &form.media_type
+        && !mt.is_empty() {
             q = q.bind(mt);
         }
-    }
-    if let Some(p) = &form.provider {
-        if !p.is_empty() {
+    if let Some(p) = &form.provider
+        && !p.is_empty() {
             q = q.bind(p);
         }
-    }
 
     let rows: Vec<(Uuid, String, String, String)> = match q.fetch_all(db).await {
         Ok(r) => r,

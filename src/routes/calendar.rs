@@ -18,6 +18,7 @@ const MONTHS_RU: &[&str] = &[
 
 #[derive(Template)]
 #[template(path = "calendar.html")]
+#[expect(dead_code)]
 struct CalendarTemplate {
     username: String,
     role: String,

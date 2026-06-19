@@ -9,6 +9,7 @@ const BASE_URL: &str = "https://shikimori.one/api";
 const USER_AGENT: &str = "MediaTracker/0.1 (+https://github.com/Kinremtus/mediatracker)";
 
 #[derive(Debug, Deserialize)]
+#[expect(dead_code)]
 struct ShikimoriSearchResult {
     id: i64,
     name: String,
@@ -81,6 +82,7 @@ struct ShikimoriStudio {
 }
 
 #[derive(Debug, Deserialize)]
+#[expect(dead_code)]
 struct ShikimoriGenre {
     name: String,
     russian: Option<String>,
@@ -203,6 +205,12 @@ fn map_anime(r: ShikimoriSearchResult) -> CreateMediaItem {
 #[derive(Clone)]
 pub struct ShikimoriService {
     client: Client,
+}
+
+impl Default for ShikimoriService {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ShikimoriService {

@@ -101,6 +101,7 @@ pub async fn get_episodes(
     provider: &str,
     external_id: &str,
 ) -> Result<Vec<StoredEpisode>, sqlx::Error> {
+    #[allow(clippy::type_complexity)]
     let rows: Vec<(
         i32,
         Option<String>,
@@ -312,6 +313,7 @@ pub async fn get_episode(
     mal_id: i64,
     episode_number: i32,
 ) -> Result<Option<StoredEpisode>, sqlx::Error> {
+    #[allow(clippy::type_complexity)]
     let row: Option<(
         i32,
         Option<String>,

@@ -21,8 +21,8 @@ impl StoredChapter {
     }
 }
 
-/// Chapter number stored in DB as integer * 10 (105 = chapter 10.5).
-/// UI helpers below format it back to human-readable form.
+// Chapter number stored in DB as integer * 10 (105 = chapter 10.5).
+// UI helpers below format it back to human-readable form.
 
 /// Format chapter number for display: 10 → "1", 105 → "10.5", 120 → "12".
 pub fn format_chapter(chapter_number: i32) -> String {
@@ -135,6 +135,7 @@ pub async fn get_chapters(
     provider: &str,
     external_id: &str,
 ) -> Result<Vec<StoredChapter>, sqlx::Error> {
+    #[allow(clippy::type_complexity)]
     let rows: Vec<(
         i32,
         Option<i32>,
@@ -179,6 +180,7 @@ pub async fn get_chapter(
     external_id: &str,
     chapter_number: i32,
 ) -> Result<Option<StoredChapter>, sqlx::Error> {
+    #[allow(clippy::type_complexity)]
     let row: Option<(
         i32,
         Option<i32>,
@@ -389,6 +391,7 @@ pub async fn enrich_from_mangadex(
     let md_chapters = md.get_chapters(manga_id).await?;
 
     // Build lookup: chapter_number_10 -> (title_en, title_ru, volume)
+    #[allow(clippy::type_complexity)]
     let mut md_map: HashMap<i32, (Option<String>, Option<String>, Option<i32>)> = HashMap::new();
     for ch in md_chapters {
         if let Some(ch_num_10) = ch.chapter_number_10() {
