@@ -16,6 +16,12 @@
 ## Stack
 Rust 1.95 · Axum 0.8 · SQLx 0.8 · Askama 0.16 · PostgreSQL 17 · Alpine.js · HTMX
 
+## Rust Teaching
+Если пользователь просит объяснить Rust код — объясняй построчно, каждую конструкцию.
+Формат: что делает → синтаксис → аналогия из Python/JS/C.
+Покрывай: `let`/`mut`, `&`/`&mut`, `Result`/`Option`, трейты, макросы, итераторы.
+После объяснения — таблица-резюме всех концепций в коде.
+
 ## Caching & Cache-Bust
 - **Static files** (JS/CSS/images under `/static/`): nginx serves them and sets
   `Cache-Control: no-cache, must-revalidate` + `ETag` + `Last-Modified`. Browser
