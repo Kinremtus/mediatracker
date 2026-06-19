@@ -46,6 +46,7 @@ fn translate_media_type(media_type: &str) -> String {
 
 #[derive(Template)]
 #[template(path = "stats.html")]
+#[expect(dead_code)]
 struct StatsTemplate {
     username: String,
     role: String,

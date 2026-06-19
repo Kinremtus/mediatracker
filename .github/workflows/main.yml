@@ -1,4 +1,4 @@
-name: Deploy
+name: CI
 
 on:
   push:
@@ -6,9 +6,26 @@ on:
   workflow_dispatch:
 
 jobs:
-  deploy:
+  check:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: clippy
+      - name: cargo clippy
+        run: cargo clippy -- -D warnings
+      - name: cargo test
+        run: cargo test
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - name: cargo audit
+        run: cargo audit
 
+  deploy:
+    needs: [check]
+    runs-on: ubuntu-latest
     steps:
       - name: Deploy to VPS
         uses: appleboy/ssh-action@master

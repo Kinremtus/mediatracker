@@ -32,6 +32,7 @@ struct IgdbPlatform {
 }
 
 #[derive(Debug, Deserialize)]
+#[expect(dead_code)]
 struct IgdbInvolvedCompany {
     developer: Option<bool>,
     publisher: Option<bool>,
@@ -106,16 +107,13 @@ fn extract_opt_names(items: &Option<Vec<IgdbName>>) -> Vec<String> {
 
 fn first_release_year(unix_ts: Option<i64>) -> Option<i16> {
     let ts = unix_ts?;
-    let secs = i64::try_from(ts).ok()?;
-    chrono::DateTime::from_timestamp(secs, 0)
-        .map(|dt| i16::try_from(dt.format("%Y").to_string().parse::<i32>().unwrap_or(0)).ok())
-        .flatten()
+    chrono::DateTime::from_timestamp(ts, 0)
+        .and_then(|dt| i16::try_from(dt.format("%Y").to_string().parse::<i32>().unwrap_or(0)).ok())
 }
 
 fn first_release_date(unix_ts: Option<i64>) -> Option<chrono::NaiveDate> {
     let ts = unix_ts?;
-    let secs = i64::try_from(ts).ok()?;
-    chrono::DateTime::from_timestamp(secs, 0).map(|dt| dt.date_naive())
+    chrono::DateTime::from_timestamp(ts, 0).map(|dt| dt.date_naive())
 }
 
 fn map_game(g: IgdbGame) -> CreateMediaItem {
@@ -130,8 +128,6 @@ fn map_game(g: IgdbGame) -> CreateMediaItem {
             if let Some(name) = ic.company.name.clone() {
                 if ic.publisher.unwrap_or(false) {
                     publishers.push(name);
-                } else if ic.developer.unwrap_or(false) {
-                    authors.push(name);
                 } else {
                     authors.push(name);
                 }

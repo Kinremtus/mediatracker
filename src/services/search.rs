@@ -99,7 +99,7 @@ pub async fn anime(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
 
     let filtered_count = mal_items
         .iter()
-        .filter(|item| item.mal_id.map_or(false, |id| shiki_mal_ids.contains(&id)))
+        .filter(|item| item.mal_id.is_some_and(|id| shiki_mal_ids.contains(&id)))
         .count();
 
     if filtered_count > 0 {
@@ -107,7 +107,7 @@ pub async fn anime(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
     }
 
     for item in mal_items.into_iter() {
-        if item.mal_id.map_or(true, |id| !shiki_mal_ids.contains(&id)) {
+        if item.mal_id.is_none_or(|id| !shiki_mal_ids.contains(&id)) {
             shiki_items.push(item);
         }
     }

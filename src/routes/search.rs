@@ -21,6 +21,7 @@ struct PageItem {
 
 #[derive(Template)]
 #[template(path = "search.html")]
+#[expect(dead_code)]
 struct SearchTemplate {
     username: String,
     role: String,

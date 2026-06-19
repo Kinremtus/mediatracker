@@ -32,7 +32,8 @@ impl TrackingService {
         let media_id = match media_id {
             Some(id) => id,
             None => {
-                let new_id = sqlx::query_scalar::<_, Uuid>(
+                
+                sqlx::query_scalar::<_, Uuid>(
                     r#"
                     INSERT INTO media_items (
                         provider, external_id, media_type, title, title_english, title_native, title_russian,
@@ -109,8 +110,7 @@ impl TrackingService {
                 .bind(media.mal_id)
                 .bind(media.shikimori_id)
                 .fetch_one(&self.db)
-                .await?;
-                new_id
+                .await?
             }
         };
 
@@ -297,20 +297,18 @@ impl TrackingService {
         );
         let mut param_idx = 2;
 
-        if let Some(s) = status {
+        if let Some(_s) = status {
             query.push_str(&format!(" AND tracking_entries.status = ${}", param_idx));
             param_idx += 1;
         }
-        if let Some(mt) = media_type {
+        if let Some(_mt) = media_type {
             query.push_str(&format!(" AND media_items.media_type = ${}", param_idx));
             param_idx += 1;
         }
-        if let Some(sq) = search_query {
-            if !sq.is_empty() {
+        if let Some(sq) = search_query
+            && !sq.is_empty() {
                 query.push_str(&format!(" AND media_items.title ILIKE '%' || ${} || '%'", param_idx));
-                param_idx += 1;
             }
-        }
 
         query.push_str(" ORDER BY tracking_entries.updated_at DESC");
 
@@ -321,11 +319,10 @@ impl TrackingService {
         if let Some(mt) = media_type {
             q = q.bind(mt);
         }
-        if let Some(sq) = search_query {
-            if !sq.is_empty() {
+        if let Some(sq) = search_query
+            && !sq.is_empty() {
                 q = q.bind(sq);
             }
-        }
 
         let entries = q.fetch_all(&self.db).await?;
         Ok(entries)

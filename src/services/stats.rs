@@ -102,11 +102,10 @@ impl StatsService {
         
         // Calculate percentages
         for p in &mut progress {
-            if let Some(ep) = p.episodes {
-                if ep > 0 {
+            if let Some(ep) = p.episodes
+                && ep > 0 {
                     p.percentage = (p.progress * 100 / ep).min(100);
                 }
-            }
         }
 
         Ok(progress)
