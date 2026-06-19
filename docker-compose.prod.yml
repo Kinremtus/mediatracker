@@ -23,6 +23,13 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
 
   db:
     image: postgres:17
@@ -59,6 +66,11 @@ services:
         limits:
           memory: 128M
           cpus: "0.25"
+    read_only: true
+    tmpfs:
+      - /var/run/nginx
+      - /var/cache/nginx
+      - /tmp
 
 volumes:
   postgres_data:
