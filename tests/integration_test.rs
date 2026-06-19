@@ -1,7 +1,6 @@
 // Integration tests for MediaTracker
 
 use mediatracker::models::user::CreateUser;
-use mediatracker::services::auth::AuthService;
 
 #[tokio::test]
 async fn test_password_hashing() {
