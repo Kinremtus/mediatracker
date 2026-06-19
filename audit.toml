@@ -1,0 +1,6 @@
+[advisories]
+# rsa 0.9.10 - Marvin Attack (timing sidechannel), medium severity
+# Pulled by sqlx-mysql (caching_sha2_password auth plugin).
+# No patched version exists yet. We don't use MySQL, but
+# sqlx features pull it in. Tracked: RUSTSEC-2023-0071
+ignore = ["RUSTSEC-2023-0071"]
