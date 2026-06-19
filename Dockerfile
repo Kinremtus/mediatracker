@@ -23,21 +23,18 @@ COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     CARGO_BUILD_JOBS=1 \
-    cargo build --release --bin mediatracker --bin backfill_anime --bin backfill_chapters && \
+    cargo build --release --bin mediatracker --bin healthcheck --bin backfill_anime --bin backfill_chapters && \
     cargo test --release --lib && \
     cargo test --release --test app_js_syntax
 
-# Runtime stage: minimal debian + the binary + static + migrations
-FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y libssl3 ca-certificates curl && rm -rf /var/lib/apt/lists/*
-RUN adduser --disabled-password --no-create-home appuser
+# Runtime stage: distroless — no shell, no apt, no curl
+FROM gcr.io/distroless/cc:nonroot
 WORKDIR /app
-COPY --from=builder /app/target/release/mediatracker /app/mediatracker
-COPY --from=builder /app/target/release/backfill_anime /app/backfill_anime
-COPY --from=builder /app/target/release/backfill_chapters /app/backfill_chapters
-COPY --from=builder /app/static /app/static
-COPY --from=builder /app/migrations /app/migrations
-RUN chown -R appuser:appuser /app
-USER appuser
+COPY --from=builder --chown=65532:65532 /app/target/release/mediatracker /app/mediatracker
+COPY --from=builder --chown=65532:65532 /app/target/release/healthcheck /app/healthcheck
+COPY --from=builder --chown=65532:65532 /app/target/release/backfill_anime /app/backfill_anime
+COPY --from=builder --chown=65532:65532 /app/target/release/backfill_chapters /app/backfill_chapters
+COPY --from=builder --chown=65532:65532 /app/static /app/static
+COPY --from=builder --chown=65532:65532 /app/migrations /app/migrations
 EXPOSE 8080
 CMD ["./mediatracker"]

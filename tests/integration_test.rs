@@ -21,12 +21,3 @@ async fn test_password_hashing() {
     assert_eq!(user_data.email, "test@example.com");
 }
 
-#[tokio::test]
-async fn test_validation() {
-    // Test basic validation logic
-    let valid_username = "kinremtus";
-    let invalid_username = "";
-    
-    assert!(!valid_username.is_empty());
-    assert!(invalid_username.is_empty());
-}
