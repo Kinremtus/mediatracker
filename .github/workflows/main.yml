@@ -53,8 +53,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           tags: |
-            ${{ env.REGISTRY }}/${{ github.repository }}:${{ github.sha }}
-            ${{ env.REGISTRY }}/${{ github.repository }}:latest
+            ${{ env.REGISTRY }}/${{ lower(github.repository) }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ lower(github.repository) }}:latest
 
   deploy:
     needs: [build]
@@ -83,7 +83,7 @@ jobs:
 
             # Roll the deployment with new image
             sudo kubectl set image deployment/app \
-              app=${{ env.REGISTRY }}/${{ github.repository }}:${{ github.sha }} \
+              app=${{ env.REGISTRY }}/${{ lower(github.repository) }}:${{ github.sha }} \
               -n mediatracker --record
 
             # Wait for rollout to complete (K8s сам перезапускает поды)
