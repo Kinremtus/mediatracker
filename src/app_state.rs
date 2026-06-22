@@ -1,5 +1,6 @@
 use sqlx::PgPool;
 
+use reqwest::Client;
 use crate::services::auth::AuthService;
 use crate::services::external::google_books::GoogleBooksService;
 use crate::services::external::igdb::IgdbService;
@@ -17,6 +18,7 @@ use crate::services::tracking::TrackingService;
 #[derive(Clone)]
 pub struct AppState {
     pub db: PgPool,
+    pub http_client: Client,
     pub auth: AuthService,
     pub shikimori: ShikimoriService,
     pub mal: MalService,
@@ -43,6 +45,7 @@ impl AppState {
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let db = PgPool::connect(database_url).await?;
         sqlx::migrate!("./migrations").run(&db).await?;
+        let http_client = Client::new();
         let auth = AuthService::new(db.clone());
         let shikimori = ShikimoriService::new();
         let mal = MalService::new();
@@ -58,6 +61,7 @@ impl AppState {
         let telegram = TelegramNotifier::new(telegram_bot_token.to_string());
         Ok(Self {
             db,
+            http_client,
             auth,
             shikimori,
             mal,
