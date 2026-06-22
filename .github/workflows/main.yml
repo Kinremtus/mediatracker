@@ -26,6 +26,8 @@ jobs:
           tool: cargo-audit
       - name: cargo audit
         run: cargo audit --ignore RUSTSEC-2023-0071
+      - name: Validate K8s YAML
+        run: python3 scripts/validate-k8s-yaml.py
 
   build:
     needs: [check]
