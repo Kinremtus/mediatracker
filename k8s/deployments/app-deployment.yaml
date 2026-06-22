@@ -13,6 +13,8 @@ spec:
       labels:
         app: mediatracker
     spec:
+      imagePullSecrets:
+        - name: ghcr-auth
       containers:
         - name: app
           image: ghcr.io/kinremtus/mediatracker:latest
