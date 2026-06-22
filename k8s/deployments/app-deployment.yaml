@@ -15,7 +15,8 @@ spec:
     spec:
       containers:
         - name: app
-          image: ghcr.io/Kinremtus/mediatracker:latest
+          image: mediatracker:latest
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
           envFrom:
