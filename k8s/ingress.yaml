@@ -10,5 +10,5 @@ spec:
     - kind: Rule
       match: Host(`mediatracker.web-socket-test-bench.site`)
       services:
-        - name: app-service
-          port: 80
+         - name: app
+           port: 80
