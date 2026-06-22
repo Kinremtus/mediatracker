@@ -1,7 +1,7 @@
 use mediatracker::app_state::AppState;
 use mediatracker::config::Config;
 use mediatracker::middleware::auth_middleware;
-use mediatracker::routes::{admin, auth, calendar, home, media, search, settings, stats, tracking};
+use mediatracker::routes::{admin, auth, calendar, home, media, search, settings, stats, tmdb_image, tracking};
 use axum::{middleware::from_fn_with_state, routing::get, Router, Json};
 use serde_json::json;
 use tower_http::services::ServeDir;
@@ -40,6 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Public routes
     let public_routes = Router::new()
+        .route("/tmdb-image/{*path}", get(tmdb_image::get_tmdb_image))
         .route("/login", get(auth::get_login).post(auth::post_login))
         .route("/register", get(auth::get_register).post(auth::post_register));
 
