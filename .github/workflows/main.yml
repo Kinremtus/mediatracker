@@ -1,8 +1,6 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 env:
@@ -82,23 +80,7 @@ jobs:
 
             git fetch origin main
             git reset --hard origin/main
-            echo "📌 Synced to: $(git rev-parse --short HEAD)"
+            echo "Synced to: $(git rev-parse --short HEAD)"
 
-            # Apply non-deployment resources (idempotent)
             sudo kubectl apply -f k8s/ingress.yaml
-            sudo kubectl apply -f k8s/services/
-
-            # Apply deployment only on first deploy; set image on every deploy
-            if ! sudo kubectl get deployment/app -n mediatracker &>/dev/null; then
-              echo "First deploy — applying deployment manifest..."
-              sudo kubectl apply -f k8s/deployments/app-deployment.yaml
-            fi
-
-            # Roll the deployment with the exact SHA tag
-            sudo kubectl set image deployment/app \
-              app=${{ env.REGISTRY }}/${{ env.REPO_LOWER }}:${{ github.sha }} \
-              -n mediatracker
-
-            # Wait for rollout to complete (K8s сам перезапускает поды)
-            sudo kubectl rollout status deployment/app \
-              -n mediatracker --timeout=120s
+            sudo helm --kubeconfig /etc/rancher/k3s/k3s.yaml upgrade --install app chart/ --namespace mediatracker

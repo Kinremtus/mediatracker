@@ -1,0 +1,59 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/kinremtus/mediatracker
+  tag: latest
+  pullPolicy: IfNotPresent
+
+imagePullSecrets:
+  - name: ghcr-auth
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+app:
+  name: app
+  port: 8080
+
+envFrom:
+  - configMapRef:
+      name: app-config
+  - secretRef:
+      name: app-secret
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 8080
+  initialDelaySeconds: 10
+  periodSeconds: 30
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: 8080
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+resources:
+  limits:
+    memory: 256Mi
+    cpu: 500m
+  requests:
+    memory: 128Mi
+    cpu: 250m
+
+securityContext:
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: [ALL]
+
+podSecurityContext:
+  runAsNonRoot: true
+
+tmpVolume:
+  enabled: true
+  mountPath: /tmp
