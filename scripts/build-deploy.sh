@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Перейти в корень репозитория (родитель папки scripts/)
 cd "$(dirname "$0")/.."
 
 REGISTRY="ghcr.io/kinremtus/mediatracker"
@@ -20,7 +19,10 @@ echo ""
 echo "==> Deploying on $SSH_HOST ..."
 ssh "$SSH_HOST" -- "
   set -e
-  sudo kubectl set image deployment/app -n mediatracker app=$IMAGE
+  cd ~/mediatracker
+  sudo helm --kubeconfig /etc/rancher/k3s/k3s.yaml upgrade --install app chart/ \
+    --namespace mediatracker \
+    --set image.tag=$TAG
   sudo kubectl rollout status deployment/app -n mediatracker --timeout=120s
 "
 
