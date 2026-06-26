@@ -30,4 +30,4 @@ spec:
             name: cloudflared-config
         - name: creds
           secret:
-            name: cloudflared-creds
+            secretName: cloudflared-creds
