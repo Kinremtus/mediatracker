@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudflared-config
+  namespace: cloudflared
+data:
+  config.yml: |
+    tunnel: 0f6eebb2-ff0e-49fc-92da-3379ebc12cc1
+    credentials-file: /etc/cloudflared/credentials.json
+
+    ingress:
+      - hostname: mediatracker.web-socket-test-bench.site
+        service: http://traefik.kube-system:80
+      - service: http_status:404
+ 

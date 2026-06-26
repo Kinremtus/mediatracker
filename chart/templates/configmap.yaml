@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: {{ .Release.Namespace }}
+data:
+  HOST: {{ .Values.configMap.host | quote }}
+  PORT: {{ .Values.app.port | quote }}
+  RUST_LOG: {{ .Values.configMap.rustLog | quote }}

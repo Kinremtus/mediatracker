@@ -5,5 +5,11 @@ __pycache__/
 backups/
 
 # Added by cargo
-
 /target
+
+# Local k8s manifests with secrets
+k8s/cloudflared/secret.yaml
+k8s/cloudflared/credentials*.json
+
+# Local postgres data (docker volume mount)
+postgres_data/
