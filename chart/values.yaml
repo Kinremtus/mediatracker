@@ -57,3 +57,13 @@ podSecurityContext:
 tmpVolume:
   enabled: true
   mountPath: /tmp
+
+configMap:
+  host: "0.0.0.0"
+  rustLog: "info"
+
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPU: 70
