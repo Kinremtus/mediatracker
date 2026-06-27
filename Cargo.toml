@@ -30,6 +30,10 @@ regex = "1"
 urlencoding = "2"
 clap = { version = "4", features = ["derive"] }
 
+# Metrics
+metrics = "0.23"
+metrics-exporter-prometheus = "0.16"
+
 [profile.release]
 opt-level = "z"
 lto = "thin"

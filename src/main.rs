@@ -1,8 +1,9 @@
 use mediatracker::app_state::AppState;
 use mediatracker::config::Config;
+use mediatracker::metrics;
 use mediatracker::middleware::auth_middleware;
 use mediatracker::routes::{admin, auth, calendar, home, media, search, settings, stats, tmdb_image, tracking};
-use axum::{middleware::from_fn_with_state, routing::get, Router, Json};
+use axum::{middleware::from_fn, middleware::from_fn_with_state, routing::get, Router, Json};
 use serde_json::json;
 use tower_http::services::ServeDir;
 use tracing::info;
@@ -77,13 +78,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/admin/enrich-chapters", axum::routing::post(admin::post_enrich_chapters))
         .layer(from_fn_with_state(state.clone(), auth_middleware));
 
-    // Combine routes
+    // Metrics endpoint (without metrics middleware — recursive counting otherwise)
+    let metrics_route = Router::new()
+        .route("/metrics", get(metrics::metrics_handler))
+        .with_state(state.metrics_handle.clone());
+
+    // All other routes with metrics recording
     let app = Router::new()
         .route("/health", get(health_check))
         .merge(public_routes)
         .merge(protected_routes)
         .nest_service("/static", ServeDir::new("static"))
+        .layer(from_fn(metrics::metrics_middleware))
         .with_state(state);
+
+    // Combine: /metrics is not wrapped by the middleware layer
+    let app = Router::new()
+        .merge(metrics_route)
+        .merge(app);
 
     // Start server
     let listener = tokio::net::TcpListener::bind(format!("{}:{}", config.host, config.port)).await?;

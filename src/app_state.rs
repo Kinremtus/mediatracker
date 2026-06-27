@@ -1,6 +1,7 @@
 use sqlx::PgPool;
 
 use reqwest::Client;
+use crate::metrics::MetricsHandle;
 use crate::services::auth::AuthService;
 use crate::services::external::google_books::GoogleBooksService;
 use crate::services::external::igdb::IgdbService;
@@ -32,6 +33,7 @@ pub struct AppState {
     pub release_schedule: ReleaseScheduleService,
     pub stats: StatsService,
     pub telegram: TelegramNotifier,
+    pub metrics_handle: MetricsHandle,
 }
 
 impl AppState {
@@ -59,6 +61,7 @@ impl AppState {
         let release_schedule = ReleaseScheduleService::new(db.clone());
         let stats = StatsService::new(db.clone());
         let telegram = TelegramNotifier::new(telegram_bot_token.to_string());
+        let metrics_handle = crate::metrics::init_metrics();
         Ok(Self {
             db,
             http_client,
@@ -75,6 +78,7 @@ impl AppState {
             release_schedule,
             stats,
             telegram,
+            metrics_handle,
         })
     }
 }
