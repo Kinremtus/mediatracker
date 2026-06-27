@@ -82,5 +82,6 @@ jobs:
             git reset --hard origin/main
             echo "Synced to: $(git rev-parse --short HEAD)"
 
+            sudo kubectl apply -f k8s/traefik-helm-config.yaml
             sudo kubectl apply -f k8s/ingress.yaml
             sudo helm --kubeconfig /etc/rancher/k3s/k3s.yaml upgrade --install app chart/ --namespace mediatracker
