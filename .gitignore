@@ -13,3 +13,6 @@ k8s/cloudflared/credentials*.json
 
 # Local postgres data (docker volume mount)
 postgres_data/
+
+# Local AI tooling config
+.opencode/
