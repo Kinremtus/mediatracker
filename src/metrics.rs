@@ -1,7 +1,7 @@
 use axum::{
     extract::Request,
     extract::State,
-    http::StatusCode,
+    http::{HeaderValue, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
 };
@@ -29,7 +29,12 @@ pub fn init_metrics() -> MetricsHandle {
 
 pub async fn metrics_handler(state: State<MetricsHandle>) -> Response {
     let body = state.render();
-    Response::new(axum::body::Body::from(body))
+    let mut response = Response::new(axum::body::Body::from(body));
+    response.headers_mut().insert(
+        "content-type",
+        HeaderValue::from_static("text/plain; charset=utf-8"),
+    );
+    response
 }
 
 pub async fn metrics_middleware(
