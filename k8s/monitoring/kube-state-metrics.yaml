@@ -6,7 +6,6 @@ metadata:
   labels:
     app:  kube-state-metrics-server
 spec:
-  serviceAccountName: kube-state-metrics
   replicas: 1
   selector:
     matchLabels:
@@ -16,6 +15,7 @@ spec:
       labels:
         app:  kube-state-metrics-server
     spec:
+      serviceAccountName: kube-state-metrics
       containers:
         - name:  kube-state-metrics
           image: registry.k8s.io/kube-state-metrics:v2

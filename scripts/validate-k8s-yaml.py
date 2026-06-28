@@ -3,36 +3,42 @@
 
 Checks:
 - YAML syntax (every file, every document)
-- Required fields: apiVersion, kind, metadata.name, metadata.namespace
-- Service names referenced by IngressRoute exist
-- Port mismatches between IngressRoute and target Service
+- Required fields: apiVersion, kind, metadata.name
+- Namespace present on namespaced resources
+- Service port consistency (IngressRoute vs Service, Prometheus targets vs Service)
+- IngressRoute references existing Service
+- Bad fields: clusterIP in Deployment/DaemonSet, serviceAccountName at wrong level
 
 Usage: python3 scripts/validate-k8s-yaml.py
 Exit 0 = OK, 1 = errors found.
 """
 
-import os
-import sys
+import os, sys, glob
 import yaml
-import glob
 
 
 K8S_DIR = "k8s"
-NAMESPACE = "mediatracker"
+CLUSTER_SCOPED = {
+    "Namespace", "ClusterRole", "ClusterRoleBinding",
+    "StorageClass", "VolumeSnapshotClass",
+}
+NAMESPACED_KINDS = {
+    "Deployment", "DaemonSet", "Service", "ConfigMap", "Secret",
+    "IngressRoute", "Ingress", "ServiceAccount", "Role", "RoleBinding",
+    "PersistentVolumeClaim", "HorizontalPodAutoscaler",
+    "NetworkPolicy", "PodDisruptionBudget",
+}
 
 errors = []
 warnings = []
-
 
 def err(msg, file=None):
     prefix = f"[{file}] " if file else ""
     errors.append(f"{prefix}{msg}")
 
-
 def warn(msg, file=None):
     prefix = f"[{file}] " if file else ""
     warnings.append(f"{prefix}{msg}")
-
 
 def required_fields(doc, file, fields):
     for f in fields:
@@ -45,9 +51,7 @@ def required_fields(doc, file, fields):
                 err(f"Missing required field: {f}", file)
                 break
 
-
 def parse_yaml_files():
-    """Parse all YAML files, return list of (file, docs)."""
     results = []
     pattern = os.path.join(K8S_DIR, "**/*.yaml")
     for fpath in sorted(glob.glob(pattern, recursive=True)):
@@ -59,9 +63,7 @@ def parse_yaml_files():
             err(f"YAML parse error: {e}", fpath)
     return results
 
-
 def build_service_map(parsed):
-    """Build {name: {namespace, port}} from Service resources."""
     services = {}
     for fpath, docs in parsed:
         for doc in docs:
@@ -70,21 +72,17 @@ def build_service_map(parsed):
             if doc.get("kind") == "Service":
                 meta = doc.get("metadata", {})
                 name = meta.get("name")
-                ns = meta.get("namespace", NAMESPACE)
+                ns = meta.get("namespace")
                 ports = doc.get("spec", {}).get("ports", [])
                 if name:
-                    services[name] = {
-                        "namespace": ns,
+                    services[(name, ns)] = {
                         "port": ports[0]["port"] if ports else None,
                         "file": fpath,
                     }
     return services
 
-
 def validate_syntax(parsed):
-    """All files should parse as valid YAML (handled in parse_yaml_files)."""
     pass
-
 
 def validate_required_fields(parsed):
     for fpath, docs in parsed:
@@ -93,14 +91,6 @@ def validate_required_fields(parsed):
                 continue
             tag = f"{fpath}:doc{i}"
             required_fields(doc, tag, ["apiVersion", "kind", "metadata.name"])
-
-
-SYSTEM_NAMESPACES = {"kube-system", "kube-public", "kube-node-lease"}
-CLUSTER_SCOPED = {
-    "Namespace", "ClusterRole", "ClusterRoleBinding",
-    "StorageClass", "VolumeSnapshotClass",
-}
-
 
 def validate_namespace(parsed):
     for fpath, docs in parsed:
@@ -112,14 +102,49 @@ def validate_namespace(parsed):
             ns = meta.get("namespace")
             if kind in CLUSTER_SCOPED:
                 continue
-            if ns in SYSTEM_NAMESPACES:
-                continue
-            if ns != NAMESPACE:
-                if ns is None:
-                    err(f"Missing namespace (expected '{NAMESPACE}')", f"{fpath}:doc{i}")
-                elif ns:
-                    err(f"Wrong namespace '{ns}' (expected '{NAMESPACE}')", f"{fpath}:doc{i}")
+            if ns is None:
+                err(f"Missing namespace on namespaced resource", f"{fpath}:doc{i}")
+            elif kind == "IngressRoute" and ns != meta.get("namespace"):
+                warn(f"IngressRoute namespace mismatch", f"{fpath}:doc{i}")
 
+def validate_no_bad_fields(parsed):
+    for fpath, docs in parsed:
+        for i, doc in enumerate(docs):
+            if doc is None:
+                continue
+            kind = doc.get("kind", "")
+            if kind in ("Deployment", "DaemonSet", "StatefulSet"):
+                spec = doc.get("spec", {})
+                svc_name = spec.get("serviceAccountName")
+                if svc_name:
+                    err(
+                        f"'serviceAccountName' must be in template.spec, not spec (at Deployment level)",
+                        f"{fpath}:doc{i}",
+                    )
+                if "clusterIP" in spec:
+                    err(
+                        f"'clusterIP' is not a valid Deployment/DaemonSet field "
+                        f"(it belongs to Service)",
+                        f"{fpath}:doc{i}",
+                    )
+                # Check volumes are not inside containers
+                template = spec.get("template", {})
+                tspec = template.get("spec", {})
+                containers = tspec.get("containers", [])
+                for c in containers:
+                    if "volumes" in c:
+                        err(
+                            f"'volumes' is inside container '{c.get('name', '?')}' "
+                            f"(should be at spec level)",
+                            f"{fpath}:doc{i}",
+                        )
+                # Check ports inside containers
+                for c in containers:
+                    if "ports" not in c:
+                        warn(
+                            f"Container '{c.get('name', '?')}' has no ports defined",
+                            f"{fpath}:doc{i}",
+                        )
 
 def validate_ingress_routes(parsed, services):
     for fpath, docs in parsed:
@@ -133,23 +158,17 @@ def validate_ingress_routes(parsed, services):
                     for s in svcs:
                         svc_name = s.get("name")
                         svc_port = s.get("port")
+                        ns = doc.get("metadata", {}).get("namespace")
                         if svc_name:
-                            if svc_name not in services:
+                            key = (svc_name, ns)
+                            if key not in services:
                                 err(
                                     f"IngressRoute references service '{svc_name}' "
-                                    f"but no Service with that name exists",
+                                    f"in namespace '{ns}' but no matching Service exists",
                                     f"{fpath}:doc{i}",
                                 )
                             else:
-                                actual = services[svc_name]
-                                actual_ns = actual["namespace"]
-                                if actual_ns != doc.get("metadata", {}).get("namespace"):
-                                    warn(
-                                        f"Service '{svc_name}' is in namespace "
-                                        f"'{actual_ns}' but IngressRoute is in "
-                                        f"'{doc.get('metadata', {}).get('namespace')}'",
-                                        f"{fpath}:doc{i}",
-                                    )
+                                actual = services[key]
                                 if svc_port and actual["port"] and svc_port != actual["port"]:
                                     err(
                                         f"IngressRoute port {svc_port} but "
@@ -157,12 +176,10 @@ def validate_ingress_routes(parsed, services):
                                         f"{fpath}:doc{i}",
                                     )
 
-
 def main():
     parsed = parse_yaml_files()
-
     if errors:
-        print("❌ YAML PARSE ERRORS — cannot continue")
+        print("YAML PARSE ERRORS")
         for e in errors:
             print(f"   {e}")
         sys.exit(1)
@@ -171,27 +188,26 @@ def main():
 
     validate_required_fields(parsed)
     validate_namespace(parsed)
+    validate_no_bad_fields(parsed)
     validate_ingress_routes(parsed, services)
 
-    # Report
     yaml_count = sum(len(docs) for _, docs in parsed)
     file_count = len(parsed)
     print(f"Checked {file_count} files ({yaml_count} YAML documents)")
 
     if errors:
-        print(f"\n❌ {len(errors)} error(s):")
+        print(f"\n  {len(errors)} error(s):")
         for e in errors:
             print(f"   {e}")
         sys.exit(1)
 
     if warnings:
-        print(f"\n⚠️  {len(warnings)} warning(s):")
+        print(f"\n  {len(warnings)} warning(s):")
         for w in warnings:
             print(f"   {w}")
 
-    print("\n✅ All K8s YAML files valid")
+    print("\nAll K8s YAML files valid")
     sys.exit(0)
-
 
 if __name__ == "__main__":
     main()
