@@ -9,7 +9,7 @@ IMAGE="$REGISTRY:$TAG"
 SSH_HOST="${2:-VPS1}"
 
 echo "==> Building $IMAGE ..."
-DOCKER_BUILDKIT=1 docker build -t "$IMAGE" .
+DOCKER_BUILDKIT=1 docker build --network=host -t "$IMAGE" .
 
 echo ""
 echo "==> Pushing to GHCR ..."
