@@ -23,6 +23,8 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/grafana
+            - name: datasources
+              mountPath: /etc/grafana/provisioning/datasources/
           resources:
             limits:
               memory: "100Mi"
@@ -30,3 +32,6 @@ spec:
       volumes:
         - name: data
           emptyDir: {}
+        - name: datasources
+          configMap:
+            name: grafana-datasource-config
