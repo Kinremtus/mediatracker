@@ -17,6 +17,7 @@ spec:
       containers:
         - name: promtail
           image: grafana/promtail
+          args: ["-config.file=/etc/promtail/promtail-config.yaml"]
           volumeMounts:
             - name: config
               mountPath: /etc/promtail/

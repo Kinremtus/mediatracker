@@ -25,8 +25,8 @@ spec:
             - name: config
               mountPath: /etc/alertmanager/
             - name: telegram-token
-              mountPath: /etc/alertmanager/telegram-token
-              subPath: token
+              mountPath: /etc/alertmanager/secrets/
+              readOnly: true
           resources:
             limits:
               memory: "30Mi"
