@@ -10,6 +10,7 @@ backups/
 # Local k8s manifests with secrets
 k8s/cloudflared/secret.yaml
 k8s/cloudflared/credentials*.json
+k8s/monitoring/telegram-secret.yaml
 
 # Local postgres data (docker volume mount)
 postgres_data/

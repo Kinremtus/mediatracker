@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind:  DaemonSet
+metadata:
+  name: promtail-deployment
+  namespace: monitoring
+  labels:
+    app: promtail-server
+spec:
+  selector:
+    matchLabels:
+      app: promtail-server
+  template:
+    metadata:
+      labels:
+        app: promtail-server
+    spec:
+      containers:
+        - name: promtail
+          image: grafana/promtail
+          volumeMounts:
+            - name: config
+              mountPath: /etc/promtail/
+            - name: varlog
+              mountPath: /var/log
+            - name: dockercontainers
+              mountPath: /var/lib/docker/containers
+              readOnly: true
+          resources:
+            limits:
+              memory: "30Mi"
+              cpu: "20m"
+      volumes:
+        - name: config
+          configMap:
+            name: promtail-config
+        - name: varlog
+          hostPath:
+            path: /var/log
+        - name: dockercontainers
+          hostPath:
+            path: /var/lib/docker/containers

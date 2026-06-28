@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alertmanager-deployment
+  namespace: monitoring
+  labels:
+    app: alertmanager-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: alertmanager-server
+  template:
+    metadata:
+      labels:
+        app: alertmanager-server
+    spec:
+      containers:
+        - name: alertmanager
+          image: prom/alertmanager
+          ports:
+            - containerPort: 9093
+          volumeMounts:
+            - name: config
+              mountPath: /etc/alertmanager/
+            - name: telegram-token
+              mountPath: /etc/alertmanager/telegram-token
+              subPath: token
+          resources:
+            limits:
+              memory: "30Mi"
+              cpu: "30m"
+      volumes:
+        - name: config
+          configMap:
+            name: alertmanager-config
+        - name: telegram-token
+          secret:
+            secretName: telegram-bot
