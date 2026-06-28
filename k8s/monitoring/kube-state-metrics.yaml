@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name:  kube-state-metrics-deployment
+  namespace: monitoring
+  labels:
+    app:  kube-state-metrics-server
+spec:
+  serviceAccountName: kube-state-metrics
+  replicas: 1
+  selector:
+    matchLabels:
+      app:  kube-state-metrics-server
+  template:
+    metadata:
+      labels:
+        app:  kube-state-metrics-server
+    spec:
+      containers:
+        - name:  kube-state-metrics
+          image: registry.k8s.io/kube-state-metrics:v2
+          ports:
+            - containerPort: 8080
+          resources:
+            limits:
+              memory: "40Mi"
+              cpu: "30m"
