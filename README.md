@@ -16,7 +16,6 @@ Keep a personal log of everything you watch, read, and play in one place.
 - **Session-based auth** — Argon2 password hashing, PostgreSQL sessions
 - **HTMX-driven UI** — fast, no full page reloads
 - **Docker Compose** — one-command deployment
-- **Session-based auth** — Argon2 password hashing, PostgreSQL sessions
 - **Statistics** — track your consumption over time
 
 ## Tech Stack
