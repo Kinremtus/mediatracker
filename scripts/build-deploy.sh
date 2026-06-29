@@ -20,6 +20,7 @@ echo "==> Deploying on $SSH_HOST ..."
 ssh "$SSH_HOST" -- "
   set -e
   cd ~/mediatracker
+  sudo kubectl apply -f k8s/monitoring/
   sudo helm --kubeconfig /etc/rancher/k3s/k3s.yaml upgrade --install app chart/ \
     --namespace mediatracker \
     --set image.tag=$TAG

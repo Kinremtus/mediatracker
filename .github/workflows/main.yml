@@ -84,4 +84,5 @@ jobs:
 
             sudo kubectl apply -f k8s/traefik-helm-config.yaml
             sudo kubectl apply -f k8s/ingress.yaml
+            sudo kubectl apply -f k8s/monitoring/
             sudo helm --kubeconfig /etc/rancher/k3s/k3s.yaml upgrade --install app chart/ --namespace mediatracker
