@@ -144,7 +144,7 @@ pub async fn get_search_suggestions(
 
     let suggestions: Vec<SearchSuggestion> = results
         .into_iter()
-        .take(10)
+        .take(5)
         .map(|item| SearchSuggestion {
             provider: item.provider,
             external_id: item.external_id,
