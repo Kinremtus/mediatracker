@@ -373,6 +373,21 @@
     background: var(--muted);
 }
 
+.search-dropdown-advanced {
+    display: block;
+    padding: 0.5rem 0.75rem;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--primary);
+    text-decoration: none;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.1s ease;
+}
+
+.search-dropdown-advanced:hover {
+    background: var(--muted);
+}
+
 .header-actions {
     display: flex;
     align-items: center;

@@ -453,6 +453,35 @@ function refreshTrackingList() {
     }
 }
 
+// --- Save Recent Media (for quick search) ---
+function saveRecentMedia(item) {
+    let recent = JSON.parse(localStorage.getItem('recentMedia') || '[]');
+    const key = item.provider + ':' + item.external_id;
+    recent = recent.filter(i => i.provider + ':' + i.external_id !== key);
+    recent.unshift({
+        provider: item.provider,
+        external_id: item.external_id,
+        media_type: item.media_type,
+        title: item.title || item.media_type,
+        poster_url: item.poster_url || null,
+        score: item.score || null,
+        year: item.year || null,
+    });
+    localStorage.setItem('recentMedia', JSON.stringify(recent.slice(0, 5)));
+}
+
+function saveRecentMediaFromElement(el) {
+    saveRecentMedia({
+        provider: el.dataset.provider,
+        external_id: el.dataset.externalId,
+        media_type: el.dataset.mediaType,
+        title: el.dataset.title,
+        poster_url: el.dataset.posterUrl || null,
+        score: parseFloat(el.dataset.score) || null,
+        year: parseInt(el.dataset.year) || null,
+    });
+}
+
 // --- Search Dropdown (Alpine component) ---
 function searchDropdown() {
     return {
@@ -460,11 +489,11 @@ function searchDropdown() {
         query: '',
         results: [],
         loading: false,
-        recentSearches: JSON.parse(localStorage.getItem('searchHistory') || '[]'),
+        recentMedia: JSON.parse(localStorage.getItem('recentMedia') || '[]'),
 
         openDropdown() {
             this.open = true;
-            this.recentSearches = JSON.parse(localStorage.getItem('searchHistory') || '[]');
+            this.recentMedia = JSON.parse(localStorage.getItem('recentMedia') || '[]');
         },
 
         async search() {
@@ -488,28 +517,14 @@ function searchDropdown() {
         submitSearch() {
             const q = this.query.trim();
             if (q) {
-                this.addToHistory(q);
                 window.location.href = '/search?q=' + encodeURIComponent(q);
             }
         },
 
         clickResult(item) {
             this.open = false;
+            saveRecentMedia(item);
             openMediaDrawer(item.provider, item.external_id, item.media_type);
         },
-
-        addToHistory(q) {
-            q = q.trim();
-            if (!q) return;
-            let h = JSON.parse(localStorage.getItem('searchHistory') || '[]');
-            h = [q, ...h.filter(i => i !== q)].slice(0, 10);
-            localStorage.setItem('searchHistory', JSON.stringify(h));
-            this.recentSearches = h;
-        },
-
-        clearHistory() {
-            localStorage.removeItem('searchHistory');
-            this.recentSearches = [];
-        }
     };
 }

@@ -35,7 +35,14 @@
 {% if !results.is_empty() %}
 <div class="cards-grid">
     {% for item in results %}
-    <a @click.prevent="openMediaDrawer('{{ item.provider }}', '{{ item.external_id }}', '{{ item.media_type }}')" href="#" class="media-card">
+    <a @click.prevent="openMediaDrawer($el.dataset.provider, $el.dataset.externalId, $el.dataset.mediaType); saveRecentMediaFromElement($el)" href="#" class="media-card"
+       data-provider="{{ item.provider }}"
+       data-external-id="{{ item.external_id }}"
+       data-media-type="{{ item.media_type }}"
+       data-title="{{ item.title }}"
+       data-poster-url="{{ item.poster_url.as_ref().unwrap_or(&String::new()) }}"
+       data-score="{{ item.score.unwrap_or(0.0) }}"
+       data-year="{{ item.year.unwrap_or(0) }}">
         <div class="media-card-poster">
             {% if item.poster_url.is_some() %}
             <img src="{{ item.poster_url.as_ref().unwrap() }}" alt="{{ item.title }}" loading="lazy">

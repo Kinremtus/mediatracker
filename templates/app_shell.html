@@ -74,26 +74,36 @@
                 <div class="search-dropdown" x-show="open" x-cloak>
                     <template x-if="!query.length">
                         <div class="search-dropdown-section">
-                            <div class="search-dropdown-title" x-show="recentSearches.length">
+                            <div class="search-dropdown-title" x-show="recentMedia.length">
                                 <span>Недавние</span>
-                                <button class="search-dropdown-clear" @click="clearHistory()">Очистить</button>
                             </div>
-                            <template x-for="q in recentSearches" :key="q">
-                                <a :href="'/search?q=' + encodeURIComponent(q)"
-                                   class="search-dropdown-item"
-                                   @click="addToHistory(q)">
-                                    <svg class="search-dropdown-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                                    <span x-text="q"></span>
+                            <template x-for="item in recentMedia" :key="item.provider + '-' + item.external_id">
+                                <a href="#" class="search-dropdown-item"
+                                   @click.prevent="clickResult(item)">
+                                    <img x-show="item.poster_url" :src="item.poster_url"
+                                         class="search-dropdown-poster" alt="">
+                                    <div class="search-dropdown-item-body">
+                                        <div class="search-dropdown-item-title" x-text="item.title"></div>
+                                        <div class="search-dropdown-item-meta">
+                                            <span class="search-dropdown-badge" x-text="item.media_type"></span>
+                                            <span x-show="item.year" x-text="item.year"></span>
+                                            <span x-show="item.score" class="search-dropdown-score" x-text="'★ ' + item.score"></span>
+                                        </div>
+                                    </div>
                                 </a>
                             </template>
-                            <div class="search-dropdown-empty" x-show="!recentSearches.length">
+                            <div class="search-dropdown-empty" x-show="!recentMedia.length">
                                 Начните вводить запрос для поиска
                             </div>
                         </div>
                     </template>
                     <template x-if="query.length">
                         <div class="search-dropdown-section">
-                            <div class="search-dropdown-title">Результаты</div>
+                            <a :href="'/search?q=' + encodeURIComponent(query)"
+                               class="search-dropdown-advanced"
+                               @click="open = false">
+                                🔍 продвинутый поиск по «<span x-text="query"></span>»
+                            </a>
                             <template x-for="item in results" :key="item.provider + '-' + item.external_id">
                                 <a href="#" class="search-dropdown-item"
                                    @click.prevent="clickResult(item)">
@@ -111,11 +121,6 @@
                                 </a>
                             </template>
                             <div class="search-dropdown-loading" x-show="loading">Поиск…</div>
-                            <a :href="'/search?q=' + encodeURIComponent(query)"
-                               class="search-dropdown-show-all"
-                               @click="addToHistory(query)">
-                                Показать всё →
-                            </a>
                         </div>
                     </template>
                 </div>
