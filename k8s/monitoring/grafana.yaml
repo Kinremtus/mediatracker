@@ -26,8 +26,10 @@ spec:
             - name: datasources
               mountPath: /etc/grafana/provisioning/datasources/
           resources:
-            limits:
+            requests:
               memory: "256Mi"
+            limits:
+              memory: "512Mi"
               cpu: "200m"
       volumes:
         - name: data
