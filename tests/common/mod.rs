@@ -4,6 +4,7 @@ use testcontainers::runners::AsyncRunner;
 use testcontainers::ContainerAsync;
 use testcontainers_modules::postgres::Postgres as PostgresImage;
 
+#[allow(dead_code)]
 pub struct TestContext {
     pub container: ContainerAsync<PostgresImage>,
     pub pool: PgPool,
@@ -45,6 +46,7 @@ impl TestContext {
         Self { container, pool, state }
     }
 
+    #[allow(dead_code)]
     pub fn app_state(&self) -> AppState {
         self.state.clone()
     }
