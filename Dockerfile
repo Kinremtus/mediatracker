@@ -17,12 +17,13 @@ FROM chef AS builder
 COPY --from=planner /app/recipe.json recipe.json
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/app/target \
     cargo chef cook --release --recipe-path recipe.json
 COPY . .
 # Release build first, then tests reuse release artifacts
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    CARGO_BUILD_JOBS=1 \
+    --mount=type=cache,target=/app/target \
     cargo build --release --bin mediatracker --bin healthcheck --bin backfill_anime --bin backfill_chapters && \
     cargo test --release --lib && \
     cargo test --release --test app_js_syntax
