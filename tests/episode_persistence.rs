@@ -1,81 +1,49 @@
-// Persistence roundtrip tests for EpisodeService functions
-// (set_watched, count_watched, update_progress_from_watched).
-//
-// Verifies DB-level invariants that the HTMX toggle handler
-// depends on:
-//   * `set_watched` flips the bit, sets/clears `watched_at`, and
-//     returns `false` for non-existent episodes.
-//   * `count_watched` returns the MAX watched episode number (0 if
-//     nothing is watched).
-//   * `update_progress_from_watched` uses GREATEST semantics —
-//     manual progress or a higher watched count never regresses.
-//
-// We do NOT call Jikan here; episodes are inserted directly via SQL.
-// Live integration with the toggle handler is covered by Stage B
-// browser testing.
-//
-// They are #[ignore] by default because they require a live
-// Postgres. Run with:
-//
-//   TEST_DATABASE_URL=postgres://Kin@localhost/tracker_test \
-//     cargo test --test episode_persistence -- --ignored
+mod common;
 
 use mediatracker::services::episodes::{
     count_watched, set_watched, update_progress_from_watched,
 };
-use sqlx::PgPool;
 use uuid::Uuid;
 
-const MAL_ID: i64 = 999_999_991; // unique per test
+const MAL_ID: i64 = 999_999_991;
 const FIXTURE_USERNAME: &str = "test_episode_persistence_user";
-const FIXTURE_EMAIL: &str = "test_episode_persistence@example.com";
+const FIXTURE_EMAIL: &str = "test@example.com";
 
-fn require_db_url() -> String {
-    std::env::var("TEST_DATABASE_URL").unwrap_or_else(|_| {
-        panic!(
-            "TEST_DATABASE_URL not set. Run with: \
-             TEST_DATABASE_URL=postgres://Kin@localhost/tracker_test \
-             cargo test --test episode_persistence -- --ignored"
-        );
-    })
-}
+async fn setup() -> (common::TestContext, Uuid) {
+    let ctx = common::TestContext::new().await;
 
-async fn setup() -> PgPool {
-    let url = require_db_url();
-    let pool = PgPool::connect(&url).await.expect("connect to TEST_DATABASE_URL");
-    sqlx::migrate!("./migrations")
-        .run(&pool)
-        .await
-        .expect("run migrations");
-
-    // Wipe any prior fixture data (FK CASCADE clears dependent rows).
     sqlx::query("DELETE FROM users WHERE username = $1")
         .bind(FIXTURE_USERNAME)
-        .execute(&pool)
+        .execute(&ctx.pool)
         .await
         .expect("delete fixture user");
 
     sqlx::query(
         "INSERT INTO users (username, email, password_hash, role) \
-         VALUES ($1, $2, 'fakehash_for_episode_persistence_test', 'user')",
+         VALUES ($1, $2, 'fakehash', 'user')",
     )
     .bind(FIXTURE_USERNAME)
     .bind(FIXTURE_EMAIL)
-    .execute(&pool)
+    .execute(&ctx.pool)
     .await
     .expect("create fixture user");
 
-    // Clean any leftover episodes from a previous run with the same MAL_ID.
+    let user_id: Uuid = sqlx::query_scalar("SELECT id FROM users WHERE username = $1")
+        .bind(FIXTURE_USERNAME)
+        .fetch_one(&ctx.pool)
+        .await
+        .expect("get user id");
+
     sqlx::query("DELETE FROM anime_episodes WHERE external_id = $1")
         .bind(MAL_ID.to_string())
-        .execute(&pool)
+        .execute(&ctx.pool)
         .await
         .expect("delete stale episodes");
 
-    pool
+    (ctx, user_id)
 }
 
-async fn insert_episode(pool: &PgPool, n: i32, watched: bool) {
+async fn insert_episode(ctx: &common::TestContext, n: i32, watched: bool) {
     sqlx::query(
         r#"
         INSERT INTO anime_episodes
@@ -91,216 +59,182 @@ async fn insert_episode(pool: &PgPool, n: i32, watched: bool) {
     .bind(n)
     .bind(format!("Episode {n}"))
     .bind(watched)
-    .execute(pool)
+    .execute(&ctx.pool)
     .await
     .expect("insert episode");
 }
 
-async fn fixture_tracking(
-    pool: &PgPool,
-    user_id: Uuid,
-    initial_progress: i32,
-) -> Uuid {
+async fn fixture_tracking(ctx: &common::TestContext, user_id: Uuid, initial_progress: i32) -> Uuid {
     let (media_id,): (Uuid,) = sqlx::query_as(
         r#"
         INSERT INTO media_items
             (provider, external_id, media_type, title, mal_id, episodes)
         VALUES
-            ('mal', $1, 'anime', 'Persistence Anime', $1, 24)
+            ('mal', $1, 'anime', 'Persistence Anime', $2, 24)
         RETURNING id
         "#,
     )
     .bind(MAL_ID.to_string())
-    .fetch_one(pool)
+    .bind(MAL_ID)
+    .fetch_one(&ctx.pool)
     .await
     .expect("insert media_items");
 
     sqlx::query(
         r#"
         INSERT INTO tracking_entries
-            (user_id, media_id, status, progress, score, is_rewatching)
+            (user_id, media_id, status, progress)
         VALUES
-            ($1, $2, 'in_progress', $3, NULL, FALSE)
+            ($1, $2, 'in_progress', $3)
         "#,
     )
     .bind(user_id)
     .bind(media_id)
     .bind(initial_progress)
-    .execute(pool)
+    .execute(&ctx.pool)
     .await
     .expect("insert tracking_entries");
 
     media_id
 }
 
-async fn read_progress(pool: &PgPool, user_id: Uuid, media_id: Uuid) -> i32 {
+async fn read_progress(ctx: &common::TestContext, user_id: Uuid, media_id: Uuid) -> i32 {
     let (p,): (i32,) =
         sqlx::query_as("SELECT progress FROM tracking_entries WHERE user_id = $1 AND media_id = $2")
             .bind(user_id)
             .bind(media_id)
-            .fetch_one(pool)
+            .fetch_one(&ctx.pool)
             .await
             .expect("read progress");
     p
 }
 
-async fn read_watched_at(
-    pool: &PgPool,
-    n: i32,
-) -> Option<chrono::DateTime<chrono::Utc>> {
+async fn read_watched_at(ctx: &common::TestContext, n: i32) -> Option<chrono::DateTime<chrono::Utc>> {
     let row: Option<(Option<chrono::DateTime<chrono::Utc>>,)> = sqlx::query_as(
         "SELECT watched_at FROM anime_episodes WHERE external_id = $1 AND episode_number = $2",
     )
     .bind(MAL_ID.to_string())
     .bind(n)
-    .fetch_optional(pool)
+    .fetch_optional(&ctx.pool)
     .await
     .expect("read watched_at");
     row.and_then(|(v,)| v)
 }
 
 #[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL"]
 async fn set_watched_roundtrip() {
-    let pool = setup().await;
-    insert_episode(&pool, 1, false).await;
+    let (ctx, _) = setup().await;
+    insert_episode(&ctx, 1, false).await;
 
-    // Toggle ON: should report the row was updated and stamp watched_at.
-    let updated = set_watched(&pool, MAL_ID, 1, true).await.expect("set true");
+    let updated = set_watched(&ctx.pool, MAL_ID, 1, true).await.expect("set true");
     assert!(updated, "set_watched(true) should return true when row exists");
-    assert!(read_watched_at(&pool, 1).await.is_some(), "watched_at must be set");
+    assert!(read_watched_at(&ctx, 1).await.is_some(), "watched_at must be set");
 
-    // Toggle OFF: row still exists, watched_at is cleared.
-    let updated = set_watched(&pool, MAL_ID, 1, false).await.expect("set false");
+    let updated = set_watched(&ctx.pool, MAL_ID, 1, false).await.expect("set false");
     assert!(updated, "set_watched(false) should still return true when row exists");
-    assert!(read_watched_at(&pool, 1).await.is_none(), "watched_at must be cleared on unwatch");
+    assert!(read_watched_at(&ctx, 1).await.is_none(), "watched_at must be cleared on unwatch");
 
-    // Non-existent episode: should report "no row updated".
-    let updated = set_watched(&pool, MAL_ID, 9999, true).await.expect("set on missing");
+    // Fresh context with no episodes: non-existent episode must report 0 rows affected.
+    let (empty_ctx, _) = setup().await;
+    let updated = set_watched(&empty_ctx.pool, MAL_ID, 9999, true).await.expect("set on missing");
     assert!(!updated, "set_watched on missing episode must return false");
 }
 
-/// Bulk-fill semantics on watch AND reverse bulk-fill on unwatch.
-/// Marking ep N watched also marks 1..N watched (MAL / AniList UX for
-/// long series). Un-watching ep N is the mirror: it clears N and
-/// everything after it, matching the user's mental model of "I am at
-/// episode N" (if I haven't seen N, I haven't seen N+1, N+2, …).
 #[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL"]
 async fn set_watched_bulk_fills_below_on_watch_and_cascades_above_on_unwatch() {
-    let pool = setup().await;
+    let (ctx, _) = setup().await;
     for n in 1..=5 {
-        insert_episode(&pool, n, false).await;
+        insert_episode(&ctx, n, false).await;
     }
 
-    // Mark ep 3 watched → 1, 2, 3 all watched.
-    let updated = set_watched(&pool, MAL_ID, 3, true).await.expect("mark 3");
+    let updated = set_watched(&ctx.pool, MAL_ID, 3, true).await.expect("mark 3");
     assert!(updated);
     for n in 1..=3 {
         assert!(
-            read_watched_at(&pool, n).await.is_some(),
+            read_watched_at(&ctx, n).await.is_some(),
             "ep {n} must be watched after bulk-fill from ep 3"
         );
     }
     for n in 4..=5 {
         assert!(
-            read_watched_at(&pool, n).await.is_none(),
+            read_watched_at(&ctx, n).await.is_none(),
             "ep {n} must remain unwatched (above the bulk-fill point)"
         );
     }
 
-    // Mark ep 5 watched → 1..5 all watched.
-    let updated = set_watched(&pool, MAL_ID, 5, true).await.expect("mark 5");
+    let updated = set_watched(&ctx.pool, MAL_ID, 5, true).await.expect("mark 5");
     assert!(updated);
     for n in 1..=5 {
         assert!(
-            read_watched_at(&pool, n).await.is_some(),
+            read_watched_at(&ctx, n).await.is_some(),
             "ep {n} must be watched after bulk-fill to ep 5"
         );
     }
 
-    // Unwatch ep 3 → 3, 4, 5 all cleared; 1, 2 stay watched (reverse
-    // bulk-fill: "I am at ep 2, so 3+ are unwatched").
-    let updated = set_watched(&pool, MAL_ID, 3, false).await.expect("unwatch 3");
+    let updated = set_watched(&ctx.pool, MAL_ID, 3, false).await.expect("unwatch 3");
     assert!(updated);
     for n in 1..=2 {
         assert!(
-            read_watched_at(&pool, n).await.is_some(),
+            read_watched_at(&ctx, n).await.is_some(),
             "ep {n} must stay watched (below the un-check point)"
         );
     }
     for n in 3..=5 {
         assert!(
-            read_watched_at(&pool, n).await.is_none(),
+            read_watched_at(&ctx, n).await.is_none(),
             "ep {n} must cascade-unwrap to the un-check point"
         );
     }
 
-    // Unwatch at the bottom: no-op below, but rows_affected > 0 because
-    // ep 1 itself flips.
-    let updated = set_watched(&pool, MAL_ID, 1, false).await.expect("unwatch 1");
+    let updated = set_watched(&ctx.pool, MAL_ID, 1, false).await.expect("unwatch 1");
     assert!(updated);
     for n in 1..=2 {
-        assert!(read_watched_at(&pool, n).await.is_none(), "ep {n} unwatched");
+        assert!(read_watched_at(&ctx, n).await.is_none(), "ep {n} unwatched");
     }
 }
 
 #[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL"]
 async fn count_watched_returns_max_episode_number() {
-    let pool = setup().await;
-    insert_episode(&pool, 1, false).await;
-    insert_episode(&pool, 2, true).await;
-    insert_episode(&pool, 3, false).await;
-    insert_episode(&pool, 4, true).await;
-    insert_episode(&pool, 5, true).await;
+    let (ctx, _) = setup().await;
+    insert_episode(&ctx, 1, false).await;
+    insert_episode(&ctx, 2, true).await;
+    insert_episode(&ctx, 3, false).await;
+    insert_episode(&ctx, 4, true).await;
+    insert_episode(&ctx, 5, true).await;
 
-    let n = count_watched(&pool, MAL_ID).await.expect("count");
+    let n = count_watched(&ctx.pool, MAL_ID).await.expect("count");
     assert_eq!(n, 5, "must return the highest watched episode number, not the count");
 
-    // Mark a higher episode watched → MAX goes up.
-    insert_episode(&pool, 10, true).await;
-    let n = count_watched(&pool, MAL_ID).await.expect("count after 10");
+    insert_episode(&ctx, 10, true).await;
+    let n = count_watched(&ctx.pool, MAL_ID).await.expect("count after 10");
     assert_eq!(n, 10);
 
-    // Unwatch the top → MAX drops to the next highest watched.
-    set_watched(&pool, MAL_ID, 10, false).await.expect("unwatch 10");
-    let n = count_watched(&pool, MAL_ID).await.expect("count after unwatch");
+    set_watched(&ctx.pool, MAL_ID, 10, false).await.expect("unwatch 10");
+    let n = count_watched(&ctx.pool, MAL_ID).await.expect("count after unwatch");
     assert_eq!(n, 5);
 }
 
 #[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL"]
 async fn update_progress_from_watched_uses_greatest_semantics() {
-    let pool = setup().await;
+    let (ctx, user_id) = setup().await;
 
-    let user_id: Uuid = sqlx::query_scalar("SELECT id FROM users WHERE username = $1")
-        .bind(FIXTURE_USERNAME)
-        .fetch_one(&pool)
-        .await
-        .expect("get fixture user id");
-
-    // Progress=5, then watched count 10 → progress should become 10.
-    let media_id = fixture_tracking(&pool, user_id, 5).await;
-    update_progress_from_watched(&pool, user_id, media_id, 10)
+    let media_id = fixture_tracking(&ctx, user_id, 5).await;
+    update_progress_from_watched(&ctx.pool, user_id, media_id, 10)
         .await
         .expect("update to 10");
-    assert_eq!(read_progress(&pool, user_id, media_id).await, 10);
+    assert_eq!(read_progress(&ctx, user_id, media_id).await, 10);
 
-    // Now watched count drops to 3 (e.g. user un-checked episodes).
-    // Progress must NOT regress — GREATEST(10, 3) = 10.
-    update_progress_from_watched(&pool, user_id, media_id, 3)
+    update_progress_from_watched(&ctx.pool, user_id, media_id, 3)
         .await
         .expect("update to 3");
     assert_eq!(
-        read_progress(&pool, user_id, media_id).await,
+        read_progress(&ctx, user_id, media_id).await,
         10,
         "progress must never regress below the current value"
     );
 
-    // Watched count above progress → bump up.
-    update_progress_from_watched(&pool, user_id, media_id, 12)
+    update_progress_from_watched(&ctx.pool, user_id, media_id, 12)
         .await
         .expect("update to 12");
-    assert_eq!(read_progress(&pool, user_id, media_id).await, 12);
+    assert_eq!(read_progress(&ctx, user_id, media_id).await, 12);
 }
