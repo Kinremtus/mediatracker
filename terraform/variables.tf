@@ -13,3 +13,14 @@ variable "server_ip" {
   description = "Public IP of InterServer VPS"
   type        = string
 }
+
+/* variable "vultr_api_key" {
+  description = "VULTR API key"
+  type        = string
+  sensitive   = true
+}
+
+variable "vultr_ssh_key" {
+  description = "VULTR SSH public key"
+  type        = string
+} */
