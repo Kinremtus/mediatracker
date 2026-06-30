@@ -2,16 +2,16 @@
 
 ## Environment
 - Code edited **locally** (~/mediatracker)
-- App runs **only on remote server** via Docker Compose
+- App runs **on k3s (Kubernetes)** on VPS1
 - **DO NOT** run docker compose locally — no .env, no nginx
-- Deploy: `git push` → GitHub Actions → auto-deploy
+- Deploy: `git push` → GitHub Actions (self-hosted runner) → auto-deploy
 - Verify: `ssh VPS1`
 
 ## Critical Rules
-- DB: user=`Kin`, db=`tracker`
+- DB: user=`Kin`, db=`tracker`, runs as StatefulSet in k3s
 - After `migrations/` changes: migrations auto-run on startup via `sqlx::migrate!()`
-- Deploy: `sudo docker compose up -d --build`
-- Logs: `sudo docker compose logs --tail=50 app|db`
+- Deploy: CI runs → `helm upgrade --install app chart/ -n mediatracker`
+- Logs: `kubectl logs -n mediatracker deployment/app` / `kubectl logs -n mediatracker statefulset/postgres`
 
 ## Stack
 Rust 1.95 · Axum 0.8 · SQLx 0.8 · Askama 0.16 · PostgreSQL 17 · Alpine.js · HTMX
@@ -66,25 +66,55 @@ Rust 1.95 · Axum 0.8 · SQLx 0.8 · Askama 0.16 · PostgreSQL 17 · Alpine.js �
 - External API клиенты: `src/services/external/<provider>.rs`
 - Статика: `static/css/`, `static/js/` (nginx, ETag cache-bust)
 - Миграции: `migrations/*.sql`, авто-применение при старте
-- Скрипты: `scripts/` (backup, restore, backfill)
+- Скрипты: `scripts/` (backup, restore, backfill, build-deploy, validate-k8s-yaml)
 
 ## CI / Deploy
-- Workflow: `.github/workflows/main.yml`
-- Docker buildx с локальным кэшем (быстрые пересборки)
-- Cloudflare Tunnel → nginx (port 80) → app (8080)
+- Workflow: `.github/workflows/main.yml` (self-hosted runner, `runs-on: self-hosted`)
+- Pipeline:
+  1. **check**: clippy + `cargo test` + `cargo audit` + validate K8s YAML
+  2. **build**: Docker buildx (with GHA cache) → push to GHCR (`ghcr.io/kinremtus/mediatracker:latest`)
+  3. **deploy**: SSH to VPS1 → `git reset --hard origin/main` → `kubectl apply` (ingress, monitoring) → `helm upgrade --install app chart/ -n mediatracker`
+- Runner: installed at `/home/Kinremtus/actions-runner/` on laptop (self-hosted)
+
+## Infrastructure
+- Kubernetes: k3s on VPS1
+- Registry: GHCR (ghcr.io/kinremtus/mediatracker)
+- Ingress: Traefik (k8s/traefik-helm-config.yaml + ingress.yaml)
+- Cloudflare Tunnel → Traefik → app (port 8080)
+- Monitoring: k8s/monitoring/ (applied on every deploy)
+- Postgres: StatefulSet in cluster (not external)
 - Healthcheck: `GET /health` → `{"status":"ok"}`
+- Helm chart: `chart/` (templates, values.yaml)
 
 ## Commands
 ```bash
-# Local (if needed)
+# Local
 cargo check / cargo build --release
 
-# Server
-sudo docker compose up -d --build
-sudo docker compose -f docker-compose.prod.yml up -d --build
-sudo docker compose exec db psql -U Kin -d tracker
+# Server — logs
+kubectl logs -n mediatracker deployment/app
+kubectl logs -n mediatracker statefulset/postgres
+kubectl logs -n mediatracker deployment/app --tail=50 -f
 
-# Backup
-./scripts/backup-db.sh
-./scripts/restore-db.sh backups/20240101_120000.sql.gz
+# Server — DB
+kubectl exec -n mediatracker statefulset/postgres -- psql -U Kin -d tracker
+
+# Server — restart / rollout
+kubectl rollout restart deployment/app -n mediatracker
+kubectl rollout status deployment/app -n mediatracker
+
+# Server — helm
+sudo helm --kubeconfig /etc/rancher/k3s/k3s.yaml upgrade --install app chart/ -n mediatracker
+
+# Manual build+deploy
+./scripts/build-deploy.sh [tag] [ssh-host]
 ```
+
+## Scripts Status
+| Script | k3s compatible? | Notes |
+|--------|----------------|-------|
+| `build-deploy.sh` | ✅ | Uses kubectl + helm |
+| `validate-k8s-yaml.py` | ✅ | Lints k8s/ YAML files |
+| `backup-db.sh` | ❌ | Uses `docker compose exec` — needs update for k3s |
+| `restore-db.sh` | ❌ | Uses `docker compose exec` — needs update for k3s |
+| `backfill-details.sh` | ? | Untested with k3s |
