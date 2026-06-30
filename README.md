@@ -29,6 +29,7 @@ Keep a personal log of everything you watch, read, and play in one place.
 | Frontend | HTMX + Alpine.js |
 | Auth | Argon2, session-based (PostgreSQL) |
 | Containers | Docker Compose, multi-stage build |
+| IaC | Terraform (Cloudflare, VULTR) |
 
 ## Quick Start
 
@@ -85,6 +86,7 @@ The app will be available at `http://localhost:8080`.
 │   │   └── notifications/ # Telegram bot
 │   ├── models/         # Database models
 │   └── middleware/     # Auth, sessions, etc.
+├── terraform/           # Infrastructure as Code (Cloudflare, VULTR)
 ├── templates/          # Askama HTML templates
 ├── migrations/         # SQLx migrations
 ├── static/             # CSS, JS, images (served by nginx)
@@ -92,6 +94,24 @@ The app will be available at `http://localhost:8080`.
 ├── chart/              # Helm chart
 └── scripts/            # Backup, restore utilities
 ```
+
+## Infrastructure as Code
+
+The [`terraform/`](terraform/) directory contains IaC for managing cloud infrastructure:
+
+| Provider | Resource | Purpose |
+|----------|----------|---------|
+| **Cloudflare** | `cloudflare_record.main` | DNS CNAME for Cloudflare Tunnel → InterServer VPS |
+| **Cloudflare** | `cloudflare_record.dev` | A-record for ephemeral VULTR test VPS |
+| **VULTR** | `vultr_instance`, `vultr_ssh_key` | Full lifecycle of a test VM (Docker, Ubuntu) |
+
+Key Terraform patterns used:
+- **`terraform import`** — adopt existing resources under management
+- **`terraform destroy -target`** — selective teardown of specific resources
+- **`user_data`** — bootstrap Docker on VPS at first boot
+- **`.terraform.lock.hcl`** — pin provider versions (same as `Cargo.lock`)
+
+All Terraform state is local (`terraform.tfstate`), provider binaries are gitignored.
 
 ## License
 
