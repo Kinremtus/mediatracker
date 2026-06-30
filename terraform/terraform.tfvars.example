@@ -1,0 +1,4 @@
+cloudflare_api_token = "your-cloudflare-api-token"
+cloudflare_zone_id  = "your-zone-id"
+domain              = "mediatracker.ru"
+server_ip           = "your-server-ip"

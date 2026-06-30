@@ -17,3 +17,5 @@ postgres_data/
 
 # Local AI tooling config
 .opencode/
+
+terraform/terraform.tfvars

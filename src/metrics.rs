@@ -7,7 +7,7 @@ use axum::{
 };
 use metrics::counter;
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 
 #[derive(Clone)]
@@ -20,11 +20,16 @@ impl MetricsHandle {
 }
 
 pub fn init_metrics() -> MetricsHandle {
-    let builder = PrometheusBuilder::new();
-    let handle = builder
-        .install_recorder()
-        .expect("failed to install prometheus recorder");
-    MetricsHandle(Arc::new(handle))
+    static HANDLE: OnceLock<MetricsHandle> = OnceLock::new();
+    HANDLE
+        .get_or_init(|| {
+            let builder = PrometheusBuilder::new();
+            let handle = builder
+                .install_recorder()
+                .expect("failed to install prometheus recorder");
+            MetricsHandle(Arc::new(handle))
+        })
+        .clone()
 }
 
 pub async fn metrics_handler(state: State<MetricsHandle>) -> Response {
