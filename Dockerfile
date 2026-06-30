@@ -25,16 +25,20 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/app/target \
     cargo build --release --bin mediatracker --bin healthcheck --bin backfill_anime --bin backfill_chapters && \
+    cp /app/target/release/mediatracker /app/mediatracker && \
+    cp /app/target/release/healthcheck /app/healthcheck && \
+    cp /app/target/release/backfill_anime /app/backfill_anime && \
+    cp /app/target/release/backfill_chapters /app/backfill_chapters && \
     cargo test --release --lib && \
     cargo test --release --test app_js_syntax
 
 # Runtime stage: distroless — no shell, no apt, no curl
 FROM gcr.io/distroless/cc:nonroot
 WORKDIR /app
-COPY --from=builder --chown=65532:65532 /app/target/release/mediatracker /app/mediatracker
-COPY --from=builder --chown=65532:65532 /app/target/release/healthcheck /app/healthcheck
-COPY --from=builder --chown=65532:65532 /app/target/release/backfill_anime /app/backfill_anime
-COPY --from=builder --chown=65532:65532 /app/target/release/backfill_chapters /app/backfill_chapters
+COPY --from=builder --chown=65532:65532 /app/mediatracker /app/mediatracker
+COPY --from=builder --chown=65532:65532 /app/healthcheck /app/healthcheck
+COPY --from=builder --chown=65532:65532 /app/backfill_anime /app/backfill_anime
+COPY --from=builder --chown=65532:65532 /app/backfill_chapters /app/backfill_chapters
 COPY --from=builder --chown=65532:65532 /app/static /app/static
 COPY --from=builder --chown=65532:65532 /app/migrations /app/migrations
 EXPOSE 8080
