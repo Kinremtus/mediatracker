@@ -20,4 +20,4 @@ postgres_data/
 
 terraform/terraform.tfvars
 terraform/terraform.tfstate
-.terraform/
+.terraform/terraform/terraform.tfstate.backup
