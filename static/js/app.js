@@ -482,8 +482,9 @@ function saveRecentMediaFromElement(el) {
     });
 }
 
-// --- Search Dropdown (Alpine component) ---
-function searchDropdown() {
+// --- Search Overlay (Alpine component) ---
+// Listens for 'open-search' custom event dispatched from header triggers.
+function searchOverlay() {
     return {
         open: false,
         query: '',
@@ -491,9 +492,22 @@ function searchDropdown() {
         loading: false,
         recentMedia: JSON.parse(localStorage.getItem('recentMedia') || '[]'),
 
-        openDropdown() {
+        init() {
+            window.addEventListener('open-search', () => this.openSearch());
+        },
+
+        openSearch() {
             this.open = true;
             this.recentMedia = JSON.parse(localStorage.getItem('recentMedia') || '[]');
+            this.$nextTick(() => {
+                this.$refs.overlayInput?.focus();
+            });
+        },
+
+        closeSearch() {
+            this.open = false;
+            this.query = '';
+            this.results = [];
         },
 
         async search() {
@@ -522,7 +536,7 @@ function searchDropdown() {
         },
 
         clickResult(item) {
-            this.open = false;
+            this.closeSearch();
             saveRecentMedia(item);
             openMediaDrawer(item.provider, item.external_id, item.media_type);
         },
