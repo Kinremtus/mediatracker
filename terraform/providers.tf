@@ -6,9 +6,17 @@ terraform {
       source  = "cloudflare/cloudflare"
       version = "~> 4.0"
     }
+    /* vultr = {
+      source  = "vultr/vultr"
+      version = "~> 2.0"
+    } */
   }
 }
 
 provider "cloudflare" {
   api_token = var.cloudflare_api_token
 }
+
+/* provider "vultr" {
+  api_key = var.vultr_api_key
+} */
