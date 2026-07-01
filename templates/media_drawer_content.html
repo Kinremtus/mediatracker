@@ -108,6 +108,64 @@
 </div>
 {% endif %}
 
+{# === ADD TO TRACKING (only if NOT tracked) === #}
+{% if tracking_id.is_none() %}
+<div class="drawer-divider"></div>
+<div class="drawer-section">
+    <div class="drawer-section-label" style="margin-bottom: 0.5rem;">Добавить в список</div>
+    <form hx-post="/tracking" hx-target="closest .drawer-add-tracking" hx-swap="outerHTML"
+          hx-on:htmx:after-request="if(event.detail.successful) afterAddToTracking(event, this)"
+          class="drawer-add-tracking">
+        <input type="hidden" name="provider" value="{{ item.provider }}">
+        <input type="hidden" name="external_id" value="{{ item.external_id }}">
+        <input type="hidden" name="media_type" value="{{ item.media_type }}">
+        {% if item.shikimori_id.is_some() %}<input type="hidden" name="shikimori_id" value="{{ item.shikimori_id.unwrap() }}">{% endif %}
+        {% if item.mal_id.is_some() %}<input type="hidden" name="mal_id" value="{{ item.mal_id.unwrap() }}">{% endif %}
+        <input type="hidden" name="title" value="{{ item.title }}">
+        {% if item.title_english.is_some() %}<input type="hidden" name="title_english" value="{{ item.title_english.as_ref().unwrap() }}">{% endif %}
+        {% if item.title_native.is_some() %}<input type="hidden" name="title_native" value="{{ item.title_native.as_ref().unwrap() }}">{% endif %}
+        {% if item.title_russian.is_some() %}<input type="hidden" name="title_russian" value="{{ item.title_russian.as_ref().unwrap() }}">{% endif %}
+        {% if item.poster_url.is_some() %}<input type="hidden" name="poster_url" value="{{ item.poster_url.as_ref().unwrap() }}">{% endif %}
+        {% if item.episodes.is_some() %}<input type="hidden" name="episodes" value="{{ item.episodes.unwrap() }}">{% endif %}
+        {% if item.description.is_some() %}<input type="hidden" name="description" value="{{ item.description.as_ref().unwrap() }}">{% endif %}
+        {% if item.status.is_some() %}<input type="hidden" name="status" value="{{ item.status.as_ref().unwrap() }}">{% endif %}
+        {% if item.score.is_some() %}<input type="hidden" name="score" value="{{ item.score.unwrap() }}">{% endif %}
+        {% if item.format_type.is_some() %}<input type="hidden" name="format_type" value="{{ item.format_type.as_ref().unwrap() }}">{% endif %}
+        {% if item.chapters.is_some() %}<input type="hidden" name="chapters" value="{{ item.chapters.unwrap() }}">{% endif %}
+        {% if item.volumes.is_some() %}<input type="hidden" name="volumes" value="{{ item.volumes.unwrap() }}">{% endif %}
+        {% if item.pages.is_some() %}<input type="hidden" name="pages" value="{{ item.pages.unwrap() }}">{% endif %}
+        {% if item.runtime_minutes.is_some() %}<input type="hidden" name="runtime_minutes" value="{{ item.runtime_minutes.unwrap() }}">{% endif %}
+        {% if item.playtime_hours.is_some() %}<input type="hidden" name="playtime_hours" value="{{ item.playtime_hours.unwrap() }}">{% endif %}
+        {% if item.year.is_some() %}<input type="hidden" name="year" value="{{ item.year.unwrap() }}">{% endif %}
+        {% if item.premiered_season.is_some() %}<input type="hidden" name="premiered_season" value="{{ item.premiered_season.as_ref().unwrap() }}">{% endif %}
+        {% if item.premiered_year.is_some() %}<input type="hidden" name="premiered_year" value="{{ item.premiered_year.unwrap() }}">{% endif %}
+        {% if item.broadcast.is_some() %}<input type="hidden" name="broadcast" value="{{ item.broadcast.as_ref().unwrap() }}">{% endif %}
+        {% if item.source.is_some() %}<input type="hidden" name="source" value="{{ item.source.as_ref().unwrap() }}">{% endif %}
+        {% if item.rating.is_some() %}<input type="hidden" name="rating" value="{{ item.rating.as_ref().unwrap() }}">{% endif %}
+        {% if item.rating_votes.is_some() %}<input type="hidden" name="rating_votes" value="{{ item.rating_votes.unwrap() }}">{% endif %}
+        <input type="hidden" name="authors" value="{{ item.authors.join(",") }}">
+        <input type="hidden" name="artists" value="{{ item.artists.join(",") }}">
+        <input type="hidden" name="studios" value="{{ item.studios.join(",") }}">
+        <input type="hidden" name="producers" value="{{ item.producers.join(",") }}">
+        <input type="hidden" name="licensors" value="{{ item.licensors.join(",") }}">
+        <input type="hidden" name="publishers" value="{{ item.publishers.join(",") }}">
+        <input type="hidden" name="serialized_in" value="{{ item.serialized_in.join(",") }}">
+        <input type="hidden" name="networks" value="{{ item.networks.join(",") }}">
+        <input type="hidden" name="platforms" value="{{ item.platforms.join(",") }}">
+        <input type="hidden" name="genres" value="{{ item.genres.join(",") }}">
+        <input type="hidden" name="themes" value="{{ item.themes.join(",") }}">
+        <input type="hidden" name="demographics" value="{{ item.demographics.join(",") }}">
+        <input type="hidden" name="categories" value="{{ item.categories.join(",") }}">
+        <div class="drawer-add-chips">
+            <button type="submit" name="tracking_status" value="in_progress" class="drawer-add-chip" data-status="in_progress">▶ В процессе</button>
+            <button type="submit" name="tracking_status" value="planned" class="drawer-add-chip" data-status="planned">⏰ Запланировано</button>
+            <button type="submit" name="tracking_status" value="completed" class="drawer-add-chip" data-status="completed">✓ Завершено</button>
+            <button type="submit" name="tracking_status" value="dropped" class="drawer-add-chip" data-status="dropped">✕ Брошено</button>
+        </div>
+    </form>
+</div>
+{% endif %}
+
 {# === PROGRESS ZONE (only if tracked) — rating moved to hero === #}
 {% if let Some(tid) = tracking_id %}
 <div class="drawer-divider"></div>
