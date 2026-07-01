@@ -44,7 +44,18 @@
                     hx-swap="outerHTML"
                     class="tracking-progress-btn"
                     {% if entry_with_media.entry.progress <= 0 %}disabled{% endif %}>−</button>
-            <span class="tracking-progress-value">{{ entry_with_media.entry.progress }}</span>
+            <div class="tracking-progress-value" x-data="{ editing: false, val: {{ entry_with_media.entry.progress }} }">
+                <template x-if="!editing">
+                    <span @click="editing = true; $nextTick(() => $refs.input.select())" x-text="val"></span>
+                </template>
+                <template x-if="editing">
+                    <input type="number" x-model="val" x-ref="input"
+                           @keydown.enter="editing = false; updateProgress({{ entry_with_media.entry.id }}, val, '{{ entry_with_media.entry.status }}'{% if let Some(r) = entry_with_media.entry.rating %}, {{ r }}{% endif %})"
+                           @blur="editing = false; updateProgress({{ entry_with_media.entry.id }}, val, '{{ entry_with_media.entry.status }}'{% if let Some(r) = entry_with_media.entry.rating %}, {{ r }}{% endif %})"
+                           @click.stop
+                           class="tracking-progress-input">
+                </template>
+            </div>
             <span class="tracking-progress-unit">{{ entry_with_media.media.progress_unit_ru() }}</span>
             <span class="tracking-progress-total">/ {{ entry_with_media.media.total_count().unwrap_or(0) }}</span>
             <button hx-post="/tracking/{{ entry_with_media.entry.id }}/htmx"
