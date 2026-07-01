@@ -459,6 +459,19 @@ function afterAddToTracking(event, form) {
     refreshTrackingList();
 }
 
+// --- Progress: update from inline input on card ---
+function updateProgress(entryId, progress, status, rating) {
+    const vals = { progress: progress, status: status };
+    if (rating !== undefined && rating !== null && rating !== '') {
+        vals.rating = rating;
+    }
+    htmx.ajax('POST', `/tracking/${entryId}/htmx`, {
+        target: `#card-${entryId}`,
+        swap: 'outerHTML',
+        values: vals
+    });
+}
+
 // --- Refresh Tracking List (after delete from drawer) ---
 function refreshTrackingList() {
     if (typeof htmx !== 'undefined') {
