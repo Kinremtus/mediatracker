@@ -441,6 +441,24 @@ function resetRatingPreview() {
     document.querySelectorAll('.drawer-stars .drawer-star').forEach(s => s.style.color = '');
 }
 
+// --- Drawer: after add to tracking — refetch content to show controls ---
+function afterAddToTracking(event, form) {
+    const provider = form.querySelector('input[name="provider"]').value;
+    const externalId = form.querySelector('input[name="external_id"]').value;
+    fetch(`/api/media/${provider}/${externalId}`)
+        .then(r => r.text())
+        .then(html => {
+            const appShell = document.querySelector('.app-shell');
+            const data = Alpine.$data(appShell);
+            data.drawerContent = html;
+            setTimeout(() => {
+                const el = document.querySelector('.media-drawer-content');
+                if (el && typeof htmx !== 'undefined') htmx.process(el);
+            }, 0);
+        });
+    refreshTrackingList();
+}
+
 // --- Refresh Tracking List (after delete from drawer) ---
 function refreshTrackingList() {
     if (typeof htmx !== 'undefined') {
