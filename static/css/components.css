@@ -1813,16 +1813,11 @@
     text-align: center;
     font-variant-numeric: tabular-nums;
     color: var(--foreground);
-    cursor: pointer;
-}
-
-.tracking-progress-value:hover {
-    opacity: 0.7;
 }
 
 .tracking-progress-input {
-    width: 4ch;
-    padding: 0;
+    width: 5ch;
+    padding: 0 2px;
     text-align: center;
     font: inherit;
     font-variant-numeric: tabular-nums;
@@ -1831,17 +1826,6 @@
     border-radius: var(--radius-sm);
     color: var(--foreground);
     outline: none;
-}
-
-.tracking-progress-input::-inner-spin-button,
-.tracking-progress-input::-webkit-outer-spin-button,
-.tracking-progress-input::-webkit-inner-spin-button {
-    -webkit-appearance: none;
-    margin: 0;
-}
-
-.tracking-progress-input[type=number] {
-    -moz-appearance: textfield;
 }
 
 .tracking-progress-total {

@@ -45,16 +45,27 @@
                     class="tracking-progress-btn"
                     {% if entry_with_media.entry.progress <= 0 %}disabled{% endif %}>−</button>
             <div class="tracking-progress-value" x-data="{ editing: false, val: {{ entry_with_media.entry.progress }} }">
-                <span x-show="!editing" @click="editing = true" x-text="val" style="cursor:pointer"></span>
-                <input x-show="editing" type="number" x-model="val" x-ref="input"
-                       @keydown.enter="editing = false; updateProgress({{ entry_with_media.entry.id }}, val, '{{ entry_with_media.entry.status }}'{% if let Some(r) = entry_with_media.entry.rating %}, {{ r }}{% endif %})"
-                       @blur="editing = false; updateProgress({{ entry_with_media.entry.id }}, val, '{{ entry_with_media.entry.status }}'{% if let Some(r) = entry_with_media.entry.rating %}, {{ r }}{% endif %})"
-                       @click.stop
-                       x-init="$nextTick(() => { $el.focus(); $el.select(); })"
-                       class="tracking-progress-input">
+                <span x-show="!editing"
+                      @click="editing = true; $nextTick(() => $refs.input.focus())"
+                      x-text="val"
+                      style="cursor:pointer"></span>
+                <form x-show="editing" @click.stop
+                      hx-post="/tracking/{{ entry_with_media.entry.id }}/htmx"
+                      hx-target="#card-{{ entry_with_media.entry.id }}"
+                      hx-swap="outerHTML">
+                    <input type="hidden" name="status" value="{{ entry_with_media.entry.status }}">
+                    {% if let Some(r) = entry_with_media.entry.rating %}
+                    <input type="hidden" name="rating" value="{{ r }}">
+                    {% endif %}
+                    <input type="number" name="progress" x-model="val" x-ref="input"
+                           @keydown.enter="$event.target.form.requestSubmit()"
+                           @blur="$event.target.form.requestSubmit()"
+                           class="tracking-progress-input"
+                           max="{{ entry_with_media.media.total_count().unwrap_or(99999) }}">
+                </form>
             </div>
-            <span class="tracking-progress-unit">{{ entry_with_media.media.progress_unit_ru() }}</span>
-            <span class="tracking-progress-total">/ {{ entry_with_media.media.total_count().unwrap_or(0) }}</span>
+            <span class="tracking-progress-unit" style="cursor:default">{{ entry_with_media.media.progress_unit_ru() }}</span>
+            <span class="tracking-progress-total" style="cursor:default">/ {{ entry_with_media.media.total_count().unwrap_or(0) }}</span>
             <button hx-post="/tracking/{{ entry_with_media.entry.id }}/htmx"
                     hx-vals='{"status":"{{ entry_with_media.entry.status }}"{% if let Some(r) = entry_with_media.entry.rating %},"rating":"{{ r }}"{% endif %},"progress":{{ entry_with_media.entry.progress + 1 }}}'
                     hx-target="#card-{{ entry_with_media.entry.id }}"
