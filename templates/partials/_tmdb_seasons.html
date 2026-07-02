@@ -1,13 +1,11 @@
-<div id="tmdb-seasons-{{ external_id }}">
-    {% for row in rows %}
-    <div class="season-row" x-data="{ open: false }" id="season-row-{{ external_id }}-{{ row.season_number }}">
-        {% include "partials/_tmdb_season_header.html" %}
-        <div class="season-row-episodes" x-show="open" x-cloak
-             hx-get="/api/tmdb/{{ external_id }}/seasons/{{ row.season_number }}/episodes"
-             hx-trigger="revealed once"
-             hx-swap="innerHTML">
-            <div class="episode-list-empty">Загрузка эпизодов…</div>
-        </div>
+{% for row in rows %}
+<div class="season-row" x-data="{ open: false }" id="season-row-{{ external_id }}-{{ row.season_number }}">
+    {% include "partials/_tmdb_season_header.html" %}
+    <div class="season-row-episodes" x-show="open" x-cloak
+         hx-get="/api/tmdb/{{ external_id }}/seasons/{{ row.season_number }}/episodes"
+         hx-trigger="revealed once"
+         hx-swap="innerHTML">
+        <div class="episode-list-empty">Загрузка эпизодов…</div>
     </div>
-    {% endfor %}
 </div>
+{% endfor %}
