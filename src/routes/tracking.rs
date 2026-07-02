@@ -223,6 +223,10 @@ pub async fn post_add_to_tracking(
     headers: HeaderMap,
     Form(form): Form<AddToTrackingForm>,
 ) -> Response {
+    let needs_tmdb_fetch = form.provider == "tmdb" && form.episodes.is_none();
+    let tmdb_ext_id = form.external_id.clone();
+    let tmdb_mtype = form.media_type.clone();
+
     let media = crate::models::media_item::CreateMediaItem {
         provider: form.provider,
         external_id: form.external_id,
@@ -313,6 +317,25 @@ pub async fn post_add_to_tracking(
                             tracing::warn!(provider, external_id, mal_id, error = %e, "background episode fetch failed");
                         }
                     });
+                }
+            }
+
+            // Если добавляем TMDB элемент без эпизодов — подтягиваем полные данные
+            if needs_tmdb_fetch {
+                match state.tmdb.get_details(&tmdb_ext_id, &tmdb_mtype).await {
+                    Ok(detailed) => {
+                        let _ = sqlx::query(
+                            "UPDATE media_items SET episodes = $1, runtime_minutes = $2 WHERE provider = 'tmdb' AND external_id = $3"
+                        )
+                        .bind(detailed.episodes)
+                        .bind(detailed.runtime_minutes)
+                        .bind(&tmdb_ext_id)
+                        .execute(&state.db)
+                        .await;
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "failed to fetch TMDB details for episode backfill");
+                    }
                 }
             }
 
