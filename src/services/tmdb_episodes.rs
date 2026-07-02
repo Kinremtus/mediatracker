@@ -208,3 +208,124 @@ pub async fn update_progress_from_watched(
     .await?;
     Ok(())
 }
+
+pub async fn get_season_counts(
+    pool: &PgPool,
+    external_id: &str,
+    season_number: i32,
+) -> Result<(i32, i32), sqlx::Error> {
+    let row: (Option<i64>, Option<i64>) = sqlx::query_as(
+        r#"
+        SELECT COUNT(*)::bigint, COUNT(*) FILTER (WHERE watched)::bigint
+        FROM tmdb_episodes
+        WHERE external_id = $1 AND season_number = $2
+        "#,
+    )
+    .bind(external_id)
+    .bind(season_number)
+    .fetch_one(pool)
+    .await?;
+    Ok((row.0.unwrap_or(0) as i32, row.1.unwrap_or(0) as i32))
+}
+
+pub async fn get_season_group_counts(
+    pool: &PgPool,
+    external_id: &str,
+) -> Result<Vec<(i32, i32, i32)>, sqlx::Error> {
+    let rows: Vec<(i32, Option<i64>, Option<i64>)> = sqlx::query_as(
+        r#"
+        SELECT season_number, COUNT(*)::bigint, COUNT(*) FILTER (WHERE watched)::bigint
+        FROM tmdb_episodes
+        WHERE external_id = $1
+        GROUP BY season_number
+        "#,
+    )
+    .bind(external_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|(s, t, w)| (s, t.unwrap_or(0) as i32, w.unwrap_or(0) as i32))
+        .collect())
+}
+
+pub async fn get_season_watched_counts(
+    pool: &PgPool,
+    external_id: &str,
+) -> Result<Vec<(i32, i32)>, sqlx::Error> {
+    let rows: Vec<(i32, Option<i64>)> = sqlx::query_as(
+        r#"
+        SELECT season_number, COUNT(*) FILTER (WHERE watched)::bigint AS watched_count
+        FROM tmdb_episodes
+        WHERE external_id = $1
+        GROUP BY season_number
+        "#,
+    )
+    .bind(external_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|(s, c)| (s, c.unwrap_or(0) as i32)).collect())
+}
+
+pub async fn set_season_watched(
+    pool: &PgPool,
+    external_id: &str,
+    season_number: i32,
+    watched: bool,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        UPDATE tmdb_episodes
+        SET watched = $1,
+            watched_at = CASE WHEN $1 THEN NOW() ELSE NULL END
+        WHERE external_id = $2
+          AND season_number = $3
+        "#,
+    )
+    .bind(watched)
+    .bind(external_id)
+    .bind(season_number)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn get_max_watched_episode_all(
+    pool: &PgPool,
+    external_id: &str,
+) -> Result<i32, sqlx::Error> {
+    let row: (Option<i32>,) = sqlx::query_as(
+        r#"
+        SELECT COALESCE(MAX(episode_number), 0)
+        FROM tmdb_episodes
+        WHERE external_id = $1 AND watched = TRUE
+        "#,
+    )
+    .bind(external_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(row.0.unwrap_or(0))
+}
+
+pub async fn set_progress_direct(
+    pool: &PgPool,
+    user_id: Uuid,
+    media_id: Uuid,
+    progress: i32,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        UPDATE tracking_entries
+        SET progress = $1,
+            updated_at = NOW()
+        WHERE user_id = $2
+          AND media_id = $3
+        "#,
+    )
+    .bind(progress)
+    .bind(user_id)
+    .bind(media_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}

@@ -912,6 +912,58 @@
     opacity: 0.55;
 }
 
+/* --- TMDB Season rows (accordion layout) --- */
+.season-row {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 6px;
+    overflow: hidden;
+}
+.season-row-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 0 0 4px;
+    background: var(--surface);
+}
+.season-row-toggle {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 10px 8px 4px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font: inherit;
+    color: var(--foreground);
+    -webkit-appearance: none;
+    appearance: none;
+    outline: none;
+}
+.season-row-toggle:hover {
+    background: var(--accent-bg);
+}
+.season-row-name {
+    font-size: 13px;
+    font-weight: 600;
+}
+.season-row-meta {
+    font-size: 11px;
+    color: var(--muted-foreground);
+    white-space: nowrap;
+}
+.season-row-episodes {
+    border-top: 1px solid var(--border);
+}
+.season-row-episodes .episode-list {
+    max-height: none;
+    overflow: visible;
+    border: none;
+    border-radius: 0;
+}
+
 /* --- Chapter items (manga-like types: identical structure to episodes) --- */
 .chapter-list {
     max-height: 400px;
