@@ -1826,6 +1826,13 @@
     border-radius: var(--radius-sm);
     color: var(--foreground);
     outline: none;
+    -moz-appearance: textfield;
+}
+
+.tracking-progress-input::-webkit-outer-spin-button,
+.tracking-progress-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
 }
 
 .tracking-progress-total {
