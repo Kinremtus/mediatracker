@@ -356,7 +356,11 @@ impl TmdbService {
         id: &str,
         media_type: &str,
     ) -> Result<CreateMediaItem, anyhow::Error> {
-        let mut url = Url::parse(&format!("{}/{}/{}", BASE_URL, media_type, id))?;
+        let tmdb_type = match media_type {
+            "movie" | "animated-movies" => "movie",
+            _ => "tv",
+        };
+        let mut url = Url::parse(&format!("{}/{}/{}", BASE_URL, tmdb_type, id))?;
         url.query_pairs_mut()
             .append_pair("api_key", &self.api_key)
             .append_pair("language", "ru-RU");
