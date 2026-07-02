@@ -303,13 +303,10 @@ impl TmdbService {
             .iter()
             .filter_map(|r| {
                 if let Some(gid) = genre_id {
-                    let genre_ids = r["genre_ids"].as_array();
-                    if let Some(ids) = genre_ids {
+                    if let Some(ids) = r["genre_ids"].as_array() {
                         if !ids.iter().any(|id| id.as_i64() == Some(gid)) {
                             return None;
                         }
-                    } else {
-                        return None;
                     }
                 }
                 map_search_result(r, "movie")
@@ -343,13 +340,10 @@ impl TmdbService {
             .iter()
             .filter_map(|r| {
                 if let Some(gid) = genre_id {
-                    let genre_ids = r["genre_ids"].as_array();
-                    if let Some(ids) = genre_ids {
+                    if let Some(ids) = r["genre_ids"].as_array() {
                         if !ids.iter().any(|id| id.as_i64() == Some(gid)) {
                             return None;
                         }
-                    } else {
-                        return None;
                     }
                 }
                 map_search_result(r, "series")

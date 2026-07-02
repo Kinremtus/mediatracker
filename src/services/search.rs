@@ -207,6 +207,7 @@ pub async fn series(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
 pub async fn dramas(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
     let mut out = Vec::new();
     if state.tmdb.api_key.is_empty() {
+        tracing::warn!("TMDB_API_KEY not set, dramas search skipped");
         return out;
     }
     extend(
@@ -220,6 +221,7 @@ pub async fn dramas(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
 pub async fn cartoons(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
     let mut out = Vec::new();
     if state.tmdb.api_key.is_empty() {
+        tracing::warn!("TMDB_API_KEY not set, cartoons search skipped");
         return out;
     }
     extend(
@@ -233,6 +235,7 @@ pub async fn cartoons(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
 pub async fn animated_movies(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
     let mut out = Vec::new();
     if state.tmdb.api_key.is_empty() {
+        tracing::warn!("TMDB_API_KEY not set, animated movies search skipped");
         return out;
     }
     extend(
@@ -298,10 +301,11 @@ pub async fn book(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
 
 /// Без выбранного типа — срез по всем категориям (по одному запросу на группу провайдеров).
 pub async fn all_types(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
-    let (anime_r, manga_r, movie_r, game_r, book_r) = tokio::join!(
+    let (anime_r, manga_r, movie_r, series_r, game_r, book_r) = tokio::join!(
         anime(state, query),
         state.mangaupdates.search(query),
         movie(state, query),
+        series(state, query),
         game(state, query),
         book(state, query),
     );
@@ -309,6 +313,7 @@ pub async fn all_types(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
     let mut out = anime_r;
     extend(&mut out, manga_r, "mangaupdates");
     out.extend(movie_r);
+    out.extend(series_r);
     out.extend(game_r);
     out.extend(book_r);
     deduplicate_by_title(out)
