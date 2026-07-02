@@ -91,6 +91,23 @@
 </div>
 {% endif %}
 
+{# === TMDB SEASONS (series/cartoons/dramas) === #}
+{% if item.media_type == "series" || item.media_type == "cartoons" || item.media_type == "dramas" %}
+<div class="drawer-divider"></div>
+<div class="drawer-section drawer-section--collapsible" x-data="{ open: true }">
+    <button class="drawer-section-toggle" @click="open = !open" type="button">
+        Сезоны
+        <span class="drawer-section-arrow" :class="{ 'rotated': open }">▾</span>
+    </button>
+    <div class="drawer-episodes" x-show="open" x-cloak
+         hx-get="/api/tmdb/{{ item.external_id }}/seasons"
+         hx-trigger="revealed once"
+         hx-swap="innerHTML">
+        <div class="drawer-episodes-loading">Загрузка сезонов…</div>
+    </div>
+</div>
+{% endif %}
+
 {# === CHAPTERS (manga-like types) === #}
 {% if item.media_type == "manga" || item.media_type == "manhwa" || item.media_type == "manhua" || item.media_type == "novel" || item.media_type == "other-comics" %}
 <div class="drawer-divider"></div>

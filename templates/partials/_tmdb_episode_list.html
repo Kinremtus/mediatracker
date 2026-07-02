@@ -1,0 +1,9 @@
+{% if episodes.is_empty() %}
+<div class="episode-list-empty">Эпизоды не загружены</div>
+{% else %}
+<div class="episode-list">
+    {% for episode in episodes %}
+    {% include "partials/_tmdb_episode_item.html" %}
+    {% endfor %}
+</div>
+{% endif %}

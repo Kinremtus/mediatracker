@@ -13,6 +13,31 @@ struct TmdbGenre {
     name: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct TmdbSeasonInfo {
+    pub season_number: i32,
+    pub name: String,
+    pub episode_count: i32,
+    pub air_date: Option<String>,
+    pub overview: Option<String>,
+    pub poster_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TmdbEpisodeInfo {
+    pub episode_number: i32,
+    pub name: Option<String>,
+    pub overview: Option<String>,
+    pub still_path: Option<String>,
+    pub air_date: Option<String>,
+    pub runtime: Option<i32>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TmdbSeasonDetail {
+    pub episodes: Vec<TmdbEpisodeInfo>,
+}
+
 #[derive(Debug, Deserialize)]
 #[expect(dead_code)]
 struct TmdbCompany {
@@ -54,6 +79,8 @@ struct TmdbDetails {
     first_air_date: Option<String>,
     last_air_date: Option<String>,
     original_language: Option<String>,
+    #[serde(default)]
+    seasons: Vec<TmdbSeasonInfo>,
 }
 
 fn parse_date(s: Option<&str>) -> Option<chrono::NaiveDate> {
@@ -368,6 +395,35 @@ impl TmdbService {
         let response = self.client.get(url.as_str()).send().await?;
         let r: TmdbDetails = response.json().await?;
         Ok(map_details(r, media_type))
+    }
+
+    pub async fn fetch_seasons(
+        &self,
+        id: &str,
+    ) -> Result<Vec<TmdbSeasonInfo>, anyhow::Error> {
+        let mut url = Url::parse(&format!("{}/tv/{}", BASE_URL, id))?;
+        url.query_pairs_mut()
+            .append_pair("api_key", &self.api_key)
+            .append_pair("language", "ru-RU");
+
+        let response = self.client.get(url.as_str()).send().await?;
+        let details: TmdbDetails = response.json().await?;
+        Ok(details.seasons)
+    }
+
+    pub async fn fetch_season_episodes(
+        &self,
+        id: &str,
+        season_number: i32,
+    ) -> Result<TmdbSeasonDetail, anyhow::Error> {
+        let mut url = Url::parse(&format!("{}/tv/{}/season/{}", BASE_URL, id, season_number))?;
+        url.query_pairs_mut()
+            .append_pair("api_key", &self.api_key)
+            .append_pair("language", "ru-RU");
+
+        let response = self.client.get(url.as_str()).send().await?;
+        let detail: TmdbSeasonDetail = response.json().await?;
+        Ok(detail)
     }
 }
 

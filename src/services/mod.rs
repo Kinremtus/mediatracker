@@ -7,5 +7,6 @@ pub mod notifications;
 pub mod release_schedule;
 pub mod search;
 pub mod stats;
+pub mod tmdb_episodes;
 pub mod tracking;
 pub mod refresh_counts;
