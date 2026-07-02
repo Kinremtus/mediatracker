@@ -19,24 +19,24 @@ echo "============================================"
 echo "  TMDB Metadata Backfill"
 echo "============================================"
 
-# --- API key ---
+# --- API key (trim whitespace — base64 often leaves trailing \n) ---
 TMDB_API_KEY="${TMDB_API_KEY:-}"
 if [[ -z "$TMDB_API_KEY" ]]; then
     echo ">> Reading TMDB_API_KEY from K8s secret..."
     TMDB_API_KEY=$(kubectl get secret app-secret -n "$NAMESPACE" \
-        -o jsonpath='{.data.TMDB_API_KEY}' | base64 -d)
+        -o jsonpath='{.data.TMDB_API_KEY}' | base64 -d | xargs)
 fi
 
 if [[ -z "$TMDB_API_KEY" ]]; then
     echo "ERROR: TMDB_API_KEY not found (set via env or K8s secret)" >&2
     exit 1
 fi
-echo ">> TMDB_API_KEY: OK"
+echo ">> TMDB_API_KEY: OK (${#TMDB_API_KEY} chars, no whitespace)"
 
 # --- DB helper ---
 psql_cmd() {
     kubectl exec statefulset/postgres -n "$NAMESPACE" -- \
-        psql -U Kin -d tracker -t -A -F'|' -c "$1" 2>/dev/null
+        psql -U Kin -d tracker -t -A -F'|' -c "$1"
 }
 
 echo ">> Checking connectivity to postgres..."
@@ -88,10 +88,10 @@ while IFS='|' read -r eid mtype; do
             ;;
     esac
 
-    # Call TMDB API
-    resp=$(curl -sf "https://api.themoviedb.org/3/$tmdb_type/$eid?api_key=$TMDB_API_KEY&language=ru-RU" 2>/dev/null || true)
-    if [[ -z "$resp" ]]; then
-        echo "  [$idx/$total] [$mtype] $eid — TMDB API request failed"
+    # Call TMDB API (capture stderr too, so we see curl errors)
+    api_url="https://api.themoviedb.org/3/$tmdb_type/$eid?api_key=$TMDB_API_KEY&language=ru-RU"
+    if ! resp=$(curl -sf "$api_url" 2>&1); then
+        echo "  [$idx/$total] [$mtype] $eid — curl error: $resp"
         ((fail++))
         continue
     fi
@@ -105,7 +105,7 @@ while IFS='|' read -r eid mtype; do
     [[ -n "$runtime"  ]] && sets+=("runtime_minutes = $runtime")
 
     if [[ ${#sets[@]} -eq 0 ]]; then
-        echo "  [$idx/$total] [$mtype] $eid — nothing to update (no episodes, no runtime)"
+        echo "  [$idx/$total] [$mtype] $eid — nothing to update (no episodes, no runtime in API response)"
         ((skip++))
         continue
     fi
@@ -118,7 +118,12 @@ while IFS='|' read -r eid mtype; do
         sep=", "
     done
 
-    psql_cmd "UPDATE media_items SET $set_sql WHERE provider='tmdb' AND external_id='$eid'" > /dev/null
+    if ! out=$(psql_cmd "UPDATE media_items SET $set_sql WHERE provider='tmdb' AND external_id='$eid'" 2>&1); then
+        echo "  [$idx/$total] [$mtype] $eid — UPDATE failed: $out"
+        ((fail++))
+        continue
+    fi
+
     echo "  [$idx/$total] [$mtype] $eid — OK: ${set_sql}"
     ((ok++))
 
