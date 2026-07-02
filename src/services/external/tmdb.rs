@@ -302,12 +302,11 @@ impl TmdbService {
             .unwrap_or(&vec![])
             .iter()
             .filter_map(|r| {
-                if let Some(gid) = genre_id {
-                    if let Some(ids) = r["genre_ids"].as_array() {
-                        if !ids.iter().any(|id| id.as_i64() == Some(gid)) {
-                            return None;
-                        }
-                    }
+                if let Some(gid) = genre_id
+                    && let Some(ids) = r["genre_ids"].as_array()
+                    && !ids.iter().any(|id| id.as_i64() == Some(gid))
+                {
+                    return None;
                 }
                 map_search_result(r, "movie")
             })
@@ -339,12 +338,11 @@ impl TmdbService {
             .unwrap_or(&vec![])
             .iter()
             .filter_map(|r| {
-                if let Some(gid) = genre_id {
-                    if let Some(ids) = r["genre_ids"].as_array() {
-                        if !ids.iter().any(|id| id.as_i64() == Some(gid)) {
-                            return None;
-                        }
-                    }
+                if let Some(gid) = genre_id
+                    && let Some(ids) = r["genre_ids"].as_array()
+                    && !ids.iter().any(|id| id.as_i64() == Some(gid))
+                {
+                    return None;
                 }
                 map_search_result(r, "series")
             })
@@ -428,5 +426,70 @@ mod tests {
         assert_eq!(item.episodes, Some(73));
         assert_eq!(item.runtime_minutes, Some(60));
         assert!(item.networks.contains(&"HBO".to_string()));
+    }
+
+    #[test]
+    fn maps_movie_search_result() {
+        let json = serde_json::json!({
+            "id": 27205,
+            "title": "Inception",
+            "original_title": "Inception",
+            "poster_path": "/abc.jpg",
+            "vote_average": 8.367,
+            "vote_count": 30000,
+            "overview": "A thief who steals corporate secrets.",
+            "genre_ids": [28, 878],
+            "media_type": "movie"
+        });
+        let item = map_search_result(&json, "movie").unwrap();
+        assert_eq!(item.title, "Inception");
+        assert_eq!(item.external_id, "27205");
+        assert_eq!(item.score, Some(8.367));
+        assert_eq!(
+            item.poster_url,
+            Some("/tmdb-image/abc.jpg".to_string())
+        );
+    }
+
+    #[test]
+    fn maps_tv_search_result() {
+        let json = serde_json::json!({
+            "id": 1399,
+            "name": "Game of Thrones",
+            "original_name": "Game of Thrones",
+            "poster_path": "/poster.jpg",
+            "vote_average": 8.4,
+            "vote_count": 10000,
+            "overview": "Nine noble families fight for control.",
+        });
+        let item = map_search_result(&json, "series").unwrap();
+        assert_eq!(item.title, "Game of Thrones");
+        assert_eq!(item.external_id, "1399");
+        assert_eq!(item.score, Some(8.4));
+    }
+
+    #[test]
+    fn maps_search_result_without_poster() {
+        let json = serde_json::json!({
+            "id": 123,
+            "name": "No Poster Show",
+            "vote_average": 5.0,
+            "vote_count": 100,
+        });
+        let item = map_search_result(&json, "series").unwrap();
+        assert_eq!(item.title, "No Poster Show");
+        assert_eq!(item.poster_url, None);
+    }
+
+    #[test]
+    fn maps_search_result_uses_title_over_name() {
+        let json = serde_json::json!({
+            "id": 456,
+            "title": "The Movie",
+            "name": "The Movie (TV)",
+            "overview": "A test movie.",
+        });
+        let item = map_search_result(&json, "movie").unwrap();
+        assert_eq!(item.title, "The Movie");
     }
 }
