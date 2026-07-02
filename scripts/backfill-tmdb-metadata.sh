@@ -72,7 +72,7 @@ fail=0
 idx=0
 
 while IFS='|' read -r eid mtype; do
-    ((idx++))
+    idx=$(( idx + 1 ))
     eid="${eid//[[:space:]]/}"
     mtype="${mtype//[[:space:]]/}"
 
@@ -83,16 +83,16 @@ while IFS='|' read -r eid mtype; do
         series|dramas|cartoons)  tmdb_type="tv"   ;;
         *)
             echo "  [$idx/$total] [$mtype] $eid — unknown media_type, skip"
-            ((skip++))
+            skip=$(( skip + 1 ))
             continue
             ;;
     esac
 
     # Call TMDB API (capture stderr too, so we see curl errors)
     api_url="https://api.themoviedb.org/3/$tmdb_type/$eid?api_key=$TMDB_API_KEY&language=ru-RU"
-    if ! resp=$(curl -sf "$api_url" 2>&1); then
+    if ! resp=$(curl -sf --max-time 15 "$api_url" 2>&1); then
         echo "  [$idx/$total] [$mtype] $eid — curl error: $resp"
-        ((fail++))
+        fail=$(( fail + 1 ))
         continue
     fi
 
@@ -106,7 +106,7 @@ while IFS='|' read -r eid mtype; do
 
     if [[ ${#sets[@]} -eq 0 ]]; then
         echo "  [$idx/$total] [$mtype] $eid — nothing to update (no episodes, no runtime in API response)"
-        ((skip++))
+        skip=$(( skip + 1 ))
         continue
     fi
 
@@ -120,12 +120,12 @@ while IFS='|' read -r eid mtype; do
 
     if ! out=$(psql_cmd "UPDATE media_items SET $set_sql WHERE provider='tmdb' AND external_id='$eid'" 2>&1); then
         echo "  [$idx/$total] [$mtype] $eid — UPDATE failed: $out"
-        ((fail++))
+        fail=$(( fail + 1 ))
         continue
     fi
 
     echo "  [$idx/$total] [$mtype] $eid — OK: ${set_sql}"
-    ((ok++))
+    ok=$(( ok + 1 ))
 
     # Be nice to TMDB API
     sleep 0.05
