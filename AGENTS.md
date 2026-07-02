@@ -118,3 +118,4 @@ sudo helm --kubeconfig /etc/rancher/k3s/k3s.yaml upgrade --install app chart/ -n
 | `backup-db.sh` | ❌ | Uses `docker compose exec` — needs update for k3s |
 | `restore-db.sh` | ❌ | Uses `docker compose exec` — needs update for k3s |
 | `backfill-details.sh` | ? | Untested with k3s |
+| `backfill-tmdb-metadata.sh` | ✅ | Direct DB via kubectl exec + TMDB API (no auth/cookies) |
