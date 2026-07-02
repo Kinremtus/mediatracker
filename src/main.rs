@@ -60,6 +60,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/manga/{provider}/{external_id}/chapters/{n}/read", axum::routing::post(media::set_chapter_read))
         .route("/api/search/suggestions", get(search::get_search_suggestions))
         .route("/api/tmdb/{external_id}/seasons", get(tmdb_episodes::get_tmdb_seasons))
+        .route("/api/tmdb/{external_id}/seasons/{season_number}/watched", axum::routing::post(tmdb_episodes::post_tmdb_season_watched))
         .route("/api/tmdb/{external_id}/seasons/{season_number}/episodes", get(tmdb_episodes::get_tmdb_episodes))
         .route("/api/tmdb/{external_id}/seasons/{season_number}/episodes/{episode_number}/watched", axum::routing::post(tmdb_episodes::set_tmdb_episode_watched))
         .route("/tracking", get(tracking::get_tracking_list).post(tracking::post_add_to_tracking))

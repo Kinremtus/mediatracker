@@ -100,6 +100,7 @@
         <span class="drawer-section-arrow" :class="{ 'rotated': open }">▾</span>
     </button>
     <div class="drawer-episodes" x-show="open" x-cloak
+         id="tmdb-seasons-outlet-{{ item.external_id }}"
          hx-get="/api/tmdb/{{ item.external_id }}/seasons"
          hx-trigger="revealed once"
          hx-swap="innerHTML">
