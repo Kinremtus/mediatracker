@@ -552,4 +552,112 @@ mod tests {
         let item = map_search_result(&json, "movie").unwrap();
         assert_eq!(item.title, "The Movie");
     }
+
+    #[test]
+    fn parses_tv_seasons_list() {
+        let json = r#"{
+            "id": 1399,
+            "name": "Game of Thrones",
+            "number_of_seasons": 8,
+            "number_of_episodes": 73,
+            "seasons": [
+                {
+                    "season_number": 1,
+                    "name": "Season 1",
+                    "episode_count": 10,
+                    "air_date": "2011-04-17",
+                    "overview": "First season",
+                    "poster_path": "/poster1.jpg"
+                },
+                {
+                    "season_number": 2,
+                    "name": "Season 2",
+                    "episode_count": 10,
+                    "air_date": null,
+                    "overview": "",
+                    "poster_path": null
+                }
+            ]
+        }"#;
+        let details: TmdbDetails = serde_json::from_str(json).unwrap();
+        assert_eq!(details.seasons.len(), 2);
+        assert_eq!(details.seasons[0].season_number, 1);
+        assert_eq!(details.seasons[0].name, "Season 1");
+        assert_eq!(details.seasons[0].episode_count, 10);
+        assert_eq!(details.seasons[0].air_date.as_deref(), Some("2011-04-17"));
+        assert_eq!(details.seasons[0].overview.as_deref(), Some("First season"));
+        assert!(details.seasons[0].poster_path.is_some());
+        assert_eq!(details.seasons[1].season_number, 2);
+        assert!(details.seasons[1].air_date.is_none());
+        assert!(details.seasons[1].poster_path.is_none());
+    }
+
+    #[test]
+    fn parses_season_episodes() {
+        let json = r#"{
+            "_id": "5256c89f19c2956ff6046e77",
+            "air_date": "2011-04-17",
+            "episodes": [
+                {
+                    "air_date": "2011-04-17",
+                    "episode_number": 1,
+                    "id": 63056,
+                    "name": "Winter Is Coming",
+                    "overview": "Prologue.",
+                    "runtime": 62,
+                    "season_number": 1,
+                    "still_path": "/still1.jpg",
+                    "vote_average": 8.1
+                },
+                {
+                    "air_date": "2011-04-24",
+                    "episode_number": 2,
+                    "id": 63057,
+                    "name": "The Kingsroad",
+                    "overview": "Catelyn receives a message.",
+                    "runtime": 56,
+                    "season_number": 1,
+                    "still_path": null,
+                    "vote_average": 8.0
+                }
+            ],
+            "name": "Season 1",
+            "season_number": 1
+        }"#;
+        let detail: TmdbSeasonDetail = serde_json::from_str(json).unwrap();
+        assert_eq!(detail.episodes.len(), 2);
+        assert_eq!(detail.episodes[0].episode_number, 1);
+        assert_eq!(detail.episodes[0].name.as_deref(), Some("Winter Is Coming"));
+        assert!(detail.episodes[0].still_path.is_some());
+        assert_eq!(detail.episodes[0].runtime, Some(62));
+        assert_eq!(detail.episodes[1].episode_number, 2);
+        assert!(detail.episodes[1].still_path.is_none());
+        assert_eq!(detail.episodes[1].runtime, Some(56));
+    }
+
+    #[test]
+    fn parses_episode_with_minimal_fields() {
+        let json = r#"{
+            "episode_number": 1,
+            "name": null,
+            "overview": null,
+            "still_path": null,
+            "air_date": null,
+            "runtime": null
+        }"#;
+        let ep: TmdbEpisodeInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(ep.episode_number, 1);
+        assert!(ep.name.is_none());
+        assert!(ep.overview.is_none());
+        assert!(ep.still_path.is_none());
+        assert!(ep.air_date.is_none());
+        assert!(ep.runtime.is_none());
+    }
+
+    #[test]
+    fn parses_season_episodes_empty() {
+        let json = r#"{"episodes": []}"#;
+        let detail: TmdbSeasonDetail = serde_json::from_str(json).unwrap();
+        assert!(detail.episodes.is_empty());
+    }
 }

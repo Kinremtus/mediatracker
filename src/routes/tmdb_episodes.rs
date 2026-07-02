@@ -91,31 +91,30 @@ async fn render_episodes(
     .await
     .unwrap_or_default();
 
-    if episodes.is_empty() {
-        if let Ok(detail) = state
+    if episodes.is_empty()
+        && let Ok(detail) = state
             .tmdb
             .fetch_season_episodes(external_id, season_number)
             .await
+    {
+        if let Err(e) = crate::services::tmdb_episodes::store_episodes(
+            &state.db,
+            external_id,
+            season_number,
+            &detail.episodes,
+        )
+        .await
         {
-            if let Err(e) = crate::services::tmdb_episodes::store_episodes(
-                &state.db,
-                external_id,
-                season_number,
-                &detail.episodes,
-            )
-            .await
-            {
-                tracing::warn!(external_id, season_number, error = %e, "store episodes failed");
-            }
-
-            episodes = crate::services::tmdb_episodes::get_episodes(
-                &state.db,
-                external_id,
-                season_number,
-            )
-            .await
-            .unwrap_or_default();
+            tracing::warn!(external_id, season_number, error = %e, "store episodes failed");
         }
+
+        episodes = crate::services::tmdb_episodes::get_episodes(
+            &state.db,
+            external_id,
+            season_number,
+        )
+        .await
+        .unwrap_or_default();
     }
 
     TmdbEpisodeListTemplate {
