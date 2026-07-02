@@ -1,0 +1,19 @@
+<div class="tmdb-seasons" x-data="{ season: {{ active_season }} }">
+    <div class="tmdb-season-selector">
+        {% for s in seasons %}
+        {% if s.episode_count > 0 %}
+        <button class="tmdb-season-btn"
+                :class="{ 'active': season === {{ s.season_number }} }"
+                hx-get="/api/tmdb/{{ external_id }}/seasons/{{ s.season_number }}/episodes"
+                hx-target="#tmdb-episodes-{{ external_id }}"
+                hx-swap="innerHTML"
+                @click="season = {{ s.season_number }}">
+            {{ s.name }}
+        </button>
+        {% endif %}
+        {% endfor %}
+    </div>
+    <div class="tmdb-episodes-container" id="tmdb-episodes-{{ external_id }}">
+        {{ episodes_html|safe }}
+    </div>
+</div>

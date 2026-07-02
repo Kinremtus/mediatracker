@@ -6,5 +6,6 @@ pub mod media;
 pub mod search;
 pub mod settings;
 pub mod stats;
+pub mod tmdb_episodes;
 pub mod tmdb_image;
 pub mod tracking;

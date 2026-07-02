@@ -2,7 +2,7 @@ use mediatracker::app_state::AppState;
 use mediatracker::config::Config;
 use mediatracker::metrics;
 use mediatracker::middleware::auth_middleware;
-use mediatracker::routes::{admin, auth, calendar, home, media, search, settings, stats, tmdb_image, tracking};
+use mediatracker::routes::{admin, auth, calendar, home, media, search, settings, stats, tmdb_episodes, tmdb_image, tracking};
 use mediatracker::services::refresh_counts;
 use axum::{middleware::from_fn, middleware::from_fn_with_state, routing::get, Router, Json};
 use serde_json::json;
@@ -59,6 +59,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/manga/{provider}/{external_id}/chapters", get(media::get_chapters))
         .route("/api/manga/{provider}/{external_id}/chapters/{n}/read", axum::routing::post(media::set_chapter_read))
         .route("/api/search/suggestions", get(search::get_search_suggestions))
+        .route("/api/tmdb/{external_id}/seasons", get(tmdb_episodes::get_tmdb_seasons))
+        .route("/api/tmdb/{external_id}/seasons/{season_number}/episodes", get(tmdb_episodes::get_tmdb_episodes))
+        .route("/api/tmdb/{external_id}/seasons/{season_number}/episodes/{episode_number}/watched", axum::routing::post(tmdb_episodes::set_tmdb_episode_watched))
         .route("/tracking", get(tracking::get_tracking_list).post(tracking::post_add_to_tracking))
         .route("/tracking/{id}", axum::routing::post(tracking::post_update_tracking))
         .route("/tracking/{id}/delete", axum::routing::post(tracking::post_delete_tracking))
