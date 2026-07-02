@@ -159,6 +159,7 @@ pub async fn post_refresh_details(
                         licensors = $31, publishers = $32, serialized_in = $33,
                         networks = $34, platforms = $35,
                         genres = $36, themes = $37, demographics = $38, categories = $39,
+                        episodes = $40,
                         updated_at = NOW()
                     WHERE id = $1
                     "#,
@@ -202,6 +203,7 @@ pub async fn post_refresh_details(
                 .bind(&item.themes)
                 .bind(&item.demographics)
                 .bind(&item.categories)
+                .bind(item.episodes)
                 .execute(db)
                 .await;
                 match res {
