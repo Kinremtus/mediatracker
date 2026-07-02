@@ -3,8 +3,10 @@ use mediatracker::config::Config;
 use mediatracker::metrics;
 use mediatracker::middleware::auth_middleware;
 use mediatracker::routes::{admin, auth, calendar, home, media, search, settings, stats, tmdb_image, tracking};
+use mediatracker::services::refresh_counts;
 use axum::{middleware::from_fn, middleware::from_fn_with_state, routing::get, Router, Json};
 use serde_json::json;
+use tokio_util::sync::CancellationToken;
 use tower_http::services::ServeDir;
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -83,6 +85,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/metrics", get(metrics::metrics_handler))
         .with_state(state.metrics_handle.clone());
 
+    // Start background refresh loop
+    let cancel = CancellationToken::new();
+    let refresh_cancel = cancel.clone();
+    let bg_state = state.clone();
+    tokio::spawn(async move {
+        let ctx = refresh_counts::RefreshCtx {
+            db: bg_state.db,
+            shikimori: bg_state.shikimori,
+            mal: bg_state.mal,
+            mangaupdates: bg_state.mangaupdates,
+            tmdb: bg_state.tmdb,
+            rawg: bg_state.rawg,
+            igdb: bg_state.igdb,
+            google_books: bg_state.google_books,
+            openlibrary: bg_state.openlibrary,
+        };
+        refresh_counts::run_refresh_loop(ctx, refresh_cancel).await;
+    });
+
     // All other routes with metrics recording
     let app = Router::new()
         .route("/health", get(health_check))
@@ -97,10 +118,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(metrics_route)
         .merge(app);
 
-    // Start server
+    // Start server with graceful shutdown
     let listener = tokio::net::TcpListener::bind(format!("{}:{}", config.host, config.port)).await?;
     info!("Server listening on {}:{}", config.host, config.port);
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(async move {
+            #[cfg(unix)]
+            {
+                use tokio::signal::unix::{signal, SignalKind};
+                let mut term = signal(SignalKind::terminate()).expect("install SIGTERM handler");
+                tokio::select! {
+                    _ = term.recv() => {},
+                    _ = tokio::signal::ctrl_c() => {},
+                }
+            }
+            #[cfg(not(unix))]
+            tokio::signal::ctrl_c().await.ok();
+
+            cancel.cancel();
+        })
+        .await?;
 
     Ok(())
 }
