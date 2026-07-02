@@ -38,6 +38,7 @@ pub struct SidebarStats {
 pub struct HomeMediaCard {
     pub provider: String,
     pub external_id: String,
+    pub media_type: String,
     pub title: String,
     pub poster_url: String,
     pub progress_current: i32,
@@ -90,6 +91,7 @@ pub async fn get_home(
             HomeMediaCard {
                 provider: e.media.provider,
                 external_id: e.media.external_id,
+                media_type: e.media.media_type,
                 title: e.media.title_russian.as_deref().unwrap_or(&e.media.title).to_string(),
                 poster_url: e.media.poster_url.unwrap_or_default(),
                 progress_current: current,
