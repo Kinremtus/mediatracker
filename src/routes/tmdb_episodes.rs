@@ -302,10 +302,9 @@ pub async fn set_tmdb_episode_watched(
         return Html(String::new()).into_response();
     }
 
-    let max_watched = crate::services::tmdb_episodes::count_watched(
+    let total_watched = crate::services::tmdb_episodes::get_total_watched_episodes(
         &state.db,
         &external_id,
-        season_number,
     )
     .await
     .unwrap_or(0);
@@ -313,15 +312,15 @@ pub async fn set_tmdb_episode_watched(
     let media_id = get_media_id_by_external(&state.db, &external_id).await;
 
     if let Some(media_id) = media_id
-        && let Err(e) = crate::services::tmdb_episodes::update_progress_from_watched(
+        && let Err(e) = crate::services::tmdb_episodes::set_progress_direct(
             &state.db,
             user.id,
             media_id,
-            max_watched,
+            total_watched,
         )
         .await
     {
-        tracing::warn!(external_id, error = %e, "update_progress_from_watched failed");
+        tracing::warn!(external_id, error = %e, "set_progress_direct failed");
     }
 
     let episode_html = {
@@ -382,24 +381,9 @@ pub async fn set_tmdb_episode_watched(
         .map(|(n, w)| [serde_json::Value::from(n), serde_json::Value::from(w)])
         .collect();
 
-    let actual_progress = if let Some(mid) = media_id {
-        sqlx::query_scalar::<_, i32>(
-            "SELECT COALESCE(progress, 0) FROM tracking_entries WHERE user_id = $1 AND media_id = $2",
-        )
-        .bind(user.id)
-        .bind(mid)
-        .fetch_optional(&state.db)
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or(max_watched)
-    } else {
-        max_watched
-    };
-
     let mut trigger = serde_json::json!({
         "progressUpdated": {
-            "maxWatched": actual_progress,
+            "maxWatched": total_watched,
         },
         "episodesChanged": {
             "states": states_json,
