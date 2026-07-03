@@ -382,9 +382,24 @@ pub async fn set_tmdb_episode_watched(
         .map(|(n, w)| [serde_json::Value::from(n), serde_json::Value::from(w)])
         .collect();
 
+    let actual_progress = if let Some(mid) = media_id {
+        sqlx::query_scalar::<_, i32>(
+            "SELECT COALESCE(progress, 0) FROM tracking_entries WHERE user_id = $1 AND media_id = $2",
+        )
+        .bind(user.id)
+        .bind(mid)
+        .fetch_optional(&state.db)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or(max_watched)
+    } else {
+        max_watched
+    };
+
     let mut trigger = serde_json::json!({
         "progressUpdated": {
-            "maxWatched": max_watched,
+            "maxWatched": actual_progress,
         },
         "episodesChanged": {
             "states": states_json,
