@@ -956,6 +956,8 @@
 }
 .season-row-episodes {
     border-top: 1px solid var(--border);
+    max-height: 350px;
+    overflow-y: auto;
 }
 .season-row-episodes .episode-list {
     max-height: none;

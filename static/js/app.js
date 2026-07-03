@@ -109,9 +109,10 @@ document.addEventListener('DOMContentLoaded', function() {
     // we patch them here. states is an array of [episode_number, watched].
     document.body.addEventListener('episodesChanged', function(e) {
         const states = e.detail && e.detail.states;
+        const seasonNumber = e.detail && e.detail.seasonNumber;
         if (!Array.isArray(states)) return;
         // Only patch episodes currently rendered in the drawer/list.
-        // EpisodeItem root has data-episode-n="<n>".
+        // EpisodeItem root has data-episode-n="<n>" and data-season="<n>".
         const items = document.querySelectorAll('.episode-item[data-episode-n]');
         if (items.length === 0) return;
         // Build a lookup of visible episode numbers to avoid touching
@@ -125,6 +126,8 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         items.forEach(function(item) {
             const n = Number(item.getAttribute('data-episode-n'));
+            const season = Number(item.getAttribute('data-season'));
+            if (season !== seasonNumber) return;
             if (!stateMap.has(n)) return;
             const watched = stateMap.get(n);
             // Toggle the row's "watched" class.

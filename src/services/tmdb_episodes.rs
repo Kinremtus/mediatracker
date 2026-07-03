@@ -290,21 +290,21 @@ pub async fn set_season_watched(
     Ok(())
 }
 
-pub async fn get_max_watched_episode_all(
+pub async fn get_total_watched_episodes(
     pool: &PgPool,
     external_id: &str,
 ) -> Result<i32, sqlx::Error> {
-    let row: (Option<i32>,) = sqlx::query_as(
+    let row: (Option<i64>,) = sqlx::query_as(
         r#"
-        SELECT COALESCE(MAX(episode_number), 0)
+        SELECT COUNT(*) FILTER (WHERE watched)::bigint
         FROM tmdb_episodes
-        WHERE external_id = $1 AND watched = TRUE
+        WHERE external_id = $1
         "#,
     )
     .bind(external_id)
     .fetch_one(pool)
     .await?;
-    Ok(row.0.unwrap_or(0))
+    Ok(row.0.unwrap_or(0) as i32)
 }
 
 pub async fn set_progress_direct(

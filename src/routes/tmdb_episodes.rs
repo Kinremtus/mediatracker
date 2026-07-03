@@ -174,7 +174,7 @@ pub async fn post_tmdb_season_watched(
         return Html(String::new()).into_response();
     }
 
-    let max_watched = crate::services::tmdb_episodes::get_max_watched_episode_all(
+    let max_watched = crate::services::tmdb_episodes::get_total_watched_episodes(
         &state.db,
         &external_id,
     )
