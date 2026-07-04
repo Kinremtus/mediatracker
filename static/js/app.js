@@ -352,22 +352,30 @@ function afterStatusChange(btn, newStatus) {
     refreshTrackingList();
 }
 
-function afterProgressIncrement(btn, newProgress) {
-    // Update progress text in drawer
+function afterProgressChange(btn, delta) {
     const row = btn.closest('.drawer-progress-row');
     if (row) {
         const text = row.querySelector('.drawer-progress-text');
         if (text) {
-            const current = text.textContent.trim();
-            text.textContent = current.replace(/\d+/, newProgress);
-        }
-        // Hide button if reached total
-        const tcMatch = text.textContent.match(/\/\s*(\d+)/);
-        if (tcMatch && newProgress >= parseInt(tcMatch[1])) {
-            btn.remove();
+            const match = text.textContent.match(/(\d+)/);
+            if (match) {
+                const current = parseInt(match[1]);
+                const newProgress = Math.max(0, current + delta);
+                text.textContent = text.textContent.replace(/\d+/, newProgress);
+                // Hide decrement button at 0
+                if (newProgress <= 0) {
+                    const decBtn = row.querySelector('[data-increment="decrement"]');
+                    if (decBtn) decBtn.remove();
+                }
+                // Hide increment button at total
+                const tcMatch = text.textContent.match(/\/\s*(\d+)/);
+                if (tcMatch && newProgress >= parseInt(tcMatch[1])) {
+                    const incBtn = row.querySelector('[data-increment="increment"]');
+                    if (incBtn) incBtn.remove();
+                }
+            }
         }
     }
-    // Refresh tracking grid on the page
     refreshTrackingList();
 }
 

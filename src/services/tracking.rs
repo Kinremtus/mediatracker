@@ -3,6 +3,7 @@ use uuid::Uuid;
 
 use crate::models::tracking_entry::{TrackingEntry, TrackingEntryWithMedia, UpdateTracking};
 use crate::models::media_item::CreateMediaItem;
+use crate::services::tmdb_episodes;
 
 #[derive(Clone)]
 pub struct TrackingService {
@@ -196,6 +197,25 @@ impl TrackingService {
         .bind(entry.media_id)
         .execute(&self.db)
         .await;
+
+        // Sync tmdb_episodes.watched to match tracking_entries.progress
+        if data.progress.is_some() {
+            let tmdb_ext_id: Option<String> = sqlx::query_scalar(
+                "SELECT external_id FROM media_items WHERE id = $1 AND provider = 'tmdb'",
+            )
+            .bind(entry.media_id)
+            .fetch_optional(&self.db)
+            .await?;
+
+            if let Some(ref ext_id) = tmdb_ext_id {
+                let _ = tmdb_episodes::sync_tmdb_episodes_from_progress(
+                    &self.db,
+                    ext_id,
+                    data.progress.unwrap_or(0),
+                )
+                .await;
+            }
+        }
 
         Ok(entry)
     }
