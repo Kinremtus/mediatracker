@@ -193,23 +193,38 @@ pub async fn post_tmdb_season_watched(
         tracing::warn!(external_id, error = %e, "set_progress_direct failed");
     }
 
-    let mut rows = build_season_rows_from_tmdb(&state, &external_id).await;
-    if rows.is_empty() {
-        rows = build_season_rows_from_db(&state, &external_id).await;
-    }
-    let html = TmdbSeasonsV2Template {
-        rows,
+    let (total_count, watched_count) = crate::services::tmdb_episodes::get_season_counts(
+        &state.db,
+        &external_id,
+        season_number,
+    )
+    .await
+    .unwrap_or((0, 0));
+
+    let row = TmdbSeasonRowData {
+        season_number,
+        name: season_name(season_number),
+        episode_count: total_count,
+        watched_count,
+        all_watched: total_count > 0 && watched_count >= total_count,
+    };
+
+    let header_html = TmdbSeasonHeaderTemplate {
+        row,
         external_id: external_id.clone(),
     }
     .render()
-    .unwrap_or_else(|e| {
-        tracing::warn!(error = %e, "tmdb seasons v2 render failed");
-        String::new()
-    });
+    .unwrap_or_default();
+
+    let oob_html = format!(
+        r#"<div id="season-header-{}-{}" hx-swap-oob="true">{}</div>"#,
+        external_id, season_number, header_html
+    );
 
     let mut trigger = serde_json::json!({
         "progressUpdated": {
             "maxWatched": max_watched,
+            "seasonNumber": season_number,
         }
     });
     if let Some(media_id) = get_media_id_by_external(&state.db, &external_id).await {
@@ -217,7 +232,7 @@ pub async fn post_tmdb_season_watched(
         trigger["progressUpdated"]["mediaId"] = id_str;
     }
 
-    let mut resp = Html(html).into_response();
+    let mut resp = Html(oob_html).into_response();
     resp.headers_mut().insert(
         "HX-Trigger",
         trigger.to_string().parse().unwrap(),
