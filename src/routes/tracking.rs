@@ -224,8 +224,10 @@ pub async fn post_add_to_tracking(
     Form(form): Form<AddToTrackingForm>,
 ) -> Response {
     let needs_tmdb_fetch = form.provider == "tmdb" && form.episodes.is_none();
-    let tmdb_ext_id = form.external_id.clone();
-    let tmdb_mtype = form.media_type.clone();
+    let ext_id = form.external_id.clone();
+    let media_type = form.media_type.clone();
+    let needs_rawg = form.provider == "rawg";
+    let needs_openlib = form.provider == "openlibrary";
 
     let media = crate::models::media_item::CreateMediaItem {
         provider: form.provider,
@@ -322,19 +324,58 @@ pub async fn post_add_to_tracking(
 
             // Если добавляем TMDB элемент без эпизодов — подтягиваем полные данные
             if needs_tmdb_fetch {
-                match state.tmdb.get_details(&tmdb_ext_id, &tmdb_mtype).await {
+                match state.tmdb.get_details(&ext_id, &media_type).await {
                     Ok(detailed) => {
                         let _ = sqlx::query(
-                            "UPDATE media_items SET episodes = $1, runtime_minutes = $2 WHERE provider = 'tmdb' AND external_id = $3"
+                            "UPDATE media_items SET episodes = $1, runtime_minutes = $2, genres = $3 WHERE provider = 'tmdb' AND external_id = $4"
                         )
                         .bind(detailed.episodes)
                         .bind(detailed.runtime_minutes)
-                        .bind(&tmdb_ext_id)
+                        .bind(&detailed.genres)
+                        .bind(&ext_id)
                         .execute(&state.db)
                         .await;
                     }
                     Err(e) => {
-                        tracing::warn!(error = %e, "failed to fetch TMDB details for episode backfill");
+                        tracing::warn!(error = %e, "failed to fetch TMDB details for backfill");
+                    }
+                }
+            }
+
+            // RAWG backfill — подтягиваем жанры (search их не возвращает)
+            if needs_rawg {
+                match state.rawg.get_details(&ext_id).await {
+                    Ok(detailed) => {
+                        let _ = sqlx::query(
+                            "UPDATE media_items SET genres = $1 WHERE provider = 'rawg' AND external_id = $2"
+                        )
+                        .bind(&detailed.genres)
+                        .bind(&ext_id)
+                        .execute(&state.db)
+                        .await;
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "failed to fetch RAWG details for genre backfill");
+                    }
+                }
+            }
+
+            // OpenLibrary backfill — подтягиваем жанры, темы и категории (из work-эндпоинта)
+            if needs_openlib {
+                match state.openlibrary.get_details(&ext_id).await {
+                    Ok(detailed) => {
+                        let _ = sqlx::query(
+                            "UPDATE media_items SET genres = $1, themes = $2, categories = $3 WHERE provider = 'openlibrary' AND external_id = $4"
+                        )
+                        .bind(&detailed.genres)
+                        .bind(&detailed.themes)
+                        .bind(&detailed.categories)
+                        .bind(&ext_id)
+                        .execute(&state.db)
+                        .await;
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "failed to fetch OpenLibrary details for genre backfill");
                     }
                 }
             }
