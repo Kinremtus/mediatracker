@@ -89,6 +89,24 @@ document.addEventListener('DOMContentLoaded', function() {
             );
             if (valueEl) valueEl.textContent = String(progressValue);
         }
+        // Re-fetch episodes for the toggled season (season toggle only)
+        const seasonNumber = e.detail && e.detail.seasonNumber;
+        if (seasonNumber) {
+            const outlet = document.querySelector('[id^="tmdb-seasons-outlet-"]');
+            if (outlet) {
+                const externalId = outlet.id.replace('tmdb-seasons-outlet-', '');
+                const seasonRow = document.getElementById('season-row-' + externalId + '-' + seasonNumber);
+                if (seasonRow) {
+                    const episodeContainer = seasonRow.querySelector('.season-row-episodes');
+                    if (episodeContainer) {
+                        htmx.ajax('GET', '/api/tmdb/' + externalId + '/seasons/' + seasonNumber + '/episodes', {
+                            target: episodeContainer,
+                            swap: 'innerHTML'
+                        });
+                    }
+                }
+            }
+        }
     });
 
     // Server pushes authoritative per-episode state after every toggle.
