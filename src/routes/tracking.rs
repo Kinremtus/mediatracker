@@ -420,6 +420,8 @@ pub struct UpdateTrackingForm {
     pub status: Option<String>,
     pub rating: Option<f64>,
     pub progress: Option<i32>,
+    #[serde(default)]
+    pub increment: Option<i32>,
 }
 
 pub async fn post_update_tracking(
@@ -488,10 +490,24 @@ pub async fn htmx_update_tracking(
     Path(id): Path<Uuid>,
     Form(form): Form<UpdateTrackingForm>,
 ) -> Response {
+    let progress = if let Some(delta) = form.increment {
+        let current: i32 = sqlx::query_scalar(
+            "SELECT COALESCE(progress, 0) FROM tracking_entries WHERE id = $1 AND user_id = $2",
+        )
+        .bind(id)
+        .bind(user.id)
+        .fetch_one(&state.db)
+        .await
+        .unwrap_or(0);
+        Some((current + delta).max(0))
+    } else {
+        form.progress
+    };
+
     let update = UpdateTracking {
         status: form.status,
         rating: form.rating,
-        progress: form.progress,
+        progress,
     };
 
     match state.tracking.update_entry(id, user.id, &update).await {

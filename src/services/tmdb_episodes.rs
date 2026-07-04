@@ -307,6 +307,58 @@ pub async fn get_total_watched_episodes(
     Ok(row.0.unwrap_or(0) as i32)
 }
 
+pub async fn sync_tmdb_episodes_from_progress(
+    pool: &PgPool,
+    external_id: &str,
+    progress: i32,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        WITH numbered AS (
+            SELECT external_id, season_number, episode_number,
+                   ROW_NUMBER() OVER (ORDER BY season_number, episode_number) as seq
+            FROM tmdb_episodes
+            WHERE external_id = $1
+        )
+        UPDATE tmdb_episodes t
+        SET watched = (n.seq <= $2::bigint),
+            watched_at = CASE WHEN n.seq <= $2::bigint THEN NOW() ELSE NULL END
+        FROM numbered n
+        WHERE t.external_id = n.external_id
+          AND t.season_number = n.season_number
+          AND t.episode_number = n.episode_number
+        "#,
+    )
+    .bind(external_id)
+    .bind(progress)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn set_progress_greatest(
+    pool: &PgPool,
+    user_id: Uuid,
+    media_id: Uuid,
+    progress: i32,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        UPDATE tracking_entries
+        SET progress = GREATEST(progress, $1),
+            updated_at = NOW()
+        WHERE user_id = $2
+          AND media_id = $3
+        "#,
+    )
+    .bind(progress)
+    .bind(user_id)
+    .bind(media_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 pub async fn set_progress_direct(
     pool: &PgPool,
     user_id: Uuid,
