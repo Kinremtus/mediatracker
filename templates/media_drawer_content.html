@@ -227,16 +227,14 @@
         <button class="drawer-btn-increment" data-increment="decrement"
                 hx-post="/tracking/{{ tid }}/htmx"
                 hx-vals='{"increment":-1, "status":"{{ status_display }}"}'
-                hx-swap="none"
-                hx-on:htmx:after-request="if(event.detail.successful) afterProgressChange(this, -1)">−</button>
+                hx-swap="none">−</button>
         {% endif %}
         <span class="drawer-progress-text">{{ progress_display }}{{ total_display }} {{ progress_unit }}</span>
         {% if can_increment %}
         <button class="drawer-btn-increment" data-increment="increment"
                 hx-post="/tracking/{{ tid }}/htmx"
                 hx-vals='{"increment":1, "status":"{{ status_display }}"}'
-                hx-swap="none"
-                hx-on:htmx:after-request="if(event.detail.successful) afterProgressChange(this, 1)">+1</button>
+                hx-swap="none">+1</button>
         {% endif %}
     </div>
     {% endif %}

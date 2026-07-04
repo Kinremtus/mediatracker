@@ -45,20 +45,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 : target.classList.contains('dropped') ? 'dropped' : null;
             if (newStatus) afterStatusChange(target, newStatus);
         } else if (target.classList.contains('drawer-btn-increment')) {
-            const btn = target;
-            const row = btn.closest('.drawer-progress-row');
-            if (row) {
-                const text = row.querySelector('.drawer-progress-text');
-                if (text) {
-                    const m = text.textContent.match(/^(\d+)/);
-                    if (m) {
-                        const next = parseInt(m[1]) + 1;
-                        text.textContent = text.textContent.replace(/^\d+/, next);
-                        const totalMatch = text.textContent.match(/\/\s*(\d+)/);
-                        if (totalMatch && next >= parseInt(totalMatch[1])) btn.remove();
-                    }
-                }
-            }
+            const delta = target.getAttribute('data-increment') === 'decrement' ? -1 : 1;
+            afterProgressChange(target, delta);
         }
     });
 

@@ -227,6 +227,7 @@ pub async fn post_tmdb_season_watched(
 
 async fn render_episodes(
     state: &AppState,
+    user: &CurrentUser,
     external_id: &str,
     season_number: i32,
 ) -> String {
@@ -243,26 +244,46 @@ async fn render_episodes(
             .tmdb
             .fetch_season_episodes(external_id, season_number)
             .await
-    {
-        if let Err(e) = crate::services::tmdb_episodes::store_episodes(
+        && let Err(e) = crate::services::tmdb_episodes::store_episodes(
             &state.db,
             external_id,
             season_number,
             &detail.episodes,
         )
         .await
-        {
-            tracing::warn!(external_id, season_number, error = %e, "store episodes failed");
-        }
-
-        episodes = crate::services::tmdb_episodes::get_episodes(
-            &state.db,
-            external_id,
-            season_number,
-        )
-        .await
-        .unwrap_or_default();
+    {
+        tracing::warn!(external_id, season_number, error = %e, "store episodes failed");
     }
+
+    // Sync user's tracking progress into tmdb_episodes watched state
+    if let Some(media_id) = get_media_id_by_external(&state.db, external_id).await {
+        let user_progress: Option<i32> = sqlx::query_scalar(
+            "SELECT progress FROM tracking_entries WHERE user_id = $1 AND media_id = $2",
+        )
+        .bind(user.id)
+        .bind(media_id)
+        .fetch_optional(&state.db)
+        .await
+        .unwrap_or(None);
+        if let Some(progress) = user_progress.filter(|&p| p > 0)
+            && let Err(e) = crate::services::tmdb_episodes::sync_tmdb_episodes_from_progress(
+                &state.db,
+                external_id,
+                progress,
+            )
+            .await
+        {
+            tracing::warn!(external_id, error = %e, "sync tmdb episodes failed");
+        }
+    }
+
+    episodes = crate::services::tmdb_episodes::get_episodes(
+        &state.db,
+        external_id,
+        season_number,
+    )
+    .await
+    .unwrap_or_default();
 
     TmdbEpisodeListTemplate {
         episodes,
@@ -276,10 +297,11 @@ async fn render_episodes(
 }
 
 pub async fn get_tmdb_episodes(
+    user: CurrentUser,
     State(state): State<AppState>,
     Path((external_id, season_number)): Path<(String, i32)>,
 ) -> impl IntoResponse {
-    let html = render_episodes(&state, &external_id, season_number).await;
+    let html = render_episodes(&state, &user, &external_id, season_number).await;
     Html(html)
 }
 
