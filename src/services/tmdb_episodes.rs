@@ -298,7 +298,7 @@ pub async fn get_total_watched_episodes(
         r#"
         SELECT COUNT(*) FILTER (WHERE watched)::bigint
         FROM tmdb_episodes
-        WHERE external_id = $1
+        WHERE external_id = $1 AND season_number > 0
         "#,
     )
     .bind(external_id)
@@ -318,7 +318,7 @@ pub async fn sync_tmdb_episodes_from_progress(
             SELECT external_id, season_number, episode_number,
                    ROW_NUMBER() OVER (ORDER BY season_number, episode_number) as seq
             FROM tmdb_episodes
-            WHERE external_id = $1
+            WHERE external_id = $1 AND season_number > 0
         )
         UPDATE tmdb_episodes t
         SET watched = (n.seq <= $2::bigint),
