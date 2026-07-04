@@ -3,28 +3,33 @@
 #
 # What it does:
 #   For each provider in PROVIDERS, sends POST /admin/refresh-details
-#   with provider=<name> limit=500. Server fetches fresh data from the
-#   external API and updates the media_items row. Existing tracking
-#   entries are not affected.
+#   with provider=<name> limit=500 (or BACKFILL_LIMIT). Server fetches
+#   fresh data from the external API and updates the media_items row.
+#   Existing tracking entries are not affected.
 #
-# How to run:
-#   1. Open your browser, log in to MediaTracker.
-#   2. Open DevTools (F12) -> Application -> Cookies -> copy the
-#      value of the 'session_id' cookie.
-#   3. From the project root on the SERVER (where docker compose runs):
-#        ./scripts/backfill-details.sh
-#   4. Paste the cookie when prompted.
+# How to run — three modes:
 #
-# Or run non-interactively:
-#   SESSION_COOKIE="your-cookie-value" ./scripts/backfill-details.sh [provider1 provider2 ...]
+#   Mode 1: Browser (recommended, safest):
+#     Just go to /admin in your browser, select provider, click refresh.
+#     Limit=50 per run to fit Cloudflare Tunnel timeout (~100s).
 #
-# The script defaults to running all providers in sequence. Pass
-# provider names as arguments to limit the run, e.g.:
-#   ./scripts/backfill-details.sh mangaupdates mal shikimori
+#   Mode 2: kubectl port-forward (k3s, this script):
+#     ./scripts/backfill-details.sh [provider1 provider2 ...]
+#
+#   Mode 3: Direct URL (docker compose, nginx, etc.):
+#     MEDIATRACKER_URL="http://localhost:8080" ./scripts/backfill-details.sh
+#
+# How to get a session cookie for Mode 2/3:
+#   1. Open MediaTracker in your browser and log in.
+#   2. Open DevTools (F12) -> Application -> Cookies.
+#   3. Copy the value of the 'session_id' cookie.
+#   4. Paste when prompted, or pass via SESSION_COOKIE env var.
+#
+# Non-interactive:
+#   SESSION_COOKIE="your-cookie" ./scripts/backfill-details.sh tmdb rawg
 
 set -euo pipefail
 
-BASE_URL="${MEDIATRACKER_URL:-http://localhost:8080}"
 LIMIT="${BACKFILL_LIMIT:-500}"
 
 PROVIDERS=(
@@ -41,6 +46,47 @@ PROVIDERS=(
 if [[ $# -gt 0 ]]; then
     PROVIDERS=("$@")
 fi
+
+# ── Detect mode ──────────────────────────────────────────────
+
+USE_PORT_FORWARD=false
+BASE_URL="${MEDIATRACKER_URL:-}"
+
+if [[ -z "${BASE_URL}" ]] && command -v kubectl &>/dev/null; then
+    USE_PORT_FORWARD=true
+    BASE_URL="http://localhost:8080"
+elif [[ -z "${BASE_URL}" ]]; then
+    echo "ERROR: no MEDIATRACKER_URL set and kubectl not found." >&2
+    echo "  Either set MEDIATRACKER_URL to your app's URL, or" >&2
+    echo "  install kubectl and configure it for your k3s cluster." >&2
+    exit 1
+fi
+
+# ── Port-forward setup ───────────────────────────────────────
+
+PF_PID=""
+if $USE_PORT_FORWARD; then
+    KUBECTL_EXTRA=""
+    if [[ -f /etc/rancher/k3s/k3s.yaml ]]; then
+        KUBECTL_EXTRA="--kubeconfig /etc/rancher/k3s/k3s.yaml"
+    fi
+
+    echo ">> Starting kubectl port-forward to mediatracker app..."
+    kubectl $KUBECTL_EXTRA port-forward -n mediatracker deployment/app 8080:8080 &
+    PF_PID=$!
+
+    # Kill port-forward on script exit (any signal)
+    trap 'echo ">> Cleaning up port-forward..."; kill $PF_PID 2>/dev/null; wait $PF_PID 2>/dev/null' EXIT INT TERM
+
+    # Wait for tunnel to be ready
+    sleep 2
+    if ! kill -0 $PF_PID 2>/dev/null; then
+        echo "ERROR: port-forward failed to start." >&2
+        exit 1
+    fi
+fi
+
+# ── Session cookie ───────────────────────────────────────────
 
 if [[ -z "${SESSION_COOKIE:-}" ]]; then
     echo "============================================================"
@@ -68,6 +114,8 @@ echo "Using URL:    ${BASE_URL}"
 echo "Using limit:  ${LIMIT} items per provider"
 echo "Providers:    ${PROVIDERS[*]}"
 echo ""
+
+# ── Backfill loop ────────────────────────────────────────────
 
 for provider in "${PROVIDERS[@]}"; do
     echo "------------------------------------------------------------"
@@ -110,5 +158,5 @@ done
 echo "============================================================"
 echo "  Backfill finished"
 echo "============================================================"
-echo "Tip: tail server logs to see per-item details:"
-echo "  docker compose logs --tail=200 app | grep -i refresh"
+echo "Tip: tail app logs on VPS1:"
+echo "  kubectl logs -n mediatracker deployment/app --tail=200 | grep -i refresh"

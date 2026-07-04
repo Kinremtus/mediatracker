@@ -117,5 +117,5 @@ sudo helm --kubeconfig /etc/rancher/k3s/k3s.yaml upgrade --install app chart/ -n
 | `validate-k8s-yaml.py` | ✅ | Lints k8s/ YAML files |
 | `backup-db.sh` | ❌ | Uses `docker compose exec` — needs update for k3s |
 | `restore-db.sh` | ❌ | Uses `docker compose exec` — needs update for k3s |
-| `backfill-details.sh` | ? | Untested with k3s |
+| `backfill-details.sh` | ✅ | Auto-detects k3s (kubectl port-forward), falls back to direct URL |
 | `backfill-tmdb-metadata.sh` | ✅ | Direct DB via kubectl exec + TMDB API (no auth/cookies) |
