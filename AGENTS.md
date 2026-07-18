@@ -58,7 +58,7 @@ Rust 1.95 · Axum 0.8 · SQLx 0.8 · Askama 0.16 · PostgreSQL 17 · Alpine.js �
 - Passwords: Argon2 hashing
 - Media: composite unique `(provider, external_id)`
 - Statuses: `in_progress`, `completed`, `planned`, `dropped`, `paused`
-- Themes: light, graphite (default), dark → `localStorage['mediatracker-theme']`
+- Themes: light, graphite (default), dark -> `localStorage['mediatracker-theme']`
 - HTMX: `/tracking/partial`, `/tracking/{id}/htmx`, `/settings/*/htmx`
 - Telegram: `TELEGRAM_BOT_TOKEN` in `.env`, notifications via `notify_new_episodes()`
 - JS: HTMX-first (server-rendered). Alpine.js only when unavoidable. No custom JS/TS.
@@ -113,9 +113,9 @@ sudo helm --kubeconfig /etc/rancher/k3s/k3s.yaml upgrade --install app chart/ -n
 ## Scripts Status
 | Script | k3s compatible? | Notes |
 |--------|----------------|-------|
-| `build-deploy.sh` | ✅ | Uses kubectl + helm |
-| `validate-k8s-yaml.py` | ✅ | Lints k8s/ YAML files |
-| `backup-db.sh` | ❌ | Uses `docker compose exec` — needs update for k3s |
-| `restore-db.sh` | ❌ | Uses `docker compose exec` — needs update for k3s |
-| `backfill-details.sh` | ✅ | Auto-detects k3s (kubectl port-forward), falls back to direct URL |
-| `backfill-tmdb-metadata.sh` | ✅ | Direct DB via kubectl exec + TMDB API (no auth/cookies) |
+| `build-deploy.sh` | [x] | Uses kubectl + helm |
+| `validate-k8s-yaml.py` | [x] | Lints k8s/ YAML files |
+| `backup-db.sh` | [-] | Uses `docker compose exec` - needs update for k3s |
+| `restore-db.sh` | [-] | Uses `docker compose exec` - needs update for k3s |
+| `backfill-details.sh` | [x] | Auto-detects k3s (kubectl port-forward), falls back to direct URL |
+| `backfill-tmdb-metadata.sh` | [x] | Direct DB via kubectl exec + TMDB API (no auth/cookies) |

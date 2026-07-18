@@ -11,6 +11,7 @@ backups/
 k8s/cloudflared/secret.yaml
 k8s/cloudflared/credentials*.json
 k8s/monitoring/telegram-secret.yaml
+terraform/monitoring/telegram-secret.tf
 
 # Local postgres data (docker volume mount)
 postgres_data/
@@ -19,6 +20,8 @@ postgres_data/
 .opencode/
 
 terraform/terraform.tfvars
-terraform/terraform.tfstate
-terraform/terraform.tfstate.backup
+terraform/**/*.tfstate
+terraform/**/*.tfstate.backup
 **/.terraform/
+thoughts/
+.harness-memory/
