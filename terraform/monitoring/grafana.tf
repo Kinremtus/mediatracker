@@ -21,12 +21,15 @@ resource "kubernetes_service_v1" "grafana" {
       namespace = "monitoring"
     }
     spec {
+      type = "NodePort"
+
       selector = {
         app = "grafana-server"
       }
       port {
         port = 3000
         target_port = 3000
+        node_port   = 30001
       }
     }
   

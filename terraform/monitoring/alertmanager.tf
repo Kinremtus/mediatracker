@@ -4,12 +4,15 @@ resource "kubernetes_service_v1" "alertmanager" {
       namespace = "monitoring"
     }
     spec {
+      type = "NodePort"
+
       selector = {
         app = "alertmanager-server"
       }
       port {
         port = 9093
         target_port = 9093
+        node_port   = 30903
       }
     } 
 }
