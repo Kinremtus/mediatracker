@@ -4,12 +4,15 @@ resource "kubernetes_service_v1" "loki" {
       namespace = "monitoring"
     }
     spec {
+      type = "NodePort"
+
       selector = {
         app = "loki-server"
       }
       port {
         port = 3100
         target_port = 3100
+        node_port   = 32310
       }
     } 
 }

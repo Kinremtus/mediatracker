@@ -21,12 +21,15 @@ resource "kubernetes_service_v1" "prometheus" {
       namespace = "monitoring"
     }
     spec {
+      type = "NodePort"
+      
       selector = {
         app = "prometheus-server"
       }
       port {
         port = 9090
         target_port = 9090
+        node_port   = 30909
       }
     }
   
@@ -103,7 +106,7 @@ resource "kubernetes_deployment_v1" "prometheus" {
   }
   spec {
     replicas = 1
-
+    
     selector {
       match_labels = {
         app = "prometheus-server"
