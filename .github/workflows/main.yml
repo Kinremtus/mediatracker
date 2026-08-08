@@ -84,7 +84,12 @@ jobs:
             git reset --hard origin/main
             echo "Synced to: $(git rev-parse --short HEAD)"
 
+            # APP_HOST приходит из GitHub Secrets (домен не хранится в репозитории)
+            export APP_HOST="${{ secrets.APP_HOST }}"
+            command -v envsubst >/dev/null || sudo apt-get install -y gettext-base
+
             sudo kubectl apply -f k8s/traefik-helm-config.yaml
-            sudo kubectl apply -f k8s/ingress.yaml
+            envsubst < k8s/ingress.yaml | sudo kubectl apply -f -
+            envsubst < k8s/cloudflared/configmap.yaml | sudo kubectl apply -f -
             sudo kubectl apply -f k8s/monitoring/
-            sudo helm --kubeconfig /etc/rancher/k3s/k3s.yaml upgrade --install app chart/ --namespace mediatracker --set image.tag=${{ github.sha }}
+            sudo helm --kubeconfig /etc/rancher/k3s/k3s.yaml upgrade --install app chart/ --namespace mediatracker --set image.tag=${{ github.sha }} --set configMap.appBaseUrl=https://$APP_HOST --set configMap.emailFrom="MediaTracker <no-reply@$APP_HOST>"
