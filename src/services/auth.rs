@@ -54,6 +54,13 @@ impl AuthService {
         Ok(user)
     }
 
+    pub async fn find_by_email(&self, email: &str) -> Result<Option<User>, sqlx::Error> {
+        sqlx::query_as::<_, User>("SELECT * FROM users WHERE email = $1")
+            .bind(email)
+            .fetch_optional(&self.db)
+            .await
+    }
+
     pub async fn login(
         &self,
         username: &str,
@@ -82,7 +89,7 @@ impl AuthService {
 
         // Create session
         let token = Uuid::new_v4().to_string();
-        let token_hash = sha256(&token);
+        let token_hash = crate::utils::sha256_hex(&token);
         let expires_at = Utc::now() + Duration::days(30);
 
         sqlx::query(
@@ -100,7 +107,7 @@ impl AuthService {
     }
 
     pub async fn get_session(&self, token: &str) -> Result<Session, anyhow::Error> {
-        let token_hash = sha256(token);
+        let token_hash = crate::utils::sha256_hex(token);
         let session = sqlx::query_as::<_, Session>(
             "SELECT id, user_id, token_hash, device_name, user_agent, ip::text as ip, expires_at, created_at, last_seen_at FROM sessions WHERE token_hash = $1 AND expires_at > NOW()",
         )
@@ -124,18 +131,11 @@ impl AuthService {
     }
 
     pub async fn logout(&self, token: &str) -> Result<(), anyhow::Error> {
-        let token_hash = sha256(token);
+        let token_hash = crate::utils::sha256_hex(token);
         sqlx::query("DELETE FROM sessions WHERE token_hash = $1")
             .bind(token_hash)
             .execute(&self.db)
             .await?;
         Ok(())
     }
-}
-
-fn sha256(input: &str) -> String {
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(input.as_bytes());
-    hex::encode(hasher.finalize())
 }

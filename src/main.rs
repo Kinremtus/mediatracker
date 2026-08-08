@@ -29,6 +29,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let igdb_client_id = std::env::var("IGDB_CLIENT_ID").unwrap_or_default();
     let igdb_client_secret = std::env::var("IGDB_CLIENT_SECRET").unwrap_or_default();
     let telegram_bot_token = std::env::var("TELEGRAM_BOT_TOKEN").unwrap_or_default();
+    let resend_api_key = std::env::var("RESEND_API_KEY").unwrap_or_default();
+    let email_from = std::env::var("EMAIL_FROM").unwrap_or_default();
+    let app_base_url = std::env::var("APP_BASE_URL").unwrap_or_default();
 
     // Initialize database and run migrations
     let state = AppState::new(
@@ -38,6 +41,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &igdb_client_id,
         &igdb_client_secret,
         &telegram_bot_token,
+        &resend_api_key,
+        &email_from,
+        &app_base_url,
     ).await?;
     info!("Database connected and migrations applied");
 
@@ -45,7 +51,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let public_routes = Router::new()
         .route("/tmdb-image/{*path}", get(tmdb_image::get_tmdb_image))
         .route("/login", get(auth::get_login).post(auth::post_login))
-        .route("/register", get(auth::get_register).post(auth::post_register));
+        .route("/register", get(auth::get_register).post(auth::post_register))
+        .route("/forgot-password", get(auth::get_forgot_password).post(auth::post_forgot_password))
+        .route("/reset-password", get(auth::get_reset_password).post(auth::post_reset_password));
 
     // Protected routes
     let protected_routes = Router::new()

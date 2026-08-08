@@ -3,6 +3,7 @@ use sqlx::PgPool;
 use reqwest::Client;
 use crate::metrics::MetricsHandle;
 use crate::services::auth::AuthService;
+use crate::services::email::EmailService;
 use crate::services::external::google_books::GoogleBooksService;
 use crate::services::external::igdb::IgdbService;
 use crate::services::external::mal::MalService;
@@ -12,6 +13,7 @@ use crate::services::external::rawg::RawgService;
 use crate::services::external::shikimori::ShikimoriService;
 use crate::services::external::tmdb::TmdbService;
 use crate::services::notifications::TelegramNotifier;
+use crate::services::password_reset::PasswordResetService;
 use crate::services::release_schedule::ReleaseScheduleService;
 use crate::services::stats::StatsService;
 use crate::services::tracking::TrackingService;
@@ -33,10 +35,13 @@ pub struct AppState {
     pub release_schedule: ReleaseScheduleService,
     pub stats: StatsService,
     pub telegram: TelegramNotifier,
+    pub email: EmailService,
+    pub password_reset: PasswordResetService,
     pub metrics_handle: MetricsHandle,
 }
 
 impl AppState {
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         database_url: &str,
         tmdb_api_key: &str,
@@ -44,6 +49,9 @@ impl AppState {
         igdb_client_id: &str,
         igdb_client_secret: &str,
         telegram_bot_token: &str,
+        resend_api_key: &str,
+        email_from: &str,
+        app_base_url: &str,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let db = PgPool::connect(database_url).await?;
         sqlx::migrate!("./migrations").run(&db).await?;
@@ -61,6 +69,14 @@ impl AppState {
         let release_schedule = ReleaseScheduleService::new(db.clone());
         let stats = StatsService::new(db.clone());
         let telegram = TelegramNotifier::new(telegram_bot_token.to_string());
+        let email = EmailService::new(resend_api_key, email_from, http_client.clone());
+        let password_reset = PasswordResetService::new(
+            db.clone(),
+            auth.clone(),
+            email.clone(),
+            telegram.clone(),
+            app_base_url.to_string(),
+        );
         let metrics_handle = crate::metrics::init_metrics();
         Ok(Self {
             db,
@@ -78,6 +94,8 @@ impl AppState {
             release_schedule,
             stats,
             telegram,
+            email,
+            password_reset,
             metrics_handle,
         })
     }
