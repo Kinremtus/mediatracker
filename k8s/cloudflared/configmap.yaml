@@ -9,7 +9,7 @@ data:
     credentials-file: /etc/cloudflared/credentials.json
 
     ingress:
-      - hostname: mediatracker.web-socket-test-bench.site
+      - hostname: $APP_HOST
         service: http://traefik.kube-system:80
       - service: http_status:404
  

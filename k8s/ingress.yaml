@@ -8,7 +8,7 @@ spec:
     - web
   routes:
     - kind: Rule
-      match: Host(`mediatracker.web-socket-test-bench.site`)
+      match: Host(`$APP_HOST`)
       services:
          - name: app
            port: 80
