@@ -9,6 +9,7 @@ pub struct TestContext {
     pub container: ContainerAsync<PostgresImage>,
     pub pool: PgPool,
     pub state: AppState,
+    pub database_url: String,
 }
 
 impl TestContext {
@@ -39,15 +40,37 @@ impl TestContext {
             .await
             .expect("Failed to run migrations");
 
-        let state = AppState::new(&database_url, "", "", "", "", "")
+        let state = AppState::new(&database_url, "", "", "", "", "", "", "", "")
             .await
             .expect("Failed to create AppState");
 
-        Self { container, pool, state }
+        Self {
+            container,
+            pool,
+            state,
+            database_url,
+        }
     }
 
     #[allow(dead_code)]
     pub fn app_state(&self) -> AppState {
         self.state.clone()
+    }
+
+    #[allow(dead_code)]
+    pub async fn app_state_with_email(&self) -> AppState {
+        AppState::new(
+            &self.database_url,
+            "",
+            "",
+            "",
+            "",
+            "",
+            "re_dummy_test_key",
+            "tracker@example.com",
+            "https://tracker.example.com",
+        )
+        .await
+        .expect("Failed to create AppState with email")
     }
 }

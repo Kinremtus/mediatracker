@@ -61,6 +61,8 @@ tmpVolume:
 configMap:
   host: "0.0.0.0"
   rustLog: "info"
+  appBaseUrl: ""
+  emailFrom: ""
 
 autoscaling:
   enabled: true

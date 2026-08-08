@@ -7,3 +7,5 @@ data:
   HOST: {{ .Values.configMap.host | quote }}
   PORT: {{ .Values.app.port | quote }}
   RUST_LOG: {{ .Values.configMap.rustLog | quote }}
+  APP_BASE_URL: {{ .Values.configMap.appBaseUrl | quote }}
+  EMAIL_FROM: {{ .Values.configMap.emailFrom | quote }}

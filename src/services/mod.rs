@@ -1,9 +1,11 @@
 pub mod auth;
 pub mod backfill;
 pub mod chapters;
+pub mod email;
 pub mod episodes;
 pub mod external;
 pub mod notifications;
+pub mod password_reset;
 pub mod release_schedule;
 pub mod search;
 pub mod stats;

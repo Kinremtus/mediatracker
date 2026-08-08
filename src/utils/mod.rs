@@ -3,6 +3,13 @@ pub mod activity_calendar;
 use regex::Regex;
 use std::sync::OnceLock;
 
+pub fn sha256_hex(input: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(input.as_bytes());
+    hex::encode(hasher.finalize())
+}
+
 pub fn clean_description(text: Option<String>) -> Option<String> {
     let raw = text?;
     let trimmed = raw.trim();
