@@ -1,6 +1,6 @@
 use axum::{
     extract::State,
-    http::{header, HeaderMap, HeaderValue, StatusCode},
+    http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
 };
 
@@ -30,8 +30,6 @@ pub async fn get_tmdb_image(
 
             (status, headers, body).into_response()
         }
-        Err(_) => {
-            (StatusCode::BAD_GATEWAY, "Failed to fetch image from TMDB").into_response()
-        }
+        Err(_) => (StatusCode::BAD_GATEWAY, "Failed to fetch image from TMDB").into_response(),
     }
 }

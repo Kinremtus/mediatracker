@@ -205,19 +205,31 @@ pub fn status_release_class(raw: Option<&str>) -> &'static str {
         Some(s) if !s.is_empty() => s.to_lowercase(),
         _ => return "",
     };
-    if s.contains("complete") || s.contains("finished") || s.contains("released") || s.contains("ended") {
+    if s.contains("complete")
+        || s.contains("finished")
+        || s.contains("released")
+        || s.contains("ended")
+    {
         "status-completed"
-    } else if s.contains("ongoing") || s.contains("airing") || s.contains("publishing")
-        || s.contains("in production") || s.contains("returning")
+    } else if s.contains("ongoing")
+        || s.contains("airing")
+        || s.contains("publishing")
+        || s.contains("in production")
+        || s.contains("returning")
     {
         "status-in_progress"
-    } else if s.contains("not yet") || s.contains("announced") || s.contains("planned")
-        || s.contains("anons") || s.contains("pending")
+    } else if s.contains("not yet")
+        || s.contains("announced")
+        || s.contains("planned")
+        || s.contains("anons")
+        || s.contains("pending")
     {
         "status-planned"
     } else if s.contains("hiatus") || s.contains("paused") {
         "status-paused"
-    } else if s.contains("discontinued") || s.contains("cancelled") || s.contains("canceled")
+    } else if s.contains("discontinued")
+        || s.contains("cancelled")
+        || s.contains("canceled")
         || s.contains("dropped")
     {
         "status-dropped"

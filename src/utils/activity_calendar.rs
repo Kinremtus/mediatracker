@@ -115,11 +115,7 @@ pub fn build_activity_calendar(counts: &HashMap<NaiveDate, i32>) -> ActivityCale
                 }
                 Some((date, level)) => {
                     let count = counts.get(date).copied().unwrap_or(0);
-                    let title = format!(
-                        "{} действий — {}",
-                        count,
-                        format_date_ru(*date)
-                    );
+                    let title = format!("{} действий — {}", count, format_date_ru(*date));
                     html.push_str(&format!(
                         "<div class=\"calendar-day{}\" title=\"{}\" data-week=\"{week_idx}\" data-day=\"{day_idx}\"></div>",
                         level_class(*level),
@@ -163,10 +159,7 @@ mod tests {
 
         let cal = build_activity_calendar(&counts);
         for month in MONTHS_SHORT {
-            assert!(
-                cal.html.contains(month),
-                "missing month label: {month}"
-            );
+            assert!(cal.html.contains(month), "missing month label: {month}");
         }
         assert!(cal.html.contains("level-3"));
         assert_eq!(cal.total_actions, 3);

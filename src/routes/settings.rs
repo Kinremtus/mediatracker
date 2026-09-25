@@ -1,14 +1,14 @@
 use askama::Template;
 use axum::{
     extract::{Form, State},
+    http::{HeaderValue, StatusCode, header::SET_COOKIE},
     response::{Html, IntoResponse, Redirect, Response},
-    http::{header::SET_COOKIE, HeaderValue},
 };
 use serde::Deserialize;
 
+use super::home::SidebarStats;
 use crate::app_state::AppState;
 use crate::middleware::CurrentUser;
-use super::home::SidebarStats;
 
 #[derive(Template)]
 #[template(path = "settings.html")]
@@ -41,10 +41,7 @@ pub struct PasswordForm {
     confirm_password: String,
 }
 
-pub async fn get_settings(
-    user: CurrentUser,
-    State(state): State<AppState>,
-) -> Html<String> {
+pub async fn get_settings(user: CurrentUser, State(state): State<AppState>) -> Html<String> {
     let stats = get_sidebar_stats(&state, &user).await;
 
     let user_data = sqlx::query_as::<_, (String, String, Option<String>, bool)>(
@@ -79,57 +76,66 @@ pub async fn post_profile(
     State(state): State<AppState>,
     Form(form): Form<ProfileForm>,
 ) -> Response {
-    let result = sqlx::query(
-        "UPDATE users SET username = $1, email = $2, updated_at = NOW() WHERE id = $3"
-    )
-    .bind(&form.username)
-    .bind(&form.email)
-    .bind(user.id)
-    .execute(&state.db)
-    .await;
+    let result =
+        sqlx::query("UPDATE users SET username = $1, email = $2, updated_at = NOW() WHERE id = $3")
+            .bind(&form.username)
+            .bind(&form.email)
+            .bind(user.id)
+            .execute(&state.db)
+            .await;
 
     match result {
         Ok(_) => {
             let stats = get_sidebar_stats(&state, &user).await;
             let user_data = sqlx::query_as::<_, (String, String)>(
-                "SELECT username, email FROM users WHERE id = $1"
+                "SELECT username, email FROM users WHERE id = $1",
             )
             .bind(user.id)
             .fetch_one(&state.db)
             .await
             .unwrap_or((form.username, form.email));
 
-            Html(SettingsTemplate {
-                username: user_data.0,
-                role: user.role.clone(),
-                email: user_data.1,
-                stats,
-                active_page: "settings".to_string(),
-                message: Some("Профиль обновлён".to_string()),
-                error: None,
-                email_notifications: false,
-                weekly_digest: false,
-                current_status: String::new(),
-                telegram_chat_id: String::new(),
-                telegram_notifications_enabled: false,
-            }.render().unwrap()).into_response()
+            Html(
+                SettingsTemplate {
+                    username: user_data.0,
+                    role: user.role.clone(),
+                    email: user_data.1,
+                    stats,
+                    active_page: "settings".to_string(),
+                    message: Some("Профиль обновлён".to_string()),
+                    error: None,
+                    email_notifications: false,
+                    weekly_digest: false,
+                    current_status: String::new(),
+                    telegram_chat_id: String::new(),
+                    telegram_notifications_enabled: false,
+                }
+                .render()
+                .unwrap(),
+            )
+            .into_response()
         }
         Err(e) => {
             let stats = get_sidebar_stats(&state, &user).await;
-            Html(SettingsTemplate {
-                username: user.username,
-                role: user.role.clone(),
-                email: String::new(),
-                stats,
-                active_page: "settings".to_string(),
-                message: None,
-                error: Some(format!("Ошибка: {}", e)),
-                email_notifications: false,
-                weekly_digest: false,
-                current_status: String::new(),
-                telegram_chat_id: String::new(),
-                telegram_notifications_enabled: false,
-            }.render().unwrap()).into_response()
+            Html(
+                SettingsTemplate {
+                    username: user.username,
+                    role: user.role.clone(),
+                    email: String::new(),
+                    stats,
+                    active_page: "settings".to_string(),
+                    message: None,
+                    error: Some(format!("Ошибка: {}", e)),
+                    email_notifications: false,
+                    weekly_digest: false,
+                    current_status: String::new(),
+                    telegram_chat_id: String::new(),
+                    telegram_notifications_enabled: false,
+                }
+                .render()
+                .unwrap(),
+            )
+            .into_response()
         }
     }
 }
@@ -141,42 +147,52 @@ pub async fn post_password(
 ) -> Response {
     if form.new_password != form.confirm_password {
         let stats = get_sidebar_stats(&state, &user).await;
-        return Html(SettingsTemplate {
-            username: user.username,
-            role: user.role.clone(),
-            email: String::new(),
-            stats,
-            active_page: "settings".to_string(),
-            message: None,
-            error: Some("Новые пароли не совпадают".to_string()),
-            email_notifications: false,
-            weekly_digest: false,
-            current_status: String::new(),
-            telegram_chat_id: String::new(),
-            telegram_notifications_enabled: false,
-        }.render().unwrap()).into_response();
+        return Html(
+            SettingsTemplate {
+                username: user.username,
+                role: user.role.clone(),
+                email: String::new(),
+                stats,
+                active_page: "settings".to_string(),
+                message: None,
+                error: Some("Новые пароли не совпадают".to_string()),
+                email_notifications: false,
+                weekly_digest: false,
+                current_status: String::new(),
+                telegram_chat_id: String::new(),
+                telegram_notifications_enabled: false,
+            }
+            .render()
+            .unwrap(),
+        )
+        .into_response();
     }
 
     if form.new_password.len() < 6 {
         let stats = get_sidebar_stats(&state, &user).await;
-        return Html(SettingsTemplate {
-            username: user.username,
-            role: user.role.clone(),
-            email: String::new(),
-            stats,
-            active_page: "settings".to_string(),
-            message: None,
-            error: Some("Пароль должен быть не менее 6 символов".to_string()),
-            email_notifications: false,
-            weekly_digest: false,
-            current_status: String::new(),
-            telegram_chat_id: String::new(),
-            telegram_notifications_enabled: false,
-        }.render().unwrap()).into_response();
+        return Html(
+            SettingsTemplate {
+                username: user.username,
+                role: user.role.clone(),
+                email: String::new(),
+                stats,
+                active_page: "settings".to_string(),
+                message: None,
+                error: Some("Пароль должен быть не менее 6 символов".to_string()),
+                email_notifications: false,
+                weekly_digest: false,
+                current_status: String::new(),
+                telegram_chat_id: String::new(),
+                telegram_notifications_enabled: false,
+            }
+            .render()
+            .unwrap(),
+        )
+        .into_response();
     }
 
     let user_data = sqlx::query_as::<_, (String, String)>(
-        "SELECT username, password_hash FROM users WHERE id = $1"
+        "SELECT username, password_hash FROM users WHERE id = $1",
     )
     .bind(user.id)
     .fetch_one(&state.db)
@@ -189,141 +205,220 @@ pub async fn post_password(
         }
     };
 
-    use argon2::password_hash::{PasswordHash, PasswordVerifier};
     use argon2::Argon2;
+    use argon2::password_hash::{PasswordHash, PasswordVerifier};
 
     let parsed_hash = match PasswordHash::new(&user_data.1) {
         Ok(h) => h,
         Err(_) => {
             let stats = get_sidebar_stats(&state, &user).await;
-            return Html(SettingsTemplate {
+            return Html(
+                SettingsTemplate {
+                    username: user.username,
+                    role: user.role.clone(),
+                    email: String::new(),
+                    stats,
+                    active_page: "settings".to_string(),
+                    message: None,
+                    error: Some("Ошибка проверки пароля".to_string()),
+                    email_notifications: false,
+                    weekly_digest: false,
+                    current_status: String::new(),
+                    telegram_chat_id: String::new(),
+                    telegram_notifications_enabled: false,
+                }
+                .render()
+                .unwrap(),
+            )
+            .into_response();
+        }
+    };
+
+    if Argon2::default()
+        .verify_password(form.current_password.as_bytes(), &parsed_hash)
+        .is_err()
+    {
+        let stats = get_sidebar_stats(&state, &user).await;
+        return Html(
+            SettingsTemplate {
                 username: user.username,
                 role: user.role.clone(),
                 email: String::new(),
                 stats,
                 active_page: "settings".to_string(),
                 message: None,
-                error: Some("Ошибка проверки пароля".to_string()),
+                error: Some("Текущий пароль неверен".to_string()),
                 email_notifications: false,
                 weekly_digest: false,
                 current_status: String::new(),
                 telegram_chat_id: String::new(),
                 telegram_notifications_enabled: false,
-            }.render().unwrap()).into_response();
-        }
-    };
-
-    if Argon2::default().verify_password(form.current_password.as_bytes(), &parsed_hash).is_err() {
-        let stats = get_sidebar_stats(&state, &user).await;
-        return Html(SettingsTemplate {
-            username: user.username,
-            role: user.role.clone(),
-            email: String::new(),
-            stats,
-            active_page: "settings".to_string(),
-            message: None,
-            error: Some("Текущий пароль неверен".to_string()),
-            email_notifications: false,
-            weekly_digest: false,
-            current_status: String::new(),
-            telegram_chat_id: String::new(),
-            telegram_notifications_enabled: false,
-        }.render().unwrap()).into_response();
+            }
+            .render()
+            .unwrap(),
+        )
+        .into_response();
     }
 
-    use argon2::password_hash::{rand_core::OsRng, PasswordHasher, SaltString};
+    use argon2::password_hash::{PasswordHasher, SaltString, rand_core::OsRng};
 
     let salt = SaltString::generate(&mut OsRng);
     let new_hash = match Argon2::default().hash_password(form.new_password.as_bytes(), &salt) {
         Ok(h) => h.to_string(),
         Err(_) => {
             let stats = get_sidebar_stats(&state, &user).await;
-            return Html(SettingsTemplate {
-                username: user.username,
-                role: user.role.clone(),
-                email: String::new(),
-                stats,
-                active_page: "settings".to_string(),
-                message: None,
-                error: Some("Ошибка хеширования пароля".to_string()),
-                email_notifications: false,
-                weekly_digest: false,
-                current_status: String::new(),
-                telegram_chat_id: String::new(),
-                telegram_notifications_enabled: false,
-            }.render().unwrap()).into_response();
+            return Html(
+                SettingsTemplate {
+                    username: user.username,
+                    role: user.role.clone(),
+                    email: String::new(),
+                    stats,
+                    active_page: "settings".to_string(),
+                    message: None,
+                    error: Some("Ошибка хеширования пароля".to_string()),
+                    email_notifications: false,
+                    weekly_digest: false,
+                    current_status: String::new(),
+                    telegram_chat_id: String::new(),
+                    telegram_notifications_enabled: false,
+                }
+                .render()
+                .unwrap(),
+            )
+            .into_response();
         }
     };
 
-    let result = sqlx::query(
-        "UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2"
-    )
-    .bind(new_hash)
-    .bind(user.id)
-    .execute(&state.db)
-    .await;
+    let result =
+        sqlx::query("UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2")
+            .bind(new_hash)
+            .bind(user.id)
+            .execute(&state.db)
+            .await;
 
     match result {
         Ok(_) => {
             let stats = get_sidebar_stats(&state, &user).await;
-            Html(SettingsTemplate {
-                username: user.username,
-                role: user.role.clone(),
-                email: String::new(),
-                stats,
-                active_page: "settings".to_string(),
-                message: Some("Пароль успешно изменён".to_string()),
-                error: None,
-                email_notifications: false,
-                weekly_digest: false,
-                current_status: String::new(),
-                telegram_chat_id: String::new(),
-                telegram_notifications_enabled: false,
-            }.render().unwrap()).into_response()
+            Html(
+                SettingsTemplate {
+                    username: user.username,
+                    role: user.role.clone(),
+                    email: String::new(),
+                    stats,
+                    active_page: "settings".to_string(),
+                    message: Some("Пароль успешно изменён".to_string()),
+                    error: None,
+                    email_notifications: false,
+                    weekly_digest: false,
+                    current_status: String::new(),
+                    telegram_chat_id: String::new(),
+                    telegram_notifications_enabled: false,
+                }
+                .render()
+                .unwrap(),
+            )
+            .into_response()
         }
         Err(e) => {
             let stats = get_sidebar_stats(&state, &user).await;
-            Html(SettingsTemplate {
-                username: user.username,
-                role: user.role.clone(),
-                email: String::new(),
-                stats,
-                active_page: "settings".to_string(),
-                message: None,
-                error: Some(format!("Ошибка: {}", e)),
-                email_notifications: false,
-                weekly_digest: false,
-                current_status: String::new(),
-                telegram_chat_id: String::new(),
-                telegram_notifications_enabled: false,
-            }.render().unwrap()).into_response()
+            Html(
+                SettingsTemplate {
+                    username: user.username,
+                    role: user.role.clone(),
+                    email: String::new(),
+                    stats,
+                    active_page: "settings".to_string(),
+                    message: None,
+                    error: Some(format!("Ошибка: {}", e)),
+                    email_notifications: false,
+                    weekly_digest: false,
+                    current_status: String::new(),
+                    telegram_chat_id: String::new(),
+                    telegram_notifications_enabled: false,
+                }
+                .render()
+                .unwrap(),
+            )
+            .into_response()
         }
     }
 }
 
-pub async fn post_delete_account(
-    user: CurrentUser,
-    State(state): State<AppState>,
-) -> Response {
+pub async fn post_delete_account(user: CurrentUser, State(state): State<AppState>) -> Response {
     let uid = user.id;
 
-    let _ = sqlx::query("DELETE FROM activity_log WHERE user_id = $1").bind(uid).execute(&state.db).await;
-    let _ = sqlx::query("DELETE FROM external_mappings WHERE user_id = $1").bind(uid).execute(&state.db).await;
-    let _ = sqlx::query("DELETE FROM tracking_entries WHERE user_id = $1").bind(uid).execute(&state.db).await;
-    let _ = sqlx::query("DELETE FROM sessions WHERE user_id = $1").bind(uid).execute(&state.db).await;
-    let _ = sqlx::query("DELETE FROM users WHERE id = $1").bind(uid).execute(&state.db).await;
+    let mut tx = match state.db.begin().await {
+        Ok(tx) => tx,
+        Err(e) => {
+            tracing::error!(
+                "Failed to begin delete-account transaction for user {}: {}",
+                uid,
+                e
+            );
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let result = async {
+        sqlx::query("DELETE FROM activity_log WHERE user_id = $1")
+            .bind(uid)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM external_mappings WHERE user_id = $1")
+            .bind(uid)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM tracking_entries WHERE user_id = $1")
+            .bind(uid)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM sessions WHERE user_id = $1")
+            .bind(uid)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM users WHERE id = $1")
+            .bind(uid)
+            .execute(&mut *tx)
+            .await?;
+        Ok::<(), sqlx::Error>(())
+    }
+    .await;
+
+    if let Err(e) = result {
+        tracing::error!("Failed to delete account for user {}: {}", uid, e);
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+
+    if let Err(e) = tx.commit().await {
+        tracing::error!(
+            "Failed to commit delete-account transaction for user {}: {}",
+            uid,
+            e
+        );
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
 
     let mut response = Redirect::to("/login").into_response();
     response.headers_mut().insert(
         SET_COOKIE,
-        HeaderValue::from_str("session_id=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0").unwrap(),
+        HeaderValue::from_static("session_id=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0"),
     );
     response
 }
 
 async fn get_sidebar_stats(state: &AppState, user: &CurrentUser) -> SidebarStats {
-    let (ip, cp, pp, dp) = state.tracking.get_status_counts(user.id).await.unwrap_or_default();
-    SidebarStats { in_progress: ip, completed: cp, planned: pp, dropped: dp, role: user.role.clone() }
+    let (ip, cp, pp, dp) = state
+        .tracking
+        .get_status_counts(user.id)
+        .await
+        .unwrap_or_default();
+    SidebarStats {
+        in_progress: ip,
+        completed: cp,
+        planned: pp,
+        dropped: dp,
+        role: user.role.clone(),
+    }
 }
 
 // ========== HTMX Endpoints ==========
@@ -340,31 +435,31 @@ pub async fn htmx_update_profile(
     State(state): State<AppState>,
     Form(form): Form<ProfileForm>,
 ) -> Response {
-    let result = sqlx::query(
-        "UPDATE users SET username = $1, email = $2, updated_at = NOW() WHERE id = $3"
-    )
-    .bind(&form.username)
-    .bind(&form.email)
-    .bind(user.id)
-    .execute(&state.db)
-    .await;
+    let result =
+        sqlx::query("UPDATE users SET username = $1, email = $2, updated_at = NOW() WHERE id = $3")
+            .bind(&form.username)
+            .bind(&form.email)
+            .bind(user.id)
+            .execute(&state.db)
+            .await;
 
     match result {
         Ok(_) => {
             let html = MessagePartial {
                 message: Some("Профиль обновлён".to_string()),
                 error: None,
-            }.render().unwrap();
-            (
-                [("HX-Trigger", "profileUpdated")],
-                Html(html),
-            ).into_response()
+            }
+            .render()
+            .unwrap();
+            ([("HX-Trigger", "profileUpdated")], Html(html)).into_response()
         }
         Err(e) => {
             let html = MessagePartial {
                 message: None,
                 error: Some(format!("Ошибка: {}", e)),
-            }.render().unwrap();
+            }
+            .render()
+            .unwrap();
             Html(html).into_response()
         }
     }
@@ -379,7 +474,9 @@ pub async fn htmx_update_password(
         let html = MessagePartial {
             message: None,
             error: Some("Новые пароли не совпадают".to_string()),
-        }.render().unwrap();
+        }
+        .render()
+        .unwrap();
         return Html(html).into_response();
     }
 
@@ -387,12 +484,14 @@ pub async fn htmx_update_password(
         let html = MessagePartial {
             message: None,
             error: Some("Пароль должен быть не менее 6 символов".to_string()),
-        }.render().unwrap();
+        }
+        .render()
+        .unwrap();
         return Html(html).into_response();
     }
 
     let user_data = sqlx::query_as::<_, (String, String)>(
-        "SELECT username, password_hash FROM users WHERE id = $1"
+        "SELECT username, password_hash FROM users WHERE id = $1",
     )
     .bind(user.id)
     .fetch_one(&state.db)
@@ -405,8 +504,8 @@ pub async fn htmx_update_password(
         }
     };
 
-    use argon2::password_hash::{PasswordHash, PasswordVerifier};
     use argon2::Argon2;
+    use argon2::password_hash::{PasswordHash, PasswordVerifier};
 
     let parsed_hash = match PasswordHash::new(&user_data.1) {
         Ok(h) => h,
@@ -414,20 +513,27 @@ pub async fn htmx_update_password(
             let html = MessagePartial {
                 message: None,
                 error: Some("Ошибка проверки пароля".to_string()),
-            }.render().unwrap();
+            }
+            .render()
+            .unwrap();
             return Html(html).into_response();
         }
     };
 
-    if Argon2::default().verify_password(form.current_password.as_bytes(), &parsed_hash).is_err() {
+    if Argon2::default()
+        .verify_password(form.current_password.as_bytes(), &parsed_hash)
+        .is_err()
+    {
         let html = MessagePartial {
             message: None,
             error: Some("Текущий пароль неверен".to_string()),
-        }.render().unwrap();
+        }
+        .render()
+        .unwrap();
         return Html(html).into_response();
     }
 
-    use argon2::password_hash::{rand_core::OsRng, PasswordHasher, SaltString};
+    use argon2::password_hash::{PasswordHasher, SaltString, rand_core::OsRng};
 
     let salt = SaltString::generate(&mut OsRng);
     let new_hash = match Argon2::default().hash_password(form.new_password.as_bytes(), &salt) {
@@ -436,35 +542,37 @@ pub async fn htmx_update_password(
             let html = MessagePartial {
                 message: None,
                 error: Some("Ошибка хеширования пароля".to_string()),
-            }.render().unwrap();
+            }
+            .render()
+            .unwrap();
             return Html(html).into_response();
         }
     };
 
-    let result = sqlx::query(
-        "UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2"
-    )
-    .bind(new_hash)
-    .bind(user.id)
-    .execute(&state.db)
-    .await;
+    let result =
+        sqlx::query("UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2")
+            .bind(new_hash)
+            .bind(user.id)
+            .execute(&state.db)
+            .await;
 
     match result {
         Ok(_) => {
             let html = MessagePartial {
                 message: Some("Пароль успешно изменён".to_string()),
                 error: None,
-            }.render().unwrap();
-            (
-                [("HX-Trigger", "passwordUpdated")],
-                Html(html),
-            ).into_response()
+            }
+            .render()
+            .unwrap();
+            ([("HX-Trigger", "passwordUpdated")], Html(html)).into_response()
         }
         Err(e) => {
             let html = MessagePartial {
                 message: None,
                 error: Some(format!("Ошибка: {}", e)),
-            }.render().unwrap();
+            }
+            .render()
+            .unwrap();
             Html(html).into_response()
         }
     }
@@ -495,25 +603,26 @@ pub async fn htmx_save_telegram_chat_id(
             let html = MessagePartial {
                 message: Some("Telegram_CHAT_ID сохранён".to_string()),
                 error: None,
-            }.render().unwrap();
+            }
+            .render()
+            .unwrap();
             Html(html).into_response()
         }
         Err(e) => {
             let html = MessagePartial {
                 message: None,
                 error: Some(format!("Ошибка: {}", e)),
-            }.render().unwrap();
+            }
+            .render()
+            .unwrap();
             Html(html).into_response()
         }
     }
 }
 
-pub async fn htmx_test_telegram(
-    user: CurrentUser,
-    State(state): State<AppState>,
-) -> Response {
+pub async fn htmx_test_telegram(user: CurrentUser, State(state): State<AppState>) -> Response {
     let chat_id: Option<(String,)> = sqlx::query_as(
-        "SELECT telegram_chat_id FROM users WHERE id = $1 AND telegram_chat_id IS NOT NULL"
+        "SELECT telegram_chat_id FROM users WHERE id = $1 AND telegram_chat_id IS NOT NULL",
     )
     .bind(user.id)
     .fetch_optional(&state.db)
@@ -526,7 +635,9 @@ pub async fn htmx_test_telegram(
             let html = MessagePartial {
                 message: None,
                 error: Some("Сначала укажите Telegram_CHAT_ID".to_string()),
-            }.render().unwrap();
+            }
+            .render()
+            .unwrap();
             return Html(html).into_response();
         }
     };
@@ -536,14 +647,18 @@ pub async fn htmx_test_telegram(
             let html = MessagePartial {
                 message: Some("Тестовое сообщение отправлено!".to_string()),
                 error: None,
-            }.render().unwrap();
+            }
+            .render()
+            .unwrap();
             Html(html).into_response()
         }
         Err(e) => {
             let html = MessagePartial {
                 message: None,
                 error: Some(format!("Ошибка отправки: {}", e)),
-            }.render().unwrap();
+            }
+            .render()
+            .unwrap();
             Html(html).into_response()
         }
     }

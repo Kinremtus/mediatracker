@@ -1,24 +1,59 @@
+#!/usr/bin/env python3
+"""Thin wrapper around scripts/backup-db.sh.
+
+Historically this file produced the backup itself with a ``shell=True``
+invocation of ``docker compose exec`` and had a broken final print
+(``TITIMESTAMPME``). Both problems are gone: all backup logic now lives in
+``scripts/backup-db.sh`` (k3s/direct detection, age encryption, retention,
+rclone is handled by the in-cluster CronJob) and this wrapper only delegates.
+
+No ``shell=True`` is used anywhere; arguments are passed as a list.
+The Minsk (Europe/Minsk) timestamp style is kept for the log lines.
+"""
+
+from __future__ import annotations
+
 import subprocess
+import sys
 from datetime import datetime
-from zoneinfo import ZoneInfo
 from pathlib import Path
+from zoneinfo import ZoneInfo
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+BACKUP_SCRIPT = SCRIPT_DIR / "backup-db.sh"
 
 
-BACKUP_DIR="./backups"
-TIMESTAMP = datetime.now(ZoneInfo("Europe/Minsk")).strftime("%d.%m.%Y_%H-%M-%S")
-BACKUP_FILE = f"{BACKUP_DIR}/{TIMESTAMP}.sql.gz"
+def now() -> str:
+    return datetime.now(ZoneInfo("Europe/Minsk")).strftime("%d.%m.%Y_%H-%M-%S")
 
-Path(BACKUP_DIR).mkdir(parents=True, exist_ok=True)
 
-print(f"[{TIMESTAMP}] Starting backup...")
+def main() -> int:
+    timestamp = now()
+    print(f"[{timestamp}] Starting backup via {BACKUP_SCRIPT} ...")
 
-subprocess.run(f"docker compose exec -T db pg_dump -U Kin tracker | gzip > {BACKUP_FILE}", shell=True, check=True)
+    if not BACKUP_SCRIPT.is_file():
+        print(f"[{timestamp}] ERROR: backup script not found: {BACKUP_SCRIPT}", file=sys.stderr)
+        return 1
 
-size = subprocess.check_output(f"du -h {BACKUP_FILE} | cut -f1", shell=True, text=True).strip()
-print(f"[{TIMESTAMP}] Backup saved: {BACKUP_FILE} ({size})")
+    try:
+        result = subprocess.run(
+            ["bash", str(BACKUP_SCRIPT), *sys.argv[1:]],
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        print(f"[{timestamp}] ERROR: {exc}", file=sys.stderr)
+        return 1
 
-# Remove backups older than 30 days
-subprocess.run('find ./backups -name "*.sql.gz" -mtime +30 -delete', shell=True, check=True)
+    if result.returncode != 0:
+        print(
+            f"[{timestamp}] ERROR: backup failed (exit code {result.returncode})",
+            file=sys.stderr,
+        )
+        return result.returncode
 
-print(f"[{TIMESTAMP}] Old backups cleaned.")
-print(f"[{TITIMESTAMPME}] Done.")
+    print(f"[{timestamp}] Done.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

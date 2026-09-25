@@ -12,7 +12,9 @@ fn main() {
         .expect("healthcheck: set read timeout failed");
 
     let request = b"GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
-    stream.write_all(request).expect("healthcheck: write request failed");
+    stream
+        .write_all(request)
+        .expect("healthcheck: write request failed");
 
     let mut response = String::new();
     let _ = stream.read_to_string(&mut response);

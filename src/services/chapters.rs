@@ -2,8 +2,6 @@ use crate::services::external::mangadex::MangaDexService;
 use sqlx::PgPool;
 use std::collections::HashMap;
 
-
-
 /// Chapter as returned to the template layer.
 #[derive(Debug, Clone)]
 pub struct StoredChapter {
@@ -85,24 +83,30 @@ pub async fn store_chapters_mu(
         return Ok(0);
     }
 
-    let mut count = 0;
-    for ch in 1..=latest_chapter {
-        let chapter_number = ch * 10; // chapter 1 → 10, chapter 2 → 20, etc.
-        let result = sqlx::query(
-            r#"
-            INSERT INTO series_chapters
-                (provider, external_id, chapter_number)
-            VALUES ($1, $2, $3)
-            ON CONFLICT (provider, external_id, chapter_number) DO NOTHING
-            "#,
-        )
-        .bind("mangaupdates")
-        .bind(series_id.to_string())
-        .bind(chapter_number)
-        .execute(pool)
-        .await?;
-        count += result.rows_affected();
-    }
+    let external_id = series_id.to_string();
+    // Chapter 1 → 10, chapter 2 → 20, … (tenths are stored in the low digit).
+    let chapter_numbers: Vec<i32> = (1..=latest_chapter).map(|ch| ch * 10).collect();
+
+    // One statement instead of N: a mid-way failure can no longer leave a
+    // partially populated skeleton. The media_items sync runs in the same
+    // transaction so the card denominator can never disagree with the rows.
+    let mut tx = pool.begin().await?;
+
+    let result = sqlx::query(
+        r#"
+        INSERT INTO series_chapters
+            (provider, external_id, chapter_number)
+        SELECT 'mangaupdates', $1, u.chapter_number
+        FROM UNNEST($2::int[]) AS u(chapter_number)
+        ON CONFLICT (provider, external_id, chapter_number) DO NOTHING
+        "#,
+    )
+    .bind(&external_id)
+    .bind(&chapter_numbers)
+    .execute(&mut *tx)
+    .await?;
+
+    let count = result.rows_affected();
 
     // Sync media_items.chapters = MAX(chapter_number) / 10 of what
     // we just stored, so the tracking card denominator matches.
@@ -121,19 +125,22 @@ pub async fn store_chapters_mu(
               AND (media_items.chapters IS NULL OR media_items.chapters = 0)
             "#,
         )
-        .bind(series_id.to_string())
-        .execute(pool)
+        .bind(&external_id)
+        .execute(&mut *tx)
         .await?;
     }
 
+    tx.commit().await?;
     Ok(count as usize)
 }
 
-/// Read all chapters for one manga, sorted by number ascending.
+/// Read all chapters for one manga, sorted by number ascending. The
+/// `read` flag comes from the per-user progress table for `user_id`.
 pub async fn get_chapters(
     pool: &PgPool,
     provider: &str,
     external_id: &str,
+    user_id: uuid::Uuid,
 ) -> Result<Vec<StoredChapter>, sqlx::Error> {
     #[allow(clippy::type_complexity)]
     let rows: Vec<(
@@ -145,40 +152,47 @@ pub async fn get_chapters(
         bool,
     )> = sqlx::query_as(
         r#"
-        SELECT chapter_number, volume, title_en, title_ru, release_date, read
-        FROM series_chapters
-        WHERE provider = $1 AND external_id = $2
-        ORDER BY chapter_number ASC
+        SELECT sc.chapter_number, sc.volume, sc.title_en, sc.title_ru,
+               sc.release_date, COALESCE(p.read, FALSE)
+        FROM series_chapters sc
+        LEFT JOIN user_chapter_progress p
+            ON p.user_id = $3
+           AND p.provider = sc.provider
+           AND p.external_id = sc.external_id
+           AND p.chapter_number = sc.chapter_number
+        WHERE sc.provider = $1 AND sc.external_id = $2
+        ORDER BY sc.chapter_number ASC
         "#,
     )
     .bind(provider)
     .bind(external_id)
+    .bind(user_id)
     .fetch_all(pool)
     .await?;
 
     Ok(rows
         .into_iter()
         .map(
-            |(chapter_number, volume, title_en, title_ru, release_date, read)| {
-                StoredChapter {
-                    chapter_number,
-                    volume,
-                    title_en,
-                    title_ru,
-                    release_date,
-                    read,
-                }
+            |(chapter_number, volume, title_en, title_ru, release_date, read)| StoredChapter {
+                chapter_number,
+                volume,
+                title_en,
+                title_ru,
+                release_date,
+                read,
             },
         )
         .collect())
 }
 
-/// Read a single chapter by (provider, external_id, chapter_number).
+/// Read a single chapter by (provider, external_id, chapter_number),
+/// with the per-user `read` flag joined from `user_chapter_progress`.
 pub async fn get_chapter(
     pool: &PgPool,
     provider: &str,
     external_id: &str,
     chapter_number: i32,
+    user_id: uuid::Uuid,
 ) -> Result<Option<StoredChapter>, sqlx::Error> {
     #[allow(clippy::type_complexity)]
     let row: Option<(
@@ -190,44 +204,44 @@ pub async fn get_chapter(
         bool,
     )> = sqlx::query_as(
         r#"
-        SELECT chapter_number, volume, title_en, title_ru, release_date, read
-        FROM series_chapters
-        WHERE provider = $1 AND external_id = $2 AND chapter_number = $3
+        SELECT sc.chapter_number, sc.volume, sc.title_en, sc.title_ru,
+               sc.release_date, COALESCE(p.read, FALSE)
+        FROM series_chapters sc
+        LEFT JOIN user_chapter_progress p
+            ON p.user_id = $4
+           AND p.provider = sc.provider
+           AND p.external_id = sc.external_id
+           AND p.chapter_number = sc.chapter_number
+        WHERE sc.provider = $1 AND sc.external_id = $2 AND sc.chapter_number = $3
         "#,
     )
     .bind(provider)
     .bind(external_id)
     .bind(chapter_number)
+    .bind(user_id)
     .fetch_optional(pool)
     .await?;
 
     Ok(row.map(
-        |(chapter_number, volume, title_en, title_ru, release_date, read)| {
-            StoredChapter {
-                chapter_number,
-                volume,
-                title_en,
-                title_ru,
-                release_date,
-                read,
-            }
+        |(chapter_number, volume, title_en, title_ru, release_date, read)| StoredChapter {
+            chapter_number,
+            volume,
+            title_en,
+            title_ru,
+            release_date,
+            read,
         },
     ))
 }
 
-/// Set the `read` flag on one or more chapter rows.
+/// Writes go to `user_chapter_progress` keyed by `(user_id, provider,
+/// external_id, chapter_number)`. The catalog table `series_chapters`
+/// is only read as the source of real chapter numbers.
 ///
-/// **Bulk-fill on read**: when `read = true`, every chapter with
-/// `chapter_number <= N` is marked read (same semantics as anime
-/// episodes: "mark ch 25 read → ch 1..25 read").
-///
-/// **Reverse bulk-fill on unread**: when `read = false`, every
-/// chapter with `chapter_number >= N` is marked unread (the mirror:
-/// "if I haven't read ch 25, I haven't read anything past it").
-///
-/// Returns `true` if at least one row was updated.
+/// Returns `true` if at least one progress row was inserted/updated.
 pub async fn set_read(
     pool: &PgPool,
+    user_id: uuid::Uuid,
     provider: &str,
     external_id: &str,
     chapter_number: i32,
@@ -236,14 +250,19 @@ pub async fn set_read(
     let result = if read {
         sqlx::query(
             r#"
-            UPDATE series_chapters
+            INSERT INTO user_chapter_progress
+                (user_id, provider, external_id, chapter_number, read, read_at)
+            SELECT $1, sc.provider, sc.external_id, sc.chapter_number, TRUE, NOW()
+            FROM series_chapters sc
+            WHERE sc.provider = $2
+              AND sc.external_id = $3
+              AND sc.chapter_number <= $4
+            ON CONFLICT (user_id, provider, external_id, chapter_number) DO UPDATE
             SET read = TRUE,
                 read_at = NOW()
-            WHERE provider = $1
-              AND external_id = $2
-              AND chapter_number <= $3
             "#,
         )
+        .bind(user_id)
         .bind(provider)
         .bind(external_id)
         .bind(chapter_number)
@@ -252,14 +271,16 @@ pub async fn set_read(
     } else {
         sqlx::query(
             r#"
-            UPDATE series_chapters
+            UPDATE user_chapter_progress
             SET read = FALSE,
                 read_at = NULL
-            WHERE provider = $1
-              AND external_id = $2
-              AND chapter_number >= $3
+            WHERE user_id = $1
+              AND provider = $2
+              AND external_id = $3
+              AND chapter_number >= $4
             "#,
         )
+        .bind(user_id)
         .bind(provider)
         .bind(external_id)
         .bind(chapter_number)
@@ -269,22 +290,29 @@ pub async fn set_read(
     Ok(result.rows_affected() > 0)
 }
 
-/// Highest chapter_number currently marked read for a manga.
+/// Highest chapter_number currently marked read for this user.
 /// Returns 0 if nothing is read.
 pub async fn count_read(
     pool: &PgPool,
+    user_id: uuid::Uuid,
     provider: &str,
     external_id: &str,
 ) -> Result<i32, sqlx::Error> {
     let row: (Option<i32>,) = sqlx::query_as(
         r#"
-        SELECT MAX(chapter_number)
-        FROM series_chapters
-        WHERE provider = $1
-          AND external_id = $2
-          AND read = TRUE
+        SELECT MAX(sc.chapter_number)
+        FROM series_chapters sc
+        JOIN user_chapter_progress p
+            ON p.user_id = $1
+           AND p.provider = sc.provider
+           AND p.external_id = sc.external_id
+           AND p.chapter_number = sc.chapter_number
+        WHERE sc.provider = $2
+          AND sc.external_id = $3
+          AND p.read = TRUE
         "#,
     )
+    .bind(user_id)
     .bind(provider)
     .bind(external_id)
     .fetch_one(pool)
@@ -293,22 +321,29 @@ pub async fn count_read(
     Ok(row.0.map(|v| v / 10).unwrap_or(0))
 }
 
-/// Get all (chapter_number, read) pairs for a manga, ordered ASC.
-/// Used by the toggle endpoint to broadcast authoritative state
+/// Get all (chapter_number, read) pairs for a manga and user, ordered
+/// ASC. Used by the toggle endpoint to broadcast authoritative state
 /// via HX-Trigger.
 pub async fn get_chapter_states(
     pool: &PgPool,
+    user_id: uuid::Uuid,
     provider: &str,
     external_id: &str,
 ) -> Result<Vec<(i32, bool)>, sqlx::Error> {
     let rows: Vec<(i32, bool)> = sqlx::query_as(
         r#"
-        SELECT chapter_number, read
-        FROM series_chapters
-        WHERE provider = $1 AND external_id = $2
-        ORDER BY chapter_number ASC
+        SELECT sc.chapter_number, COALESCE(p.read, FALSE)
+        FROM series_chapters sc
+        LEFT JOIN user_chapter_progress p
+            ON p.user_id = $1
+           AND p.provider = sc.provider
+           AND p.external_id = sc.external_id
+           AND p.chapter_number = sc.chapter_number
+        WHERE sc.provider = $2 AND sc.external_id = $3
+        ORDER BY sc.chapter_number ASC
         "#,
     )
+    .bind(user_id)
     .bind(provider)
     .bind(external_id)
     .fetch_all(pool)
@@ -347,13 +382,12 @@ pub async fn lookup_media_id(
     provider: &str,
     external_id: &str,
 ) -> Result<Option<uuid::Uuid>, sqlx::Error> {
-    let row: Option<(uuid::Uuid,)> = sqlx::query_as(
-        "SELECT id FROM media_items WHERE provider = $1 AND external_id = $2",
-    )
-    .bind(provider)
-    .bind(external_id)
-    .fetch_optional(pool)
-    .await?;
+    let row: Option<(uuid::Uuid,)> =
+        sqlx::query_as("SELECT id FROM media_items WHERE provider = $1 AND external_id = $2")
+            .bind(provider)
+            .bind(external_id)
+            .fetch_optional(pool)
+            .await?;
     Ok(row.map(|(v,)| v))
 }
 
@@ -404,38 +438,62 @@ pub async fn enrich_from_mangadex(
             md_map
                 .entry(ch_num_10)
                 .and_modify(|(e, r, v)| {
-                    if e.is_none() { *e = en.clone(); }
-                    if r.is_none() { *r = ru.clone(); }
-                    if v.is_none() { *v = vol; }
+                    if e.is_none() {
+                        *e = en.clone();
+                    }
+                    if r.is_none() {
+                        *r = ru.clone();
+                    }
+                    if v.is_none() {
+                        *v = vol;
+                    }
                 })
                 .or_insert((en, ru, vol));
         }
     }
 
-    // Update series_chapters
-    let mut updated = 0;
-    for (ch_num_10, (en, ru, vol)) in md_map {
-        let result = sqlx::query(
-            r#"
-            UPDATE series_chapters
-            SET title_en = COALESCE(title_en, $4),
-                title_ru = COALESCE(title_ru, $5),
-                volume = COALESCE(volume, $6)
-            WHERE provider = $1 AND external_id = $2 AND chapter_number = $3
-            "#,
-        )
-        .bind(provider)
-        .bind(external_id)
-        .bind(ch_num_10)
-        .bind(&en)
-        .bind(&ru)
-        .bind(vol)
-        .execute(pool)
-        .await?;
-        updated += result.rows_affected() as usize;
+    // Update series_chapters in one batched statement (single round-trip and
+    // atomic) instead of one UPDATE per chapter.
+    if md_map.is_empty() {
+        return Ok(0);
     }
 
-    Ok(updated)
+    let mut chapter_numbers: Vec<i32> = Vec::with_capacity(md_map.len());
+    let mut title_en: Vec<Option<String>> = Vec::with_capacity(md_map.len());
+    let mut title_ru: Vec<Option<String>> = Vec::with_capacity(md_map.len());
+    let mut volumes: Vec<Option<i32>> = Vec::with_capacity(md_map.len());
+    for (ch_num_10, (en, ru, vol)) in md_map {
+        chapter_numbers.push(ch_num_10);
+        title_en.push(en);
+        title_ru.push(ru);
+        volumes.push(vol);
+    }
+
+    let mut tx = pool.begin().await?;
+    let result = sqlx::query(
+        r#"
+        UPDATE series_chapters sc
+        SET title_en = COALESCE(sc.title_en, u.title_en),
+            title_ru = COALESCE(sc.title_ru, u.title_ru),
+            volume = COALESCE(sc.volume, u.volume)
+        FROM UNNEST($3::int[], $4::text[], $5::text[], $6::int[])
+            AS u(chapter_number, title_en, title_ru, volume)
+        WHERE sc.provider = $1
+          AND sc.external_id = $2
+          AND sc.chapter_number = u.chapter_number
+        "#,
+    )
+    .bind(provider)
+    .bind(external_id)
+    .bind(&chapter_numbers)
+    .bind(&title_en)
+    .bind(&title_ru)
+    .bind(&volumes)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+
+    Ok(result.rows_affected() as usize)
 }
 
 #[cfg(test)]

@@ -5,6 +5,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: mediatracker
@@ -69,7 +73,7 @@ jobs:
         run: echo "REPO_LOWER=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
 
       - name: Deploy to VPS
-        uses: appleboy/ssh-action@master
+        uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.HOST_IP }}
           username: ${{ secrets.USERNAME }}
@@ -90,6 +94,15 @@ jobs:
 
             sudo kubectl apply -f k8s/traefik-helm-config.yaml
             envsubst < k8s/ingress.yaml | sudo kubectl apply -f -
+
+            # Apply static k8s manifest directories only if they exist, so a
+            # removed/renamed dir never aborts the deploy under `set -euo pipefail`.
+            # Monitoring is NOT applied here: it lives in terraform/monitoring/.
+            for dir in k8s/cloudflared; do
+              [ -d "$dir" ] || continue
+              sudo kubectl apply -f "$dir"
+            done
+            # Templated manifests last: substitute $APP_HOST into the configmap.
             envsubst < k8s/cloudflared/configmap.yaml | sudo kubectl apply -f -
-            sudo kubectl apply -f k8s/monitoring/
-            sudo helm --kubeconfig /etc/rancher/k3s/k3s.yaml upgrade --install app chart/ --namespace mediatracker --set image.tag=${{ github.sha }} --set configMap.appBaseUrl=https://$APP_HOST --set configMap.emailFrom="MediaTracker <no-reply@$APP_HOST>"
+
+            sudo helm --kubeconfig /etc/rancher/k3s/k3s.yaml upgrade --install app chart/ --namespace mediatracker --create-namespace --set image.tag=${{ github.sha }} --set configMap.appBaseUrl=https://$APP_HOST --set configMap.emailFrom="MediaTracker <no-reply@$APP_HOST>"

@@ -1,4 +1,5 @@
 use sqlx::PgPool;
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::services::external::mal::JikanEpisode;
@@ -16,21 +17,40 @@ pub struct StoredEpisode {
     pub watched: bool,
 }
 
-/// Insert or update episodes in the DB. UNIQUE (provider, external_id,
-/// episode_number) makes the operation idempotent — re-fetching the
-/// same anime just refreshes titles and air dates in place.
+/// Batched episode insert row: `(episode_number, title_en, title_jp, air_date, duration_minutes)`.
+type EpisodeInsertRow = (
+    i32,
+    Option<String>,
+    Option<String>,
+    Option<chrono::NaiveDate>,
+    Option<i32>,
+);
+
+/// Insert or update the *catalog* episodes for one anime. UNIQUE
+/// (provider, external_id, episode_number) makes the operation
+/// idempotent — re-fetching the same anime just refreshes titles and
+/// air dates in place.
 ///
-/// Stores under `provider = "mal"`, `external_id = mal_id.to_string()`.
-/// Jikan is our episode source of choice because Shikimori's REST
-/// `/api/animes/{id}/episodes` is currently 404 on both shikimori.one
-/// and shikimori.io, and Shikimori's `?mal_id=` filter is broken
-/// (returns unrelated anime). Jikan's `/v4/anime/{mal_id}/episodes`
-/// is paginated, unauthenticated, and not behind DDoS-Guard.
+/// Catalog data is user-agnostic: `watched` lives in
+/// `user_episode_progress`, not here. Stores under `provider = "mal"`,
+/// `external_id = mal_id.to_string()`.
+///
+/// The whole refresh (batched episode upsert + `media_items.episodes`
+/// denominator) runs in a single transaction: a failure mid-way can no
+/// longer leave a partially written catalog.
 pub async fn store_episodes_mal(
     pool: &PgPool,
     mal_id: i64,
     episodes: &[JikanEpisode],
 ) -> Result<(), sqlx::Error> {
+    if episodes.is_empty() {
+        return Ok(());
+    }
+
+    // Dedup by episode number (last write wins) so a single batched
+    // INSERT ... ON CONFLICT cannot touch the same target row twice.
+    let mut index: HashMap<i32, usize> = HashMap::with_capacity(episodes.len());
+    let mut rows: Vec<EpisodeInsertRow> = Vec::with_capacity(episodes.len());
     for ep in episodes {
         let air_date = ep
             .aired
@@ -41,65 +61,93 @@ pub async fn store_episodes_mal(
             .duration
             .as_deref()
             .and_then(crate::services::external::mal::parse_duration_to_minutes);
-
-        sqlx::query(
-            r#"
-            INSERT INTO anime_episodes
-                (provider, external_id, episode_number, title_en, title_ru, title_jp, air_date, duration_minutes)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-            ON CONFLICT (provider, external_id, episode_number) DO UPDATE
-            SET title_en = EXCLUDED.title_en,
-                title_jp = EXCLUDED.title_jp,
-                air_date = EXCLUDED.air_date,
-                duration_minutes = EXCLUDED.duration_minutes,
-                fetched_at = NOW()
-            "#,
-        )
-        .bind("mal")
-        .bind(mal_id.to_string())
-        .bind(ep.mal_id)
-        .bind(&ep.title)
-        .bind(Option::<String>::None) // Jikan has no Russian episode titles
-        .bind(&ep.title_japanese)
-        .bind(air_date)
-        .bind(duration_minutes)
-        .execute(pool)
-        .await?;
+        let record = (
+            ep.mal_id,
+            ep.title.clone(),
+            ep.title_japanese.clone(),
+            air_date,
+            duration_minutes,
+        );
+        match index.get(&ep.mal_id) {
+            Some(&i) => rows[i] = record,
+            None => {
+                index.insert(ep.mal_id, rows.len());
+                rows.push(record);
+            }
+        }
     }
+
+    let episode_numbers: Vec<i32> = rows.iter().map(|r| r.0).collect();
+    let titles_en: Vec<Option<String>> = rows.iter().map(|r| r.1.clone()).collect();
+    let titles_jp: Vec<Option<String>> = rows.iter().map(|r| r.2.clone()).collect();
+    let air_dates: Vec<Option<chrono::NaiveDate>> = rows.iter().map(|r| r.3).collect();
+    let durations: Vec<Option<i32>> = rows.iter().map(|r| r.4).collect();
+
+    let external_id = mal_id.to_string();
+    let mut tx = pool.begin().await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO anime_episodes
+            (provider, external_id, episode_number, title_en, title_ru, title_jp, air_date, duration_minutes)
+        SELECT 'mal', $1, u.episode_number, u.title_en, NULL, u.title_jp, u.air_date, u.duration_minutes
+        FROM UNNEST($2::int[], $3::text[], $4::text[], $5::date[], $6::int[])
+            AS u(episode_number, title_en, title_jp, air_date, duration_minutes)
+        ON CONFLICT (provider, external_id, episode_number) DO UPDATE
+        SET title_en = EXCLUDED.title_en,
+            title_jp = EXCLUDED.title_jp,
+            air_date = EXCLUDED.air_date,
+            duration_minutes = EXCLUDED.duration_minutes,
+            fetched_at = NOW()
+        "#,
+    )
+    .bind(&external_id)
+    .bind(&episode_numbers)
+    .bind(&titles_en)
+    .bind(&titles_jp)
+    .bind(&air_dates)
+    .bind(&durations)
+    .execute(&mut *tx)
+    .await?;
 
     // Sync media_items.episodes = MAX(episode_number) of what we just
     // stored, so the tracking card "X / Y эп." denominator matches
     // reality. Jikan's /anime/{id}/episodes endpoint doesn't return the
     // total; using the actual max from our own table is exact and
     // doesn't need an extra Jikan round-trip. If we wrote zero episodes
-    // (e.g. movie), leave the column untouched — Shikimori/TMDB may
-    // have populated it correctly on add.
-    if !episodes.is_empty() {
-        sqlx::query(
-            r#"
-            UPDATE media_items
-            SET episodes = sub.max_ep
-            FROM (
-                SELECT MAX(episode_number) AS max_ep
-                FROM anime_episodes
-                WHERE provider = 'mal' AND external_id = $1
-            ) AS sub
-            WHERE media_items.provider = 'mal'
-              AND media_items.external_id = $1
-            "#,
-        )
-        .bind(mal_id.to_string())
-        .execute(pool)
-        .await?;
-    }
+    // (e.g. movie), we returned early above and leave the column
+    // untouched — Shikimori/TMDB may have populated it correctly on add.
+    sqlx::query(
+        r#"
+        UPDATE media_items
+        SET episodes = sub.max_ep
+        FROM (
+            SELECT MAX(episode_number) AS max_ep
+            FROM anime_episodes
+            WHERE provider = 'mal' AND external_id = $1
+        ) AS sub
+        WHERE media_items.provider = 'mal'
+          AND media_items.external_id = $1
+        "#,
+    )
+    .bind(&external_id)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
     Ok(())
 }
 
-/// Read all episodes for one anime, sorted by number ascending.
+/// Read all episodes for one anime, sorted by number ascending, with
+/// the calling user's own `watched` flag joined in. Catalog rows without
+/// a progress row are reported as not watched.
 pub async fn get_episodes(
     pool: &PgPool,
     provider: &str,
     external_id: &str,
+    user_id: Uuid,
+    progress_provider: &str,
+    progress_external_id: &str,
 ) -> Result<Vec<StoredEpisode>, sqlx::Error> {
     #[allow(clippy::type_complexity)]
     let rows: Vec<(
@@ -112,21 +160,39 @@ pub async fn get_episodes(
         bool,
     )> = sqlx::query_as(
         r#"
-        SELECT episode_number, title_en, title_ru, title_jp, air_date, duration_minutes, watched
-        FROM anime_episodes
-        WHERE provider = $1 AND external_id = $2
-        ORDER BY episode_number ASC
+        SELECT ae.episode_number, ae.title_en, ae.title_ru, ae.title_jp,
+               ae.air_date, ae.duration_minutes,
+               COALESCE(up.watched, FALSE) AS watched
+        FROM anime_episodes ae
+        LEFT JOIN user_episode_progress up
+               ON up.user_id = $3
+              AND up.provider = $4
+              AND up.external_id = $5
+              AND up.episode_number = ae.episode_number
+        WHERE ae.provider = $1 AND ae.external_id = $2
+        ORDER BY ae.episode_number ASC
         "#,
     )
     .bind(provider)
     .bind(external_id)
+    .bind(user_id)
+    .bind(progress_provider)
+    .bind(progress_external_id)
     .fetch_all(pool)
     .await?;
 
     Ok(rows
         .into_iter()
         .map(
-            |(episode_number, title_en, title_ru, title_jp, air_date, duration_minutes, watched)| {
+            |(
+                episode_number,
+                title_en,
+                title_ru,
+                title_jp,
+                air_date,
+                duration_minutes,
+                watched,
+            )| {
                 StoredEpisode {
                     episode_number,
                     title_en,
@@ -141,7 +207,7 @@ pub async fn get_episodes(
         .collect())
 }
 
-/// Fetch episodes from Jikan and persist them.
+/// Fetch episodes from Jikan and persist them (catalog only).
 /// Returns the number of episodes stored (0 on failure).
 pub async fn fetch_and_store_mal(
     pool: PgPool,
@@ -165,67 +231,86 @@ pub async fn lookup_mal_id(
     provider: &str,
     external_id: &str,
 ) -> Result<Option<i64>, sqlx::Error> {
-    let row: Option<(Option<i64>,)> = sqlx::query_as(
-        "SELECT mal_id FROM media_items WHERE provider = $1 AND external_id = $2",
-    )
-    .bind(provider)
-    .bind(external_id)
-    .fetch_optional(pool)
-    .await?;
+    let row: Option<(Option<i64>,)> =
+        sqlx::query_as("SELECT mal_id FROM media_items WHERE provider = $1 AND external_id = $2")
+            .bind(provider)
+            .bind(external_id)
+            .fetch_optional(pool)
+            .await?;
     Ok(row.and_then(|(v,)| v))
 }
 
-/// Set the `watched` flag on one or more episode rows.
+/// Set the user's `watched` flag on one or more episodes.
+///
+/// All state lives in `user_episode_progress`; the catalog is only read
+/// to discover which episode numbers exist and to preserve the
+/// bulk-fill semantics relative to the catalog:
 ///
 /// **Bulk-fill semantics on watch**: when `watched = true`, every
-/// episode with `episode_number <= episode_number` is marked watched.
-/// This matches the standard "mark ep 200 watched → ep 1..200 watched"
-/// UX of MAL / AniList / Shikimori — users don't want to click 200
-/// checkboxes after binging a long series.
+/// catalog episode with `episode_number <= episode_number` is marked
+/// watched. This matches the standard "mark ep 200 watched → ep 1..200
+/// watched" UX of MAL / AniList / Shikimori — users don't want to click
+/// 200 checkboxes after binging a long series.
 ///
 /// **Reverse bulk-fill on unwatch**: when `watched = false`, every
-/// episode with `episode_number >= episode_number` is marked unwatched.
-/// Un-checking is the mirror of checking: if I "haven't seen this one
-/// yet" I haven't seen anything past it either, so a single click rolls
-/// progress back. The same call is symmetric on both ends — the user
-/// gets one consistent mental model ("I am at episode N"), and `progress`
-/// follows naturally.
+/// catalog episode with `episode_number >= episode_number` is marked
+/// unwatched. Un-checking is the mirror of checking: if I "haven't seen
+/// this one yet" I haven't seen anything past it either, so a single
+/// click rolls progress back.
 ///
-/// Returns `true` if at least one row was updated (i.e. the target
-/// episode exists in the DB for this MAL id), `false` otherwise.
+/// The write is a single `INSERT ... SELECT ... ON CONFLICT DO UPDATE`,
+/// so repeated calls are idempotent (no duplicate rows) and there is no
+/// SELECT-then-UPDATE race.
+///
+/// Returns `true` if at least one catalog row was touched (i.e. the
+/// target episode exists in the DB for this MAL id), `false` otherwise.
 pub async fn set_watched(
     pool: &PgPool,
+    user_id: Uuid,
+    progress_provider: &str,
+    progress_external_id: &str,
     mal_id: i64,
     episode_number: i32,
     watched: bool,
 ) -> Result<bool, sqlx::Error> {
+    let external_id = mal_id.to_string();
     let result = if watched {
         sqlx::query(
             r#"
-            UPDATE anime_episodes
+            INSERT INTO user_episode_progress
+                (user_id, provider, external_id, episode_number, watched, watched_at)
+            SELECT $1, $2, $3, ae.episode_number, TRUE, NOW()
+            FROM anime_episodes ae
+            WHERE ae.provider = 'mal'
+              AND ae.external_id = $4
+              AND ae.episode_number <= $5
+            ON CONFLICT (user_id, provider, external_id, episode_number) DO UPDATE
             SET watched = TRUE,
                 watched_at = NOW()
-            WHERE provider = 'mal'
-              AND external_id = $1
-              AND episode_number <= $2
             "#,
         )
-        .bind(mal_id.to_string())
+        .bind(user_id)
+        .bind(progress_provider)
+        .bind(progress_external_id)
+        .bind(&external_id)
         .bind(episode_number)
         .execute(pool)
         .await?
     } else {
         sqlx::query(
             r#"
-            UPDATE anime_episodes
+            UPDATE user_episode_progress
             SET watched = FALSE,
                 watched_at = NULL
-            WHERE provider = 'mal'
-              AND external_id = $1
-              AND episode_number >= $2
+            WHERE user_id = $1
+              AND provider = $2
+              AND external_id = $3
+              AND episode_number >= $4
             "#,
         )
-        .bind(mal_id.to_string())
+        .bind(user_id)
+        .bind(progress_provider)
+        .bind(progress_external_id)
         .bind(episode_number)
         .execute(pool)
         .await?
@@ -233,46 +318,64 @@ pub async fn set_watched(
     Ok(result.rows_affected() > 0)
 }
 
-/// Returns `(episode_number, watched)` pairs for every episode of an
-/// anime, ordered by `episode_number` ASC. Used by the toggle endpoint
-/// to broadcast authoritative state to the drawer so all visible
-/// checkboxes stay in sync with the DB (bulk-fill on watch can flip
-/// many rows in one go).
+/// Returns `(episode_number, watched)` pairs for every catalog episode
+/// of an anime, ordered by `episode_number` ASC, using this user's own
+/// progress. Used by the toggle endpoint to broadcast authoritative
+/// state to the drawer so all visible checkboxes stay in sync with the
+/// DB (bulk-fill on watch can flip many rows in one go).
 pub async fn get_episode_states(
     pool: &PgPool,
+    user_id: Uuid,
+    progress_provider: &str,
+    progress_external_id: &str,
     mal_id: i64,
 ) -> Result<Vec<(i32, bool)>, sqlx::Error> {
     let rows: Vec<(i32, bool)> = sqlx::query_as(
         r#"
-        SELECT episode_number, watched
-        FROM anime_episodes
-        WHERE provider = 'mal'
-          AND external_id = $1
-        ORDER BY episode_number ASC
+        SELECT ae.episode_number, COALESCE(up.watched, FALSE) AS watched
+        FROM anime_episodes ae
+        LEFT JOIN user_episode_progress up
+               ON up.user_id = $1
+              AND up.provider = $2
+              AND up.external_id = $3
+              AND up.episode_number = ae.episode_number
+        WHERE ae.provider = 'mal'
+          AND ae.external_id = $4
+        ORDER BY ae.episode_number ASC
         "#,
     )
+    .bind(user_id)
+    .bind(progress_provider)
+    .bind(progress_external_id)
     .bind(mal_id.to_string())
     .fetch_all(pool)
     .await?;
     Ok(rows)
 }
 
-/// Highest episode number currently marked watched for an anime.
-/// Returns 0 if nothing is watched (or no episodes exist).
+/// Highest episode number currently marked watched by this user for an
+/// anime. Returns 0 if nothing is watched (or no progress exists).
 pub async fn count_watched(
     pool: &PgPool,
+    user_id: Uuid,
+    progress_provider: &str,
+    progress_external_id: &str,
     mal_id: i64,
 ) -> Result<i32, sqlx::Error> {
+    let _ = mal_id;
     let row: (Option<i32>,) = sqlx::query_as(
         r#"
         SELECT MAX(episode_number)
-        FROM anime_episodes
-        WHERE provider = 'mal'
-          AND external_id = $1
+        FROM user_episode_progress
+        WHERE user_id = $1
+          AND provider = $2
+          AND external_id = $3
           AND watched = TRUE
         "#,
     )
-    .bind(mal_id.to_string())
+    .bind(user_id)
+    .bind(progress_provider)
+    .bind(progress_external_id)
     .fetch_one(pool)
     .await?;
     Ok(row.0.unwrap_or(0))
@@ -305,13 +408,16 @@ pub async fn update_progress_from_watched(
     Ok(())
 }
 
-/// Read a single episode by (mal_id, episode_number). Returns `None`
-/// if the row doesn't exist. Used by the toggle endpoint to render
-/// the updated row HTML.
+/// Read a single episode by (mal_id, episode_number) with this user's
+/// own `watched` flag. Returns `None` if the catalog row doesn't exist.
+/// Used by the toggle endpoint to render the updated row HTML.
 pub async fn get_episode(
     pool: &PgPool,
     mal_id: i64,
     episode_number: i32,
+    user_id: Uuid,
+    progress_provider: &str,
+    progress_external_id: &str,
 ) -> Result<Option<StoredEpisode>, sqlx::Error> {
     #[allow(clippy::type_complexity)]
     let row: Option<(
@@ -324,15 +430,25 @@ pub async fn get_episode(
         bool,
     )> = sqlx::query_as(
         r#"
-        SELECT episode_number, title_en, title_ru, title_jp, air_date, duration_minutes, watched
-        FROM anime_episodes
-        WHERE provider = 'mal'
-          AND external_id = $1
-          AND episode_number = $2
+        SELECT ae.episode_number, ae.title_en, ae.title_ru, ae.title_jp,
+               ae.air_date, ae.duration_minutes,
+               COALESCE(up.watched, FALSE) AS watched
+        FROM anime_episodes ae
+        LEFT JOIN user_episode_progress up
+               ON up.user_id = $3
+              AND up.provider = $4
+              AND up.external_id = $5
+              AND up.episode_number = ae.episode_number
+        WHERE ae.provider = 'mal'
+          AND ae.external_id = $1
+          AND ae.episode_number = $2
         "#,
     )
     .bind(mal_id.to_string())
     .bind(episode_number)
+    .bind(user_id)
+    .bind(progress_provider)
+    .bind(progress_external_id)
     .fetch_optional(pool)
     .await?;
 
@@ -385,6 +501,9 @@ mod tests {
         assert_eq!(ep.mal_id, 1);
         assert!(ep.title.as_deref().unwrap().starts_with("I'm Luffy"));
         assert!(ep.aired.is_some());
-        assert!(ep.duration.is_none(), "Jikan episodes list has no duration field");
+        assert!(
+            ep.duration.is_none(),
+            "Jikan episodes list has no duration field"
+        );
     }
 }

@@ -4,13 +4,23 @@ use reqwest::Client;
 pub struct TelegramNotifier {
     bot_token: String,
     client: Client,
+    base_url: String,
 }
 
 impl TelegramNotifier {
     pub fn new(bot_token: String) -> Self {
+        Self::with_base_url(bot_token, "https://api.telegram.org".to_string())
+    }
+
+    /// Build a notifier against a custom API base URL.
+    ///
+    /// Production always uses [`Self::new`]; this exists so tests can point the
+    /// notifier at a local stub instead of the real Telegram API.
+    pub fn with_base_url(bot_token: String, base_url: String) -> Self {
         Self {
             bot_token,
             client: Client::new(),
+            base_url,
         }
     }
 
@@ -18,18 +28,15 @@ impl TelegramNotifier {
         !self.bot_token.is_empty()
     }
 
-    pub async fn send_message(
-        &self,
-        chat_id: &str,
-        text: &str,
-    ) -> Result<(), anyhow::Error> {
+    pub async fn send_message(&self, chat_id: &str, text: &str) -> Result<(), anyhow::Error> {
         if !self.is_configured() {
             return Ok(());
         }
 
-        let url = format!("https://api.telegram.org/bot{}/sendMessage", self.bot_token);
+        let url = format!("{}/bot{}/sendMessage", self.base_url, self.bot_token);
 
-        let response = self.client
+        let response = self
+            .client
             .post(&url)
             .json(&serde_json::json!({
                 "chat_id": chat_id,
@@ -40,8 +47,9 @@ impl TelegramNotifier {
             .await?;
 
         if !response.status().is_success() {
+            let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            eprintln!("Telegram API error: {}", body);
+            anyhow::bail!("Telegram API error {}: {}", status, body);
         }
 
         Ok(())
@@ -53,14 +61,12 @@ impl TelegramNotifier {
         title: &str,
         episode: i32,
     ) -> Result<(), anyhow::Error> {
-        let text = format!(
-            "🎬 <b>Новая серия!</b>\n\n{} — серия {}",
-            title, episode
-        );
+        let text = format!("🎬 <b>Новая серия!</b>\n\n{} — серия {}", title, episode);
         self.send_message(chat_id, &text).await
     }
 
     pub async fn send_test_message(&self, chat_id: &str) -> Result<(), anyhow::Error> {
-        self.send_message(chat_id, "✅ Telegram-уведомления настроены!").await
+        self.send_message(chat_id, "✅ Telegram-уведомления настроены!")
+            .await
     }
 }

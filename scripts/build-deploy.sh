@@ -20,7 +20,18 @@ echo "==> Deploying on $SSH_HOST ..."
 ssh "$SSH_HOST" -- "
   set -e
   cd ~/mediatracker
-  sudo kubectl apply -f k8s/monitoring/
+
+  # Apply k8s manifest dirs only if they exist, so a removed/renamed dir
+  # never aborts the deploy. Skip dirs that are templated ($APP_HOST) or
+  # managed by Helm. Monitoring is applied separately via terraform/monitoring/.
+  for dir in k8s/*/; do
+    [ -d \"\$dir\" ] || continue
+    case \"\$dir\" in
+      k8s/cloudflared/|k8s/deployments/|k8s/services/) continue ;;
+    esac
+    sudo kubectl apply -f \"\$dir\"
+  done
+
   sudo helm --kubeconfig /etc/rancher/k3s/k3s.yaml upgrade --install app chart/ \
     --namespace mediatracker \
     --set image.tag=$TAG

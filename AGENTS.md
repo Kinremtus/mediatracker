@@ -73,15 +73,16 @@ Rust 1.95 · Axum 0.8 · SQLx 0.8 · Askama 0.16 · PostgreSQL 17 · Alpine.js �
 - Pipeline:
   1. **check**: clippy + `cargo test` + `cargo audit` + validate K8s YAML
   2. **build**: Docker buildx (with GHA cache) → push to GHCR (`ghcr.io/kinremtus/mediatracker:latest`)
-  3. **deploy**: SSH to VPS1 → `git reset --hard origin/main` → `kubectl apply` (ingress, monitoring) → `helm upgrade --install app chart/ -n mediatracker`
-- Runner: installed at `/home/Kinremtus/actions-runner/` on laptop (self-hosted)
+  3. **deploy**: SSH to VPS1 → `git reset --hard origin/main` → `kubectl apply` (ingress + only k8s dirs that exist) → `helm upgrade --install app chart/ -n mediatracker --create-namespace`
+- Monitoring is **not** part of the main deploy: it is applied separately via Terraform (`terraform/monitoring/`). The deploy only applies `k8s/` directories that actually exist (existence guard), so removing a dir can no longer abort the deploy.
+- Runner: installed at `/home/Kinremtus/actions-runner/` on ПК (self-hosted)
 
 ## Infrastructure
 - Kubernetes: k3s on VPS1
 - Registry: GHCR (ghcr.io/kinremtus/mediatracker)
 - Ingress: Traefik (k8s/traefik-helm-config.yaml + ingress.yaml)
 - Cloudflare Tunnel → Traefik → app (port 8080)
-- Monitoring: k8s/monitoring/ (applied on every deploy)
+- Monitoring: `terraform/monitoring/` (applied separately via Terraform, **NOT** part of the main deploy)
 - Postgres: StatefulSet in cluster (not external)
 - Healthcheck: `GET /health` → `{"status":"ok"}`
 - Helm chart: `chart/` (templates, values.yaml)
@@ -115,7 +116,9 @@ sudo helm --kubeconfig /etc/rancher/k3s/k3s.yaml upgrade --install app chart/ -n
 |--------|----------------|-------|
 | `build-deploy.sh` | [x] | Uses kubectl + helm |
 | `validate-k8s-yaml.py` | [x] | Lints k8s/ YAML files |
-| `backup-db.sh` | [-] | Uses `docker compose exec` - needs update for k3s |
-| `restore-db.sh` | [-] | Uses `docker compose exec` - needs update for k3s |
+| `backup-db.sh` | [x] | k3s (`kubectl exec` into `statefulset/postgres`) or direct `PGHOST`; `-Fc` dump; age encrypt; 7d local retention |
+| `restore-db.sh` | [x] | k3s or direct; `.dump`/`.sql.gz`/`.age`; requires `CONFIRM=yes` or interactive y/N |
+| `backup-db.py` | [x] | Thin wrapper delegating to `backup-db.sh` (no `shell=True`) |
+| `restore-drill.sh` | [x] | Local Docker only: restores latest dump into an ephemeral pg17 and checks row counts |
 | `backfill-details.sh` | [x] | Auto-detects k3s (kubectl port-forward), falls back to direct URL |
 | `backfill-tmdb-metadata.sh` | [x] | Direct DB via kubectl exec + TMDB API (no auth/cookies) |

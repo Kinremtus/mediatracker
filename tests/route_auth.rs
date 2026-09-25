@@ -6,10 +6,10 @@ use axum::{
     http::{Request, StatusCode},
 };
 use chrono::{Duration, Utc};
+use mediatracker::routes::auth;
 use sqlx::PgPool;
 use tower::ServiceExt;
 use uuid::Uuid;
-use mediatracker::routes::auth;
 
 fn sha256_hex(input: &str) -> String {
     use sha2::{Digest, Sha256};
@@ -42,8 +42,14 @@ async fn auth_register_and_login() {
     let state = ctx.app_state();
 
     let app = Router::new()
-        .route("/login", axum::routing::get(auth::get_login).post(auth::post_login))
-        .route("/register", axum::routing::get(auth::get_register).post(auth::post_register))
+        .route(
+            "/login",
+            axum::routing::get(auth::get_login).post(auth::post_login),
+        )
+        .route(
+            "/register",
+            axum::routing::get(auth::get_register).post(auth::post_register),
+        )
         .with_state(state);
 
     // Register a new user
@@ -54,7 +60,9 @@ async fn auth_register_and_login() {
                 .method("POST")
                 .uri("/register")
                 .header("Content-Type", "application/x-www-form-urlencoded")
-                .body(Body::from("username=testuser&email=test@example.com&password=secret123"))
+                .body(Body::from(
+                    "username=testuser&email=test@example.com&password=secret123",
+                ))
                 .unwrap(),
         )
         .await
@@ -92,7 +100,10 @@ async fn auth_register_and_login() {
         .and_then(|v| v.to_str().ok())
         .expect("Login should set session cookie");
 
-    assert!(session_cookie.starts_with("session_id="), "Cookie should be session_id=...");
+    assert!(
+        session_cookie.starts_with("session_id="),
+        "Cookie should be session_id=..."
+    );
 }
 
 #[tokio::test]
@@ -101,7 +112,10 @@ async fn auth_register_duplicate_fails() {
     let state = ctx.app_state();
 
     let app = Router::new()
-        .route("/register", axum::routing::get(auth::get_register).post(auth::post_register))
+        .route(
+            "/register",
+            axum::routing::get(auth::get_register).post(auth::post_register),
+        )
         .with_state(state);
 
     let form_body = "username=dupuser&email=dup@example.com&password=secret123";
@@ -120,7 +134,10 @@ async fn auth_register_duplicate_fails() {
         .await
         .unwrap();
 
-    assert!(response.status().is_redirection(), "First register should redirect");
+    assert!(
+        response.status().is_redirection(),
+        "First register should redirect"
+    );
 
     // Second registration with same username should fail
     let response = app
@@ -149,8 +166,14 @@ async fn auth_login_bad_password_fails() {
     let state = ctx.app_state();
 
     let app = Router::new()
-        .route("/register", axum::routing::get(auth::get_register).post(auth::post_register))
-        .route("/login", axum::routing::get(auth::get_login).post(auth::post_login))
+        .route(
+            "/register",
+            axum::routing::get(auth::get_register).post(auth::post_register),
+        )
+        .route(
+            "/login",
+            axum::routing::get(auth::get_login).post(auth::post_login),
+        )
         .with_state(state);
 
     // Register user
@@ -161,7 +184,9 @@ async fn auth_login_bad_password_fails() {
                 .method("POST")
                 .uri("/register")
                 .header("Content-Type", "application/x-www-form-urlencoded")
-                .body(Body::from("username=badpwd&email=badpwd@example.com&password=correctpw"))
+                .body(Body::from(
+                    "username=badpwd&email=badpwd@example.com&password=correctpw",
+                ))
                 .unwrap(),
         )
         .await
@@ -195,7 +220,10 @@ async fn auth_login_nonexistent_user_fails() {
     let state = ctx.app_state();
 
     let app = Router::new()
-        .route("/login", axum::routing::get(auth::get_login).post(auth::post_login))
+        .route(
+            "/login",
+            axum::routing::get(auth::get_login).post(auth::post_login),
+        )
         .with_state(state);
 
     let response = app
@@ -241,7 +269,9 @@ async fn forgot_password_anti_enumeration() {
                 .method("POST")
                 .uri("/register")
                 .header("Content-Type", "application/x-www-form-urlencoded")
-                .body(Body::from("username=enumuser&email=enum@example.com&password=secret123"))
+                .body(Body::from(
+                    "username=enumuser&email=enum@example.com&password=secret123",
+                ))
                 .unwrap(),
         )
         .await
@@ -309,7 +339,9 @@ async fn forgot_password_creates_token() {
                 .method("POST")
                 .uri("/register")
                 .header("Content-Type", "application/x-www-form-urlencoded")
-                .body(Body::from("username=tokenuser&email=token@example.com&password=secret123"))
+                .body(Body::from(
+                    "username=tokenuser&email=token@example.com&password=secret123",
+                ))
                 .unwrap(),
         )
         .await
@@ -364,7 +396,10 @@ async fn reset_password_success() {
             "/register",
             axum::routing::get(auth::get_register).post(auth::post_register),
         )
-        .route("/login", axum::routing::get(auth::get_login).post(auth::post_login))
+        .route(
+            "/login",
+            axum::routing::get(auth::get_login).post(auth::post_login),
+        )
         .route(
             "/reset-password",
             axum::routing::get(auth::get_reset_password).post(auth::post_reset_password),
@@ -378,7 +413,9 @@ async fn reset_password_success() {
                 .method("POST")
                 .uri("/register")
                 .header("Content-Type", "application/x-www-form-urlencoded")
-                .body(Body::from("username=resetuser&email=reset@example.com&password=oldpass123"))
+                .body(Body::from(
+                    "username=resetuser&email=reset@example.com&password=oldpass123",
+                ))
                 .unwrap(),
         )
         .await
@@ -445,10 +482,7 @@ async fn reset_password_success() {
         )
         .await
         .unwrap();
-    assert!(
-        new_pw.status().is_redirection(),
-        "New password should work"
-    );
+    assert!(new_pw.status().is_redirection(), "New password should work");
 }
 
 #[tokio::test]
@@ -461,7 +495,10 @@ async fn reset_password_invalidates_sessions() {
             "/register",
             axum::routing::get(auth::get_register).post(auth::post_register),
         )
-        .route("/login", axum::routing::get(auth::get_login).post(auth::post_login))
+        .route(
+            "/login",
+            axum::routing::get(auth::get_login).post(auth::post_login),
+        )
         .route(
             "/reset-password",
             axum::routing::get(auth::get_reset_password).post(auth::post_reset_password),
@@ -475,7 +512,9 @@ async fn reset_password_invalidates_sessions() {
                 .method("POST")
                 .uri("/register")
                 .header("Content-Type", "application/x-www-form-urlencoded")
-                .body(Body::from("username=sessuser&email=sess@example.com&password=oldpass123"))
+                .body(Body::from(
+                    "username=sessuser&email=sess@example.com&password=oldpass123",
+                ))
                 .unwrap(),
         )
         .await
@@ -570,7 +609,9 @@ async fn reset_password_token_one_time() {
                 .method("POST")
                 .uri("/register")
                 .header("Content-Type", "application/x-www-form-urlencoded")
-                .body(Body::from("username=oneuser&email=one@example.com&password=oldpass123"))
+                .body(Body::from(
+                    "username=oneuser&email=one@example.com&password=oldpass123",
+                ))
                 .unwrap(),
         )
         .await
@@ -647,7 +688,9 @@ async fn reset_password_expired_token_rejected() {
                 .method("POST")
                 .uri("/register")
                 .header("Content-Type", "application/x-www-form-urlencoded")
-                .body(Body::from("username=expuser&email=exp@example.com&password=oldpass123"))
+                .body(Body::from(
+                    "username=expuser&email=exp@example.com&password=oldpass123",
+                ))
                 .unwrap(),
         )
         .await
@@ -661,13 +704,7 @@ async fn reset_password_expired_token_rejected() {
         .unwrap();
 
     let token = Uuid::new_v4().to_string();
-    insert_reset_token(
-        &ctx.pool,
-        &user_id,
-        &token,
-        Utc::now() - Duration::hours(1),
-    )
-    .await;
+    insert_reset_token(&ctx.pool, &user_id, &token, Utc::now() - Duration::hours(1)).await;
 
     let response = app
         .clone()

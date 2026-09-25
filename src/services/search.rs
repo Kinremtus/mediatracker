@@ -58,10 +58,7 @@ fn deduplicate_by_title(items: Vec<CreateMediaItem>) -> Vec<CreateMediaItem> {
     sorted
         .into_iter()
         .filter(|item| {
-            let key = item
-                .comparison_key
-                .as_deref()
-                .unwrap_or(&item.title);
+            let key = item.comparison_key.as_deref().unwrap_or(&item.title);
             let normalized = normalize_title(key);
             seen.insert((normalized, item.media_type.clone()))
         })
@@ -71,10 +68,8 @@ fn deduplicate_by_title(items: Vec<CreateMediaItem>) -> Vec<CreateMediaItem> {
 /// Аниме: Shikimori + MyAnimeList (Jikan).
 /// MangaUpdates не каталогизирует аниме — только комиксы/новеллы.
 pub async fn anime(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
-    let (shiki_res, mal_res) = tokio::join!(
-        state.shikimori.search(query),
-        state.mal.search(query),
-    );
+    let (shiki_res, mal_res) =
+        tokio::join!(state.shikimori.search(query), state.mal.search(query),);
 
     let mut shiki_items = match shiki_res {
         Ok(items) => items,
@@ -92,10 +87,7 @@ pub async fn anime(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
         }
     };
 
-    let shiki_mal_ids: HashSet<i64> = shiki_items
-        .iter()
-        .filter_map(|item| item.mal_id)
-        .collect();
+    let shiki_mal_ids: HashSet<i64> = shiki_items.iter().filter_map(|item| item.mal_id).collect();
 
     let filtered_count = mal_items
         .iter()
@@ -103,7 +95,10 @@ pub async fn anime(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
         .count();
 
     if filtered_count > 0 {
-        tracing::info!(filtered = filtered_count, "deduplicated MAL results already present in Shikimori");
+        tracing::info!(
+            filtered = filtered_count,
+            "deduplicated MAL results already present in Shikimori"
+        );
     }
 
     for item in mal_items.into_iter() {
@@ -319,7 +314,11 @@ pub async fn all_types(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
     deduplicate_by_title(out)
 }
 
-pub async fn by_media_type(state: &AppState, query: &str, search_type: &str) -> Vec<CreateMediaItem> {
+pub async fn by_media_type(
+    state: &AppState,
+    query: &str,
+    search_type: &str,
+) -> Vec<CreateMediaItem> {
     match search_type {
         "anime" => anime(state, query).await,
         "manga" => manga(state, query).await,

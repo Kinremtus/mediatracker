@@ -7,10 +7,10 @@ use serde::Deserialize;
 
 use uuid::Uuid;
 
+use super::home::SidebarStats;
 use crate::app_state::AppState;
 use crate::middleware::CurrentUser;
 use crate::models::media_item::CreateMediaItem;
-use super::home::SidebarStats;
 
 #[derive(Template)]
 #[template(path = "media_drawer_content.html")]
@@ -35,16 +35,20 @@ struct MediaDrawerTemplate {
 
 impl MediaDrawerTemplate {
     fn compute_star_classes(rating: Option<f64>) -> Vec<&'static str> {
-        (1..=10).map(|star| {
-            match rating {
+        (1..=10)
+            .map(|star| match rating {
                 Some(r) => {
-                    if r >= star as f64 { "active" }
-                    else if r >= (star as f64) - 0.5 { "half" }
-                    else { "" }
+                    if r >= star as f64 {
+                        "active"
+                    } else if r >= (star as f64) - 0.5 {
+                        "half"
+                    } else {
+                        ""
+                    }
                 }
                 None => "",
-            }
-        }).collect()
+            })
+            .collect()
     }
 }
 
@@ -92,16 +96,22 @@ pub async fn get_media_detail(
 
     match item {
         Ok(mut item) => {
-            if let Ok(Some(_)) = state.tracking.find_entry_by_media(
-                user.id, &item.provider, &item.external_id,
-            ).await {
+            if let Ok(Some(_)) = state
+                .tracking
+                .find_entry_by_media(user.id, &item.provider, &item.external_id)
+                .await
+            {
                 item.is_tracked = true;
             }
-            let flash_message = params.flash.as_deref().map(|f| match f {
-                "added" => "✓ Медиа добавлено в список".to_string(),
-                "error" => "Ошибка при добавлении".to_string(),
-                _ => String::new(),
-            }).unwrap_or_default();
+            let flash_message = params
+                .flash
+                .as_deref()
+                .map(|f| match f {
+                    "added" => "✓ Медиа добавлено в список".to_string(),
+                    "error" => "Ошибка при добавлении".to_string(),
+                    _ => String::new(),
+                })
+                .unwrap_or_default();
 
             Html(
                 MediaDetailTemplate {
@@ -145,17 +155,30 @@ pub async fn get_media_drawer_content(
 
     match item {
         Ok(item) => {
-            let tracking = state.tracking.find_entry_by_media(user.id, &provider, &external_id).await.unwrap_or(None);
+            let tracking = state
+                .tracking
+                .find_entry_by_media(user.id, &provider, &external_id)
+                .await
+                .unwrap_or(None);
             let (tracking_id, current_status, progress, rating) = match tracking {
                 Some((id, status, prog, rat)) => (Some(id), Some(status), Some(prog), rat),
                 None => (None, None, None, None),
             };
             let total_count = item.total_count();
             let progress_unit = item.progress_unit_ru().to_string();
-            let has_progress = matches!(item.media_type.as_str(),
-                "anime" | "series" | "cartoons" | "animated-movies"
-                | "manga" | "manhwa" | "manhua" | "novel" | "other-comics"
-                | "book" | "game"
+            let has_progress = matches!(
+                item.media_type.as_str(),
+                "anime"
+                    | "series"
+                    | "cartoons"
+                    | "animated-movies"
+                    | "manga"
+                    | "manhwa"
+                    | "manhua"
+                    | "novel"
+                    | "other-comics"
+                    | "book"
+                    | "game"
             );
             let star_classes = MediaDrawerTemplate::compute_star_classes(rating);
             let progress_display = progress.unwrap_or(0);
@@ -167,9 +190,10 @@ pub async fn get_media_drawer_content(
                 Some(r) => format!("{:.1}", r),
                 None => "—".to_string(),
             };
-            let can_increment = has_progress
-                && progress_display < total_count.unwrap_or(i32::MAX);
-            let status_display = current_status.clone().unwrap_or_else(|| "in_progress".to_string());
+            let can_increment = has_progress && progress_display < total_count.unwrap_or(i32::MAX);
+            let status_display = current_status
+                .clone()
+                .unwrap_or_else(|| "in_progress".to_string());
             Html(
                 MediaDrawerTemplate {
                     item,
@@ -189,7 +213,7 @@ pub async fn get_media_drawer_content(
                     status_display,
                 }
                 .render()
-                .unwrap()
+                .unwrap(),
             )
             .into_response()
         }
@@ -198,8 +222,18 @@ pub async fn get_media_drawer_content(
 }
 
 async fn get_sidebar_stats(state: &AppState, user: &CurrentUser) -> SidebarStats {
-    let (ip, cp, pp, dp) = state.tracking.get_status_counts(user.id).await.unwrap_or_default();
-    SidebarStats { in_progress: ip, completed: cp, planned: pp, dropped: dp, role: user.role.clone() }
+    let (ip, cp, pp, dp) = state
+        .tracking
+        .get_status_counts(user.id)
+        .await
+        .unwrap_or_default();
+    SidebarStats {
+        in_progress: ip,
+        completed: cp,
+        planned: pp,
+        dropped: dp,
+        role: user.role.clone(),
+    }
 }
 
 #[derive(Template)]
@@ -236,6 +270,7 @@ pub struct SetWatchedForm {
 /// in `external_id`, so we look up `mal_id` from `media_items`
 /// first and key the episode read/fetch on that.
 pub async fn get_episodes(
+    user: CurrentUser,
     State(state): State<AppState>,
     Path((provider, external_id)): Path<(String, String)>,
 ) -> impl IntoResponse {
@@ -243,10 +278,7 @@ pub async fn get_episodes(
     let mal_id: Option<i64> = match provider.as_str() {
         "mal" => external_id.parse::<i64>().ok(),
         "shikimori" => {
-            match crate::services::episodes::lookup_mal_id(
-                &state.db, &provider, &external_id,
-            )
-            .await
+            match crate::services::episodes::lookup_mal_id(&state.db, &provider, &external_id).await
             {
                 Ok(id) => id,
                 Err(e) => {
@@ -265,6 +297,9 @@ pub async fn get_episodes(
             &state.db,
             "mal",
             &mal_id.to_string(),
+            user.id,
+            &provider,
+            &external_id,
         )
         .await
         .unwrap_or_default();
@@ -273,17 +308,18 @@ pub async fn get_episodes(
     // If empty, fetch on-demand via Jikan.
     if existing.is_empty() {
         if let Some(mal_id) = mal_id {
-            if let Err(e) = crate::services::episodes::fetch_and_store_mal(
-                state.db.clone(),
-                &state.mal,
-                mal_id,
-            )
-            .await
+            if let Err(e) =
+                crate::services::episodes::fetch_and_store_mal(state.db.clone(), &state.mal, mal_id)
+                    .await
             {
                 tracing::warn!(provider, external_id, mal_id, error = %e, "on-demand episode fetch failed");
             }
         } else {
-            tracing::debug!(provider, external_id, "no mal_id available; cannot fetch episodes");
+            tracing::debug!(
+                provider,
+                external_id,
+                "no mal_id available; cannot fetch episodes"
+            );
         }
     }
 
@@ -292,6 +328,9 @@ pub async fn get_episodes(
             &state.db,
             "mal",
             &id.to_string(),
+            user.id,
+            &provider,
+            &external_id,
         )
         .await
         .unwrap_or_default(),
@@ -330,30 +369,40 @@ pub async fn set_episode_watched(
     // Resolve the MAL id (the actual storage key for episodes).
     let mal_id: Option<i64> = match provider.as_str() {
         "mal" => external_id.parse::<i64>().ok(),
-        "shikimori" => match crate::services::episodes::lookup_mal_id(
-            &state.db, &provider, &external_id,
-        )
-        .await
-        {
-            Ok(id) => id,
-            Err(e) => {
-                tracing::warn!(provider, external_id, error = %e, "lookup_mal_id failed");
-                None
+        "shikimori" => {
+            match crate::services::episodes::lookup_mal_id(&state.db, &provider, &external_id).await
+            {
+                Ok(id) => id,
+                Err(e) => {
+                    tracing::warn!(provider, external_id, error = %e, "lookup_mal_id failed");
+                    None
+                }
             }
-        },
+        }
         _ => None,
     };
 
     let mal_id = match mal_id {
         Some(id) => id,
         None => {
-            tracing::debug!(provider, external_id, episode_number, "no mal_id available, ignoring toggle");
+            tracing::debug!(
+                provider,
+                external_id,
+                episode_number,
+                "no mal_id available, ignoring toggle"
+            );
             return Html(String::new()).into_response();
         }
     };
 
     if let Err(e) = crate::services::episodes::set_watched(
-        &state.db, mal_id, episode_number, form.watched,
+        &state.db,
+        user.id,
+        &provider,
+        &external_id,
+        mal_id,
+        episode_number,
+        form.watched,
     )
     .await
     {
@@ -362,32 +411,45 @@ pub async fn set_episode_watched(
     }
 
     // Recompute progress for the tracking entry (if any).
-    let max_watched = crate::services::episodes::count_watched(&state.db, mal_id)
-        .await
-        .unwrap_or(0);
+    let max_watched = crate::services::episodes::count_watched(
+        &state.db,
+        user.id,
+        &provider,
+        &external_id,
+        mal_id,
+    )
+    .await
+    .unwrap_or(0);
 
     // Resolve media_id once (for both progress sync and HX-Trigger broadcast).
-    let media_id: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM media_items WHERE provider = $1 AND external_id = $2",
-    )
-    .bind(&provider)
-    .bind(&external_id)
-    .fetch_optional(&state.db)
-    .await
-    .unwrap_or(None);
+    let media_id: Option<Uuid> =
+        sqlx::query_scalar("SELECT id FROM media_items WHERE provider = $1 AND external_id = $2")
+            .bind(&provider)
+            .bind(&external_id)
+            .fetch_optional(&state.db)
+            .await
+            .unwrap_or(None);
 
     if let Some(media_id) = media_id
         && let Err(e) = crate::services::episodes::update_progress_from_watched(
-            &state.db, user.id, media_id, max_watched,
+            &state.db,
+            user.id,
+            media_id,
+            max_watched,
         )
         .await
-        {
-            tracing::warn!(provider, external_id, error = %e, "update_progress_from_watched failed");
-        }
+    {
+        tracing::warn!(provider, external_id, error = %e, "update_progress_from_watched failed");
+    }
 
     // Render the new row HTML and attach a progressUpdated event.
     let html = match crate::services::episodes::get_episode(
-        &state.db, mal_id, episode_number,
+        &state.db,
+        mal_id,
+        episode_number,
+        user.id,
+        &provider,
+        &external_id,
     )
     .await
     {
@@ -404,9 +466,15 @@ pub async fn set_episode_watched(
     // Pull authoritative state for ALL episodes so the drawer can sync
     // every visible checkbox (bulk-fill on watch flips 1..N rows; the
     // single-row HTMX swap only refreshes the clicked one).
-    let states = crate::services::episodes::get_episode_states(&state.db, mal_id)
-        .await
-        .unwrap_or_default();
+    let states = crate::services::episodes::get_episode_states(
+        &state.db,
+        user.id,
+        &provider,
+        &external_id,
+        mal_id,
+    )
+    .await
+    .unwrap_or_default();
     let states_json: Vec<[serde_json::Value; 2]> = states
         .into_iter()
         .map(|(n, w)| [serde_json::Value::from(n), serde_json::Value::from(w)])
@@ -426,10 +494,8 @@ pub async fn set_episode_watched(
         trigger["episodesChanged"]["mediaId"] = id_str;
     }
     let mut resp = Html(html).into_response();
-    resp.headers_mut().insert(
-        "HX-Trigger",
-        trigger.to_string().parse().unwrap(),
-    );
+    resp.headers_mut()
+        .insert("HX-Trigger", trigger.to_string().parse().unwrap());
     resp
 }
 
@@ -462,6 +528,7 @@ pub struct SetReadForm {
 /// If chapters aren't in the DB yet, trigger a synchronous fetch from
 /// MangaUpdates `latest_chapter` to build the skeleton.
 pub async fn get_chapters(
+    user: CurrentUser,
     State(state): State<AppState>,
     Path((provider, external_id)): Path<(String, String)>,
 ) -> impl IntoResponse {
@@ -497,46 +564,47 @@ pub async fn get_chapters(
     };
 
     // Try DB first.
-    let existing = crate::services::chapters::get_chapters(
-        &state.db, &mu_provider, &mu_id,
-    )
-    .await
-    .unwrap_or_default();
+    let existing =
+        crate::services::chapters::get_chapters(&state.db, &mu_provider, &mu_id, user.id)
+            .await
+            .unwrap_or_default();
 
     // If empty, try to fetch the latest_chapter from MangaUpdates and build skeleton.
     if existing.is_empty()
-        && let Ok(series_id_num) = mu_id.parse::<i64>() {
-            let details = crate::services::external::mangaupdates::MangaUpdatesService::new()
-                .get_details(&mu_id)
-                .await;
+        && let Ok(series_id_num) = mu_id.parse::<i64>()
+    {
+        let details = crate::services::external::mangaupdates::MangaUpdatesService::new()
+            .get_details(&mu_id)
+            .await;
 
-            if let Ok(details) = details {
-                let lc = details.chapters.unwrap_or(0);
-                if lc > 0
-                    && let Err(e) = crate::services::chapters::store_chapters_mu(
-                        &state.db, series_id_num, lc,
-                    )
-                    .await
-                    {
-                        tracing::warn!(series_id_num, error = %e, "store_chapters_mu failed");
-                    }
+        if let Ok(details) = details {
+            let lc = details.chapters.unwrap_or(0);
+            if lc > 0
+                && let Err(e) =
+                    crate::services::chapters::store_chapters_mu(&state.db, series_id_num, lc).await
+            {
+                tracing::warn!(series_id_num, error = %e, "store_chapters_mu failed");
             }
         }
+    }
 
-    let chapters = crate::services::chapters::get_chapters(
-        &state.db, &mu_provider, &mu_id,
-    )
-    .await
-    .unwrap_or_default();
+    let chapters =
+        crate::services::chapters::get_chapters(&state.db, &mu_provider, &mu_id, user.id)
+            .await
+            .unwrap_or_default();
 
     // Auto-enrich from MangaDex if chapters lack titles (async, non-blocking)
-    let needs_enrich = chapters.iter().any(|c| c.title_en.is_none() && c.title_ru.is_none());
+    let needs_enrich = chapters
+        .iter()
+        .any(|c| c.title_en.is_none() && c.title_ru.is_none());
     if needs_enrich {
         let db = state.db.clone();
         let prov = mu_provider.to_string();
         let ext_id = mu_id.to_string();
         tokio::spawn(async move {
-            if let Err(e) = crate::services::chapters::enrich_from_mangadex(&db, &prov, &ext_id).await {
+            if let Err(e) =
+                crate::services::chapters::enrich_from_mangadex(&db, &prov, &ext_id).await
+            {
                 tracing::warn!(provider=%prov, external_id=%ext_id, error=%e, "MangaDex enrichment failed");
             }
         });
@@ -566,14 +634,18 @@ pub async fn set_chapter_read(
     Form(form): Form<SetReadForm>,
 ) -> impl IntoResponse {
     // Resolve media_items.id for this chapter.
-    let media_id: Option<Uuid> = crate::services::chapters::lookup_media_id(
-        &state.db, &provider, &external_id,
-    )
-    .await
-    .unwrap_or(None);
+    let media_id: Option<Uuid> =
+        crate::services::chapters::lookup_media_id(&state.db, &provider, &external_id)
+            .await
+            .unwrap_or(None);
 
     if let Err(e) = crate::services::chapters::set_read(
-        &state.db, &provider, &external_id, chapter_number, form.read,
+        &state.db,
+        user.id,
+        &provider,
+        &external_id,
+        chapter_number,
+        form.read,
     )
     .await
     {
@@ -582,24 +654,27 @@ pub async fn set_chapter_read(
     }
 
     // Recompute progress.
-    let max_read = crate::services::chapters::count_read(
-        &state.db, &provider, &external_id,
-    )
-    .await
-    .unwrap_or(0);
+    let max_read =
+        crate::services::chapters::count_read(&state.db, user.id, &provider, &external_id)
+            .await
+            .unwrap_or(0);
 
     if let Some(media_id) = media_id
         && let Err(e) = crate::services::chapters::update_progress_from_read(
             &state.db, user.id, media_id, max_read,
         )
         .await
-        {
-            tracing::warn!(error = %e, "update_progress_from_read failed");
-        }
+    {
+        tracing::warn!(error = %e, "update_progress_from_read failed");
+    }
 
     // Render updated row.
     let chapter = crate::services::chapters::get_chapter(
-        &state.db, &provider, &external_id, chapter_number,
+        &state.db,
+        &provider,
+        &external_id,
+        chapter_number,
+        user.id,
     )
     .await
     .unwrap_or(None);
@@ -616,11 +691,10 @@ pub async fn set_chapter_read(
     };
 
     // Build HX-Trigger with full chapter states.
-    let states = crate::services::chapters::get_chapter_states(
-        &state.db, &provider, &external_id,
-    )
-    .await
-    .unwrap_or_default();
+    let states =
+        crate::services::chapters::get_chapter_states(&state.db, user.id, &provider, &external_id)
+            .await
+            .unwrap_or_default();
     let states_json: Vec<[serde_json::Value; 2]> = states
         .into_iter()
         .map(|(n, r)| [serde_json::Value::from(n), serde_json::Value::from(r)])
@@ -640,9 +714,7 @@ pub async fn set_chapter_read(
         trigger["chaptersChanged"]["mediaId"] = id_str;
     }
     let mut resp = Html(html).into_response();
-    resp.headers_mut().insert(
-        "HX-Trigger",
-        trigger.to_string().parse().unwrap(),
-    );
+    resp.headers_mut()
+        .insert("HX-Trigger", trigger.to_string().parse().unwrap());
     resp
 }

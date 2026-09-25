@@ -1,7 +1,7 @@
-use std::sync::Arc;
-use std::time::{Duration, Instant};
 use reqwest::Client;
 use serde::Deserialize;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 
 use crate::models::media_item::CreateMediaItem;
@@ -140,20 +140,30 @@ fn map_game(g: IgdbGame) -> CreateMediaItem {
     let platforms = extract_platform_names(&g.platforms);
 
     // Age rating — IGDB хранит в категориях (ESRB, PEGI, CERO). Берём первую name, если есть.
-    let rating = g
-        .age_ratings
-        .as_ref()
-        .and_then(|ars| ars.iter().filter_map(|a| a.rating.as_ref()?.name.clone()).next());
+    let rating = g.age_ratings.as_ref().and_then(|ars| {
+        ars.iter()
+            .filter_map(|a| a.rating.as_ref()?.name.clone())
+            .next()
+    });
 
     let mut details = serde_json::Map::new();
     if let Some(c) = g.total_rating_count {
-        details.insert("total_rating_count".to_string(), serde_json::Value::Number(c.into()));
+        details.insert(
+            "total_rating_count".to_string(),
+            serde_json::Value::Number(c.into()),
+        );
     }
     let game_modes = extract_opt_names(&g.game_modes);
     if !game_modes.is_empty() {
-        details.insert("game_modes".to_string(), serde_json::Value::Array(
-            game_modes.into_iter().map(serde_json::Value::String).collect()
-        ));
+        details.insert(
+            "game_modes".to_string(),
+            serde_json::Value::Array(
+                game_modes
+                    .into_iter()
+                    .map(serde_json::Value::String)
+                    .collect(),
+            ),
+        );
     }
 
     CreateMediaItem {
@@ -238,10 +248,8 @@ impl IgdbService {
 
     async fn ensure_token(&self) -> Result<String, anyhow::Error> {
         {
-            let (expires_at, token) = tokio::join!(
-                self.token_expires_at.lock(),
-                self.token.lock(),
-            );
+            let (expires_at, token) =
+                tokio::join!(self.token_expires_at.lock(), self.token.lock(),);
             if !token.is_empty() && Instant::now() < *expires_at {
                 return Ok(token.clone());
             }
@@ -262,10 +270,8 @@ impl IgdbService {
             .await?;
 
         {
-            let (mut expires_at, mut token) = tokio::join!(
-                self.token_expires_at.lock(),
-                self.token.lock(),
-            );
+            let (mut expires_at, mut token) =
+                tokio::join!(self.token_expires_at.lock(), self.token.lock(),);
             *token = resp.access_token.clone();
             *expires_at = Instant::now() + Duration::from_secs(resp.expires_in.saturating_sub(60));
         }

@@ -1,13 +1,22 @@
 use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
+    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
 };
 use chrono::{Duration, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::models::user::{CreateUser, User};
 use crate::models::session::Session;
+use crate::models::user::{CreateUser, User};
+
+/// Hash a raw session token for storage and lookup (hex SHA-256).
+///
+/// Single source of truth: session creation, lookup and logout all call this
+/// so a stored `token_hash` can never diverge from the lookup hash. The raw
+/// token only ever lives in the client cookie.
+pub fn hash_token(raw: &str) -> String {
+    crate::utils::sha256_hex(raw)
+}
 
 #[derive(Clone)]
 pub struct AuthService {
@@ -21,13 +30,12 @@ impl AuthService {
 
     pub async fn register(&self, data: &CreateUser) -> Result<User, anyhow::Error> {
         // Check if user exists
-        let existing = sqlx::query_as::<_, User>(
-            "SELECT * FROM users WHERE username = $1 OR email = $2",
-        )
-        .bind(&data.username)
-        .bind(&data.email)
-        .fetch_optional(&self.db)
-        .await?;
+        let existing =
+            sqlx::query_as::<_, User>("SELECT * FROM users WHERE username = $1 OR email = $2")
+                .bind(&data.username)
+                .bind(&data.email)
+                .fetch_optional(&self.db)
+                .await?;
 
         if existing.is_some() {
             return Err(anyhow::anyhow!("Username or email already exists"));
@@ -89,7 +97,7 @@ impl AuthService {
 
         // Create session
         let token = Uuid::new_v4().to_string();
-        let token_hash = crate::utils::sha256_hex(&token);
+        let token_hash = hash_token(&token);
         let expires_at = Utc::now() + Duration::days(30);
 
         sqlx::query(
@@ -107,16 +115,26 @@ impl AuthService {
     }
 
     pub async fn get_session(&self, token: &str) -> Result<Session, anyhow::Error> {
-        let token_hash = crate::utils::sha256_hex(token);
+        let token_hash = hash_token(token);
+        // Fetch by hash only; expiry is evaluated in-process so an expired
+        // row can be deleted on read instead of lingering until a sweep.
         let session = sqlx::query_as::<_, Session>(
-            "SELECT id, user_id, token_hash, device_name, user_agent, ip::text as ip, expires_at, created_at, last_seen_at FROM sessions WHERE token_hash = $1 AND expires_at > NOW()",
+            "SELECT id, user_id, token_hash, device_name, user_agent, ip::text as ip, expires_at, created_at, last_seen_at FROM sessions WHERE token_hash = $1",
         )
-        .bind(token_hash)
+        .bind(&token_hash)
         .fetch_optional(&self.db)
         .await?;
 
         match session {
-            Some(s) => Ok(s),
+            Some(s) if s.expires_at > Utc::now() => Ok(s),
+            Some(_) => {
+                // Expired session: remove it so it can never authenticate.
+                let _ = sqlx::query("DELETE FROM sessions WHERE token_hash = $1")
+                    .bind(&token_hash)
+                    .execute(&self.db)
+                    .await;
+                Err(anyhow::anyhow!("Session not found or expired"))
+            }
             None => Err(anyhow::anyhow!("Session not found or expired")),
         }
     }
@@ -131,11 +149,35 @@ impl AuthService {
     }
 
     pub async fn logout(&self, token: &str) -> Result<(), anyhow::Error> {
-        let token_hash = crate::utils::sha256_hex(token);
+        let token_hash = hash_token(token);
         sqlx::query("DELETE FROM sessions WHERE token_hash = $1")
             .bind(token_hash)
             .execute(&self.db)
             .await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::hash_token;
+
+    #[test]
+    fn hash_token_is_deterministic() {
+        let a = hash_token("raw-session-token");
+        let b = hash_token("raw-session-token");
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn hash_token_is_sha256_hex_and_differs_per_input() {
+        let h = hash_token("raw-session-token");
+        // SHA-256 hex is always 64 lowercase hex chars.
+        assert_eq!(h.len(), 64);
+        assert!(h.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_eq!(h, h.to_lowercase());
+        assert_ne!(h, hash_token("another-token"));
+        // Raw token must never be recoverable from the stored value.
+        assert_ne!(h, "raw-session-token");
     }
 }

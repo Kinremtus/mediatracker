@@ -3,17 +3,27 @@ use axum::{
     extract::{Query, State},
     response::Html,
 };
-use chrono::{NaiveDate, Datelike, Duration, Utc};
+use chrono::{Datelike, Duration, NaiveDate, Utc};
 use serde::Deserialize;
 
+use super::home::SidebarStats;
 use crate::app_state::AppState;
 use crate::middleware::CurrentUser;
 use crate::models::schedule::{CalendarDay, ReleaseEntry};
-use super::home::SidebarStats;
 
 const MONTHS_RU: &[&str] = &[
-    "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
-    "Июль", "Август", "Сентябрь", "Окторябрь", "Ноябрь", "Декабрь",
+    "Январь",
+    "Февраль",
+    "Март",
+    "Апрель",
+    "Май",
+    "Июнь",
+    "Июль",
+    "Август",
+    "Сентябрь",
+    "Октябрь",
+    "Ноябрь",
+    "Декабрь",
 ];
 
 #[derive(Template)]
@@ -48,7 +58,11 @@ pub async fn get_calendar(
     let year = params.year.unwrap_or_else(|| now.year());
     let month = params.month.unwrap_or_else(|| now.month());
 
-    let (ip, cp, pp, dp) = state.tracking.get_status_counts(user.id).await.unwrap_or_default();
+    let (ip, cp, pp, dp) = state
+        .tracking
+        .get_status_counts(user.id)
+        .await
+        .unwrap_or_default();
     let stats = SidebarStats {
         in_progress: ip,
         completed: cp,
@@ -78,13 +92,29 @@ pub async fn get_calendar(
     let end = last + Duration::days((6 - last.weekday().num_days_from_monday()) as i64);
 
     // Fetch releases for the range
-    let from = chrono::NaiveDateTime::new(start, chrono::NaiveTime::from_hms_opt(0, 0, 0).unwrap()).and_utc();
-    let to = chrono::NaiveDateTime::new(end + Duration::days(1), chrono::NaiveTime::from_hms_opt(0, 0, 0).unwrap()).and_utc();
+    let from = chrono::NaiveDateTime::new(start, chrono::NaiveTime::from_hms_opt(0, 0, 0).unwrap())
+        .and_utc();
+    let to = chrono::NaiveDateTime::new(
+        end + Duration::days(1),
+        chrono::NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
+    )
+    .and_utc();
 
-    let releases = state.release_schedule.get_by_date_range(user.id, from, to).await.unwrap_or_default();
+    let releases = match state
+        .release_schedule
+        .get_by_date_range(user.id, from, to)
+        .await
+    {
+        Ok(releases) => releases,
+        Err(e) => {
+            tracing::error!("Failed to load calendar releases: {}", e);
+            Vec::new()
+        }
+    };
 
     // Build release map: date -> Vec<ReleaseEntry>
-    let mut release_map: std::collections::HashMap<NaiveDate, Vec<ReleaseEntry>> = std::collections::HashMap::new();
+    let mut release_map: std::collections::HashMap<NaiveDate, Vec<ReleaseEntry>> =
+        std::collections::HashMap::new();
     for r in releases {
         let date = r.air_date.date_naive();
         release_map.entry(date).or_default().push(r);

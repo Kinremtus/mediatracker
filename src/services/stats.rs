@@ -17,12 +17,11 @@ impl StatsService {
 
     pub async fn get_overview(&self, user_id: Uuid) -> Result<StatsOverview, anyhow::Error> {
         // Total titles
-        let total: (i32,) = sqlx::query_as(
-            "SELECT COUNT(*)::int FROM tracking_entries WHERE user_id = $1",
-        )
-        .bind(user_id)
-        .fetch_one(&self.db)
-        .await?;
+        let total: (i32,) =
+            sqlx::query_as("SELECT COUNT(*)::int FROM tracking_entries WHERE user_id = $1")
+                .bind(user_id)
+                .fetch_one(&self.db)
+                .await?;
 
         // Completed count
         let completed: (i32,) = sqlx::query_as(
@@ -92,20 +91,24 @@ impl StatsService {
         Ok(rows.into_iter().collect())
     }
 
-    pub async fn get_title_progress(&self, user_id: Uuid) -> Result<Vec<TitleProgress>, anyhow::Error> {
+    pub async fn get_title_progress(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Vec<TitleProgress>, anyhow::Error> {
         let mut progress: Vec<TitleProgress> = sqlx::query_as(
             "SELECT t.id, m.title, t.progress, m.episodes, t.status, 0 as percentage FROM tracking_entries t JOIN media_items m ON t.media_id = m.id WHERE t.user_id = $1 ORDER BY t.updated_at DESC LIMIT 10",
         )
         .bind(user_id)
         .fetch_all(&self.db)
         .await?;
-        
+
         // Calculate percentages
         for p in &mut progress {
             if let Some(ep) = p.episodes
-                && ep > 0 {
-                    p.percentage = (p.progress * 100 / ep).min(100);
-                }
+                && ep > 0
+            {
+                p.percentage = (p.progress * 100 / ep).min(100);
+            }
         }
 
         Ok(progress)

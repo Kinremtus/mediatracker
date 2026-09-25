@@ -142,9 +142,15 @@ mod tests {
 
     #[test]
     fn try_external_id_only_for_mal() {
-        assert_eq!(try_external_id_as_mal(&cand("mal", "21", None, "")), Some(21));
+        assert_eq!(
+            try_external_id_as_mal(&cand("mal", "21", None, "")),
+            Some(21)
+        );
         assert_eq!(try_external_id_as_mal(&cand("mal", "abc", None, "")), None);
-        assert_eq!(try_external_id_as_mal(&cand("shikimori", "21", None, "")), None);
+        assert_eq!(
+            try_external_id_as_mal(&cand("shikimori", "21", None, "")),
+            None
+        );
         assert_eq!(try_external_id_as_mal(&cand("mal", "", None, "")), None);
     }
 

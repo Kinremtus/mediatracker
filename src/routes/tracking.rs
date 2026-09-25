@@ -7,10 +7,10 @@ use axum::{
 use serde::{Deserialize, Deserializer};
 use uuid::Uuid;
 
+use super::home::SidebarStats;
 use crate::app_state::AppState;
 use crate::middleware::CurrentUser;
 use crate::models::tracking_entry::{TrackingEntryWithMedia, UpdateTracking};
-use super::home::SidebarStats;
 
 #[derive(Template)]
 #[template(path = "tracking_list.html")]
@@ -66,7 +66,8 @@ fn get_status_label(status: &str) -> String {
         "planned" => "Запланировано",
         "dropped" => "Брошено",
         _ => "Все списки",
-    }.to_string()
+    }
+    .to_string()
 }
 
 #[derive(Deserialize)]
@@ -85,7 +86,11 @@ pub async fn get_tracking_list(
     let status = params.status.as_deref();
     let media_type = params.media_type.as_deref();
     let search_query = params.q.as_deref();
-    let entries = state.tracking.get_user_entries(user.id, status, media_type, search_query).await.unwrap_or_default();
+    let entries = state
+        .tracking
+        .get_user_entries(user.id, status, media_type, search_query)
+        .await
+        .unwrap_or_default();
     let stats = get_sidebar_stats(&state, &user).await;
     let current_status = params.status.unwrap_or_default();
     let current_media_type = params.media_type.unwrap_or_default();
@@ -96,26 +101,33 @@ pub async fn get_tracking_list(
     let current_type_label = if current_media_type.is_empty() {
         "Все".to_string()
     } else {
-        all_types.iter()
+        all_types
+            .iter()
             .find(|(k, _, _)| *k == current_media_type)
             .map(|(_, _, l)| l.to_string())
             .unwrap_or_default()
     };
-    let media_types: Vec<MediaTypeItem> = all_types.into_iter().map(|(k, i, l)| MediaTypeItem {
-        key: k.to_string(),
-        icon: i.to_string(),
-        label: l.to_string(),
-    }).collect();
+    let media_types: Vec<MediaTypeItem> = all_types
+        .into_iter()
+        .map(|(k, i, l)| MediaTypeItem {
+            key: k.to_string(),
+            icon: i.to_string(),
+            label: l.to_string(),
+        })
+        .collect();
     let statuses: Vec<StatusItem> = vec![
         ("", "Все списки"),
         ("in_progress", "В процессе"),
         ("completed", "Завершено"),
         ("planned", "Запланировано"),
         ("dropped", "Брошено"),
-    ].into_iter().map(|(k, l)| StatusItem {
+    ]
+    .into_iter()
+    .map(|(k, l)| StatusItem {
         key: k.to_string(),
         label: l.to_string(),
-    }).collect();
+    })
+    .collect();
 
     TrackingListTemplate {
         username: user.username,
@@ -286,9 +298,7 @@ pub async fn post_add_to_tracking(
         &form.tracking_status
     };
 
-    let redirect_url = form.redirect_to
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "/tracking".to_string());
+    let redirect_url = crate::utils::safe_redirect_path(form.redirect_to.as_deref(), "/tracking");
 
     let is_htmx = headers
         .get("HX-Request")
@@ -313,9 +323,10 @@ pub async fn post_add_to_tracking(
                     let provider = media.provider.clone();
                     let external_id = media.external_id.clone();
                     tokio::spawn(async move {
-                        if let Err(e) = crate::services::episodes::fetch_and_store_mal(
-                            pool, &service, mal_id,
-                        ).await {
+                        if let Err(e) =
+                            crate::services::episodes::fetch_and_store_mal(pool, &service, mal_id)
+                                .await
+                        {
                             tracing::warn!(provider, external_id, mal_id, error = %e, "background episode fetch failed");
                         }
                     });
@@ -512,15 +523,20 @@ pub async fn htmx_update_tracking(
 
     match state.tracking.update_entry(id, user.id, &update).await {
         Ok(_entry) => {
-            let entries = state.tracking.get_user_entries(user.id, None, None, None).await.unwrap_or_default();
+            let entries = state
+                .tracking
+                .get_user_entries(user.id, None, None, None)
+                .await
+                .unwrap_or_default();
             let entry_with_media = entries.iter().find(|e| e.entry.id == id).cloned();
             match entry_with_media {
                 Some(ewm) => {
-                    let html = TrackingCardPartial { entry_with_media: ewm }.render().unwrap();
-                    (
-                        [("HX-Trigger", "trackingUpdated")],
-                        Html(html),
-                    ).into_response()
+                    let html = TrackingCardPartial {
+                        entry_with_media: ewm,
+                    }
+                    .render()
+                    .unwrap();
+                    ([("HX-Trigger", "trackingUpdated")], Html(html)).into_response()
                 }
                 None => Redirect::to("/tracking").into_response(),
             }
@@ -538,12 +554,7 @@ pub async fn htmx_delete_tracking(
     Path(id): Path<Uuid>,
 ) -> Response {
     match state.tracking.delete_entry(id, user.id).await {
-        Ok(_) => {
-            (
-                [("HX-Trigger", "trackingUpdated")],
-                "",
-            ).into_response()
-        }
+        Ok(_) => ([("HX-Trigger", "trackingUpdated")], "").into_response(),
         Err(e) => {
             eprintln!("Error deleting tracking: {}", e);
             Redirect::to("/tracking").into_response()
@@ -561,17 +572,20 @@ pub async fn htmx_tracking_partial(
         let mut url = "/tracking".to_string();
         let mut query_parts = Vec::new();
         if let Some(ref status) = params.status
-            && !status.is_empty() {
-                query_parts.push(format!("status={}", status));
-            }
+            && !status.is_empty()
+        {
+            query_parts.push(format!("status={}", status));
+        }
         if let Some(ref media_type) = params.media_type
-            && !media_type.is_empty() {
-                query_parts.push(format!("type={}", media_type));
-            }
+            && !media_type.is_empty()
+        {
+            query_parts.push(format!("type={}", media_type));
+        }
         if let Some(ref q) = params.q
-            && !q.is_empty() {
-                query_parts.push(format!("q={}", q));
-            }
+            && !q.is_empty()
+        {
+            query_parts.push(format!("q={}", q));
+        }
         if !query_parts.is_empty() {
             url.push('?');
             url.push_str(&query_parts.join("&"));
@@ -582,20 +596,36 @@ pub async fn htmx_tracking_partial(
     let status = params.status.as_deref();
     let media_type = params.media_type.as_deref();
     let search_query = params.q.as_deref();
-    let entries = state.tracking.get_user_entries(user.id, status, media_type, search_query).await.unwrap_or_default();
+    let entries = state
+        .tracking
+        .get_user_entries(user.id, status, media_type, search_query)
+        .await
+        .unwrap_or_default();
 
-    Html(TrackingGridPartial {
-        entries,
-        current_status: params.status.unwrap_or_default(),
-        current_media_type: params.media_type.unwrap_or_default(),
-        search_query: params.q.unwrap_or_default(),
-    }
-    .render()
-    .unwrap())
+    Html(
+        TrackingGridPartial {
+            entries,
+            current_status: params.status.unwrap_or_default(),
+            current_media_type: params.media_type.unwrap_or_default(),
+            search_query: params.q.unwrap_or_default(),
+        }
+        .render()
+        .unwrap(),
+    )
     .into_response()
 }
 
 async fn get_sidebar_stats(state: &AppState, user: &CurrentUser) -> SidebarStats {
-    let (ip, cp, pp, dp) = state.tracking.get_status_counts(user.id).await.unwrap_or_default();
-    SidebarStats { in_progress: ip, completed: cp, planned: pp, dropped: dp, role: user.role.clone() }
+    let (ip, cp, pp, dp) = state
+        .tracking
+        .get_status_counts(user.id)
+        .await
+        .unwrap_or_default();
+    SidebarStats {
+        in_progress: ip,
+        completed: cp,
+        planned: pp,
+        dropped: dp,
+        role: user.role.clone(),
+    }
 }

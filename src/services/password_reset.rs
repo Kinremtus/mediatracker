@@ -1,6 +1,6 @@
 use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHasher, SaltString},
     Argon2,
+    password_hash::{PasswordHasher, SaltString, rand_core::OsRng},
 };
 use chrono::{Duration, Utc};
 use sqlx::PgPool;
@@ -123,16 +123,16 @@ impl PasswordResetService {
             .map_err(|_| ResetError::HashError)?
             .to_string();
 
-        let token_hash = sha256_hex(token);
-
         let mut tx = self.db.begin().await?;
         sqlx::query("UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2")
             .bind(&password_hash)
             .bind(user.id)
             .execute(&mut *tx)
             .await?;
-        sqlx::query("UPDATE password_reset_tokens SET used_at = NOW() WHERE token_hash = $1")
-            .bind(token_hash)
+        // Single-use: drop every reset token for this user so no sibling
+        // link can be replayed after the password has changed.
+        sqlx::query("DELETE FROM password_reset_tokens WHERE user_id = $1")
+            .bind(user.id)
             .execute(&mut *tx)
             .await?;
         sqlx::query("DELETE FROM sessions WHERE user_id = $1")
@@ -146,11 +146,7 @@ impl PasswordResetService {
 
     async fn deliver_reset_link(&self, user_email: &str, user_id: &Uuid, reset_url: &str) {
         if self.email.is_configured() && !self.base_url.is_empty() {
-            if let Err(e) = self
-                .email
-                .send_password_reset(user_email, reset_url)
-                .await
-            {
+            if let Err(e) = self.email.send_password_reset(user_email, reset_url).await {
                 eprintln!("Password reset email failed for user {}: {}", user_id, e);
             }
             return;

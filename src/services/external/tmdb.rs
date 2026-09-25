@@ -105,7 +105,11 @@ fn extract_network_names(items: &[TmdbNetwork]) -> Vec<String> {
 
 fn map_details(r: TmdbDetails, media_type: &str) -> CreateMediaItem {
     let poster_url = poster_url_from(r.poster_path.as_deref());
-    let title = r.title.clone().or_else(|| r.name.clone()).unwrap_or_default();
+    let title = r
+        .title
+        .clone()
+        .or_else(|| r.name.clone())
+        .unwrap_or_default();
     let original_title = r.original_title.clone().or(r.original_name.clone());
 
     let aired_from = if media_type == "movie" {
@@ -299,7 +303,14 @@ impl TmdbService {
                 if media_type != "movie" && media_type != "tv" {
                     return None;
                 }
-                map_search_result(r, if media_type == "movie" { "movie" } else { "series" })
+                map_search_result(
+                    r,
+                    if media_type == "movie" {
+                        "movie"
+                    } else {
+                        "series"
+                    },
+                )
             })
             .collect();
 
@@ -318,7 +329,8 @@ impl TmdbService {
             .append_pair("language", "ru-RU");
 
         if let Some(gid) = genre_id {
-            url.query_pairs_mut().append_pair("with_genres", &gid.to_string());
+            url.query_pairs_mut()
+                .append_pair("with_genres", &gid.to_string());
         }
 
         let response = self.client.get(url.as_str()).send().await?;
@@ -354,7 +366,8 @@ impl TmdbService {
             .append_pair("language", "ru-RU");
 
         if let Some(gid) = genre_id {
-            url.query_pairs_mut().append_pair("with_genres", &gid.to_string());
+            url.query_pairs_mut()
+                .append_pair("with_genres", &gid.to_string());
         }
 
         let response = self.client.get(url.as_str()).send().await?;
@@ -397,10 +410,7 @@ impl TmdbService {
         Ok(map_details(r, media_type))
     }
 
-    pub async fn fetch_seasons(
-        &self,
-        id: &str,
-    ) -> Result<Vec<TmdbSeasonInfo>, anyhow::Error> {
+    pub async fn fetch_seasons(&self, id: &str) -> Result<Vec<TmdbSeasonInfo>, anyhow::Error> {
         let mut url = Url::parse(&format!("{}/tv/{}", BASE_URL, id))?;
         url.query_pairs_mut()
             .append_pair("api_key", &self.api_key)
@@ -505,10 +515,7 @@ mod tests {
         assert_eq!(item.title, "Inception");
         assert_eq!(item.external_id, "27205");
         assert_eq!(item.score, Some(8.367));
-        assert_eq!(
-            item.poster_url,
-            Some("/tmdb-image/abc.jpg".to_string())
-        );
+        assert_eq!(item.poster_url, Some("/tmdb-image/abc.jpg".to_string()));
     }
 
     #[test]

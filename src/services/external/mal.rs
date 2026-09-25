@@ -172,11 +172,7 @@ pub fn parse_duration_to_minutes(s: &str) -> Option<i32> {
         found = true;
     }
 
-    if found {
-        Some(total)
-    } else {
-        None
-    }
+    if found { Some(total) } else { None }
 }
 
 /// Берёт целое число, стоящее непосредственно перед `unit` в строке.
@@ -192,7 +188,10 @@ fn extract_number_before(s: &str, unit: &str) -> Option<i32> {
 }
 
 fn map_full(anime: MalAnimeFull) -> CreateMediaItem {
-    let comparison_key = anime.title_english.clone().unwrap_or_else(|| anime.title.clone());
+    let comparison_key = anime
+        .title_english
+        .clone()
+        .unwrap_or_else(|| anime.title.clone());
 
     let aired_from = anime
         .aired
@@ -207,13 +206,21 @@ fn map_full(anime: MalAnimeFull) -> CreateMediaItem {
 
     let mut details = serde_json::Map::new();
     if let Some(a) = anime.aired.as_ref()
-        && let Some(s) = a.string.as_ref() {
-            details.insert("aired_string".to_string(), serde_json::Value::String(s.clone()));
-        }
+        && let Some(s) = a.string.as_ref()
+    {
+        details.insert(
+            "aired_string".to_string(),
+            serde_json::Value::String(s.clone()),
+        );
+    }
     if let Some(b) = anime.broadcast.as_ref()
-        && let Some(s) = b.string.as_ref() {
-            details.insert("broadcast".to_string(), serde_json::Value::String(s.clone()));
-        }
+        && let Some(s) = b.string.as_ref()
+    {
+        details.insert(
+            "broadcast".to_string(),
+            serde_json::Value::String(s.clone()),
+        );
+    }
 
     let year_i16: Option<i16> = anime.year.and_then(|y| i16::try_from(y).ok());
     let premiered_year_i16 = year_i16;
@@ -244,7 +251,10 @@ fn map_full(anime: MalAnimeFull) -> CreateMediaItem {
         chapters: None,
         volumes: None,
         pages: None,
-        runtime_minutes: anime.duration.as_deref().and_then(parse_duration_to_minutes),
+        runtime_minutes: anime
+            .duration
+            .as_deref()
+            .and_then(parse_duration_to_minutes),
         playtime_hours: None,
         year: year_i16,
         aired_from,
@@ -275,7 +285,10 @@ fn map_full(anime: MalAnimeFull) -> CreateMediaItem {
 }
 
 fn map_search(item: MalAnimeSearchItem) -> CreateMediaItem {
-    let comparison_key = item.title_english.clone().unwrap_or_else(|| item.title.clone());
+    let comparison_key = item
+        .title_english
+        .clone()
+        .unwrap_or_else(|| item.title.clone());
     CreateMediaItem {
         provider: "mal".to_string(),
         external_id: item.mal_id.to_string(),
@@ -406,7 +419,13 @@ impl MalService {
             };
 
             let got = body.data.len();
-            tracing::info!(mal_id, page, got, total_so_far = all.len() + got, "jikan episodes page");
+            tracing::info!(
+                mal_id,
+                page,
+                got,
+                total_so_far = all.len() + got,
+                "jikan episodes page"
+            );
             all.extend(body.data);
             if got == 0
                 || !body.pagination.has_next_page
@@ -540,8 +559,14 @@ mod tests {
         assert_eq!(item.source.as_deref(), Some("Manga"));
         assert_eq!(item.premiered_season.as_deref(), Some("fall"));
         assert_eq!(item.premiered_year, Some(2002));
-        assert_eq!(item.aired_from, Some(chrono::NaiveDate::from_ymd_opt(2002, 10, 3).unwrap()));
-        assert_eq!(item.aired_to, Some(chrono::NaiveDate::from_ymd_opt(2007, 2, 8).unwrap()));
+        assert_eq!(
+            item.aired_from,
+            Some(chrono::NaiveDate::from_ymd_opt(2002, 10, 3).unwrap())
+        );
+        assert_eq!(
+            item.aired_to,
+            Some(chrono::NaiveDate::from_ymd_opt(2007, 2, 8).unwrap())
+        );
         assert_eq!(item.duration.as_deref(), Some("23 min. per ep."));
         assert_eq!(item.rating.as_deref(), Some("PG-13 - Teens 13 or older"));
         assert!(item.studios.contains(&"Studio Pierrot".to_string()));
@@ -551,7 +576,10 @@ mod tests {
         assert!(item.themes.contains(&"Martial Arts".to_string()));
         assert!(item.demographics.contains(&"Shounen".to_string()));
         let details = item.details.expect("details should exist");
-        assert_eq!(details.get("aired_string").and_then(|v| v.as_str()), Some("Oct 3, 2002 to Feb 8, 2007"));
+        assert_eq!(
+            details.get("aired_string").and_then(|v| v.as_str()),
+            Some("Oct 3, 2002 to Feb 8, 2007")
+        );
     }
 
     #[test]

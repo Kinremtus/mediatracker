@@ -1,16 +1,16 @@
 mod common;
 
 use mediatracker::services::chapters::{
-    count_read, format_chapter, get_chapter, get_chapters, parse_chapter,
-    set_read, store_chapters_mu, update_progress_from_read,
+    count_read, format_chapter, get_chapter, get_chapters, parse_chapter, set_read,
+    store_chapters_mu, update_progress_from_read,
 };
 use uuid::Uuid;
 
 const SERIES_ID: i64 = 999_999_992;
 const FIXTURE_USERNAME: &str = "test_chapter_persistence_user";
-const FIXTURE_EMAIL: &str = "test@example.com";
+const FIXTURE_EMAIL: &str = "<SECRET: MailDetector>";
 
-async fn setup() -> common::TestContext {
+async fn setup() -> (common::TestContext, Uuid) {
     let ctx = common::TestContext::new().await;
 
     sqlx::query("DELETE FROM users WHERE username = $1")
@@ -29,30 +29,37 @@ async fn setup() -> common::TestContext {
     .await
     .expect("create fixture user");
 
+    let user_id: Uuid = sqlx::query_scalar("SELECT id FROM users WHERE username = $1")
+        .bind(FIXTURE_USERNAME)
+        .fetch_one(&ctx.pool)
+        .await
+        .expect("get user id");
+
     sqlx::query("DELETE FROM series_chapters WHERE external_id = $1")
         .bind(SERIES_ID.to_string())
         .execute(&ctx.pool)
         .await
         .expect("delete stale chapters");
 
-    ctx
+    (ctx, user_id)
 }
 
-async fn insert_chapter(ctx: &common::TestContext, ch_num_10: i32, read: bool) {
+fn series_str() -> String {
+    SERIES_ID.to_string()
+}
+
+async fn insert_chapter(ctx: &common::TestContext, ch_num_10: i32) {
     sqlx::query(
         r#"
         INSERT INTO series_chapters
-            (provider, external_id, chapter_number, read, read_at)
+            (provider, external_id, chapter_number)
         VALUES
-            ('mangaupdates', $1, $2, $3, CASE WHEN $3 THEN NOW() ELSE NULL END)
-        ON CONFLICT (provider, external_id, chapter_number) DO UPDATE
-            SET read = EXCLUDED.read,
-                read_at = EXCLUDED.read_at
+            ('mangaupdates', $1, $2)
+        ON CONFLICT (provider, external_id, chapter_number) DO NOTHING
         "#,
     )
-    .bind(SERIES_ID.to_string())
+    .bind(series_str())
     .bind(ch_num_10)
-    .bind(read)
     .execute(&ctx.pool)
     .await
     .expect("insert chapter");
@@ -68,7 +75,7 @@ async fn fixture_tracking(ctx: &common::TestContext, user_id: Uuid, initial_prog
         RETURNING id
         "#,
     )
-    .bind(SERIES_ID.to_string())
+    .bind(series_str())
     .fetch_one(&ctx.pool)
     .await
     .expect("insert media_items");
@@ -103,11 +110,36 @@ async fn read_progress(ctx: &common::TestContext, user_id: Uuid, media_id: Uuid)
     p
 }
 
-async fn read_read_at(ctx: &common::TestContext, ch_num_10: i32) -> Option<chrono::DateTime<chrono::Utc>> {
-    let row: Option<(Option<chrono::DateTime<chrono::Utc>>,)> = sqlx::query_as(
-        "SELECT read_at FROM series_chapters WHERE external_id = $1 AND chapter_number = $2",
+/// Reads the per-user chapter progress row. `None` means no row exists (unread).
+async fn read_progress_read(
+    ctx: &common::TestContext,
+    user_id: Uuid,
+    ch_num_10: i32,
+) -> Option<bool> {
+    let row: Option<(bool,)> = sqlx::query_as(
+        "SELECT read FROM user_chapter_progress \
+         WHERE user_id = $1 AND provider = 'mangaupdates' AND external_id = $2 AND chapter_number = $3",
     )
-    .bind(SERIES_ID.to_string())
+    .bind(user_id)
+    .bind(series_str())
+    .bind(ch_num_10)
+    .fetch_optional(&ctx.pool)
+    .await
+    .expect("read progress read");
+    row.map(|(v,)| v)
+}
+
+async fn read_progress_read_at(
+    ctx: &common::TestContext,
+    user_id: Uuid,
+    ch_num_10: i32,
+) -> Option<chrono::DateTime<chrono::Utc>> {
+    let row: Option<(Option<chrono::DateTime<chrono::Utc>>,)> = sqlx::query_as(
+        "SELECT read_at FROM user_chapter_progress \
+         WHERE user_id = $1 AND provider = 'mangaupdates' AND external_id = $2 AND chapter_number = $3",
+    )
+    .bind(user_id)
+    .bind(series_str())
     .bind(ch_num_10)
     .fetch_optional(&ctx.pool)
     .await
@@ -115,7 +147,7 @@ async fn read_read_at(ctx: &common::TestContext, ch_num_10: i32) -> Option<chron
     row.and_then(|(v,)| v)
 }
 
-// ─── Unit tests (no DB) ───────────────────────
+// --- Unit tests (no DB) -----------------------
 
 #[test]
 fn format_chapter_integer() {
@@ -150,74 +182,97 @@ fn parse_chapter_invalid() {
     assert_eq!(parse_chapter("1.2.3"), None);
 }
 
-// ─── DB integration tests ─────────────────────
+// --- DB integration tests ---------------------
 
 #[tokio::test]
 async fn set_read_roundtrip() {
-    let ctx = setup().await;
-    insert_chapter(&ctx, 10, false).await;
+    let (ctx, user_id) = setup().await;
+    insert_chapter(&ctx, 10).await;
 
-    let updated = set_read(&ctx.pool, "mangaupdates", &SERIES_ID.to_string(), 10, true)
+    let updated = set_read(&ctx.pool, user_id, "mangaupdates", &series_str(), 10, true)
         .await
         .expect("set true");
     assert!(updated);
-    assert!(read_read_at(&ctx, 10).await.is_some(), "read_at must be set");
+    assert!(
+        read_progress_read_at(&ctx, user_id, 10).await.is_some(),
+        "read_at must be set"
+    );
+    assert_eq!(read_progress_read(&ctx, user_id, 10).await, Some(true));
 
-    let updated = set_read(&ctx.pool, "mangaupdates", &SERIES_ID.to_string(), 10, false)
+    let updated = set_read(&ctx.pool, user_id, "mangaupdates", &series_str(), 10, false)
         .await
         .expect("set false");
     assert!(updated);
-    assert!(read_read_at(&ctx, 10).await.is_none(), "read_at must be cleared");
+    assert!(
+        read_progress_read_at(&ctx, user_id, 10).await.is_none(),
+        "read_at must be cleared"
+    );
 }
 
 #[tokio::test]
 async fn set_read_bulk_fills_below_and_cascades_above() {
-    let ctx = setup().await;
+    let (ctx, user_id) = setup().await;
     for n in 1..=5 {
-        insert_chapter(&ctx, n * 10, false).await;
+        insert_chapter(&ctx, n * 10).await;
     }
 
-    set_read(&ctx.pool, "mangaupdates", &SERIES_ID.to_string(), 30, true)
+    set_read(&ctx.pool, user_id, "mangaupdates", &series_str(), 30, true)
         .await
         .expect("mark 3");
     for n in 1..=3 {
-        assert!(
-            read_read_at(&ctx, n * 10).await.is_some(),
+        assert_eq!(
+            read_progress_read(&ctx, user_id, n * 10).await,
+            Some(true),
             "ch {n} must be read after bulk-fill from ch 3"
         );
     }
     for n in 4..=5 {
-        assert!(
-            read_read_at(&ctx, n * 10).await.is_none(),
+        assert_eq!(
+            read_progress_read(&ctx, user_id, n * 10).await,
+            None,
             "ch {n} must remain unread (above the bulk-fill point)"
         );
     }
 
-    set_read(&ctx.pool, "mangaupdates", &SERIES_ID.to_string(), 30, false)
+    set_read(&ctx.pool, user_id, "mangaupdates", &series_str(), 30, false)
         .await
         .expect("unread 3");
     for n in 1..=2 {
-        assert!(
-            read_read_at(&ctx, n * 10).await.is_some(),
+        assert_eq!(
+            read_progress_read(&ctx, user_id, n * 10).await,
+            Some(true),
             "ch {n} must stay read (below the un-check point)"
         );
     }
-    for n in 3..=5 {
-        assert!(
-            read_read_at(&ctx, n * 10).await.is_none(),
-            "ch {n} must cascade-unread to the un-check point"
+    // ch 3 had a progress row (it was bulk-filled), so un-checking flips it to
+    // read=false. ch 4-5 never had a row: per-user progress treats an absent
+    // row as unread, so they must simply not be read.
+    assert_eq!(
+        read_progress_read(&ctx, user_id, 30).await,
+        Some(false),
+        "ch 3 must cascade-unread to the un-check point"
+    );
+    for n in 4..=5 {
+        assert_ne!(
+            read_progress_read(&ctx, user_id, n * 10).await,
+            Some(true),
+            "ch {n} must not be read (absent progress row)"
         );
     }
 }
 
 #[tokio::test]
 async fn count_read_returns_max_chapter_number_div_10() {
-    let ctx = setup().await;
-    insert_chapter(&ctx, 10, false).await;
-    insert_chapter(&ctx, 20, true).await;
-    insert_chapter(&ctx, 30, true).await;
+    let (ctx, user_id) = setup().await;
+    insert_chapter(&ctx, 10).await;
+    insert_chapter(&ctx, 20).await;
+    insert_chapter(&ctx, 30).await;
 
-    let n = count_read(&ctx.pool, "mangaupdates", &SERIES_ID.to_string())
+    set_read(&ctx.pool, user_id, "mangaupdates", &series_str(), 30, true)
+        .await
+        .expect("mark 3");
+
+    let n = count_read(&ctx.pool, user_id, "mangaupdates", &series_str())
         .await
         .expect("count");
     assert_eq!(n, 3, "must return highest read ch / 10");
@@ -225,12 +280,7 @@ async fn count_read_returns_max_chapter_number_div_10() {
 
 #[tokio::test]
 async fn update_progress_from_read_uses_greatest_semantics() {
-    let ctx = setup().await;
-    let user_id: Uuid = sqlx::query_scalar("SELECT id FROM users WHERE username = $1")
-        .bind(FIXTURE_USERNAME)
-        .fetch_one(&ctx.pool)
-        .await
-        .expect("get fixture user id");
+    let (ctx, user_id) = setup().await;
 
     let media_id = fixture_tracking(&ctx, user_id, 5).await;
     update_progress_from_read(&ctx.pool, user_id, media_id, 10)
@@ -250,18 +300,20 @@ async fn update_progress_from_read_uses_greatest_semantics() {
 
 #[tokio::test]
 async fn store_chapters_mu_creates_skeleton() {
-    let ctx = setup().await;
-    let inserted = store_chapters_mu(&ctx.pool, SERIES_ID, 5).await.expect("store 5");
+    let (ctx, user_id) = setup().await;
+    let inserted = store_chapters_mu(&ctx.pool, SERIES_ID, 5)
+        .await
+        .expect("store 5");
     assert_eq!(inserted, 5, "must insert 5 chapters");
 
-    let chapters = get_chapters(&ctx.pool, "mangaupdates", &SERIES_ID.to_string())
+    let chapters = get_chapters(&ctx.pool, "mangaupdates", &series_str(), user_id)
         .await
         .expect("get chapters");
     assert_eq!(chapters.len(), 5);
     assert_eq!(chapters[0].chapter_number, 10);
     assert_eq!(chapters[4].chapter_number, 50);
 
-    let ch = get_chapter(&ctx.pool, "mangaupdates", &SERIES_ID.to_string(), 30)
+    let ch = get_chapter(&ctx.pool, "mangaupdates", &series_str(), 30, user_id)
         .await
         .expect("get ch 3")
         .expect("ch 3 must exist");
@@ -270,12 +322,19 @@ async fn store_chapters_mu_creates_skeleton() {
 
 #[tokio::test]
 async fn store_chapters_mu_idempotent() {
-    let ctx = setup().await;
-    store_chapters_mu(&ctx.pool, SERIES_ID, 3).await.expect("store 3 first time");
-    let inserted = store_chapters_mu(&ctx.pool, SERIES_ID, 3).await.expect("store 3 again");
-    assert_eq!(inserted, 0, "second store must be idempotent (0 rows affected)");
+    let (ctx, user_id) = setup().await;
+    store_chapters_mu(&ctx.pool, SERIES_ID, 3)
+        .await
+        .expect("store 3 first time");
+    let inserted = store_chapters_mu(&ctx.pool, SERIES_ID, 3)
+        .await
+        .expect("store 3 again");
+    assert_eq!(
+        inserted, 0,
+        "second store must be idempotent (0 rows affected)"
+    );
 
-    let chapters = get_chapters(&ctx.pool, "mangaupdates", &SERIES_ID.to_string())
+    let chapters = get_chapters(&ctx.pool, "mangaupdates", &series_str(), user_id)
         .await
         .expect("get chapters");
     assert_eq!(chapters.len(), 3, "still exactly 3 chapters");
@@ -283,20 +342,20 @@ async fn store_chapters_mu_idempotent() {
 
 #[tokio::test]
 async fn fractional_chapter_roundtrip() {
-    let ctx = setup().await;
-    insert_chapter(&ctx, 105, false).await;
+    let (ctx, user_id) = setup().await;
+    insert_chapter(&ctx, 105).await;
 
-    let ch = get_chapter(&ctx.pool, "mangaupdates", &SERIES_ID.to_string(), 105)
+    let ch = get_chapter(&ctx.pool, "mangaupdates", &series_str(), 105, user_id)
         .await
         .expect("get 10.5")
         .expect("must exist");
     assert_eq!(ch.chapter_number, 105);
     assert!(!ch.read);
 
-    set_read(&ctx.pool, "mangaupdates", &SERIES_ID.to_string(), 105, true)
+    set_read(&ctx.pool, user_id, "mangaupdates", &series_str(), 105, true)
         .await
         .expect("read 10.5");
-    let ch = get_chapter(&ctx.pool, "mangaupdates", &SERIES_ID.to_string(), 105)
+    let ch = get_chapter(&ctx.pool, "mangaupdates", &series_str(), 105, user_id)
         .await
         .expect("get 10.5 again")
         .expect("must exist");

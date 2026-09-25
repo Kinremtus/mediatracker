@@ -61,14 +61,8 @@ async fn media_items_has_mal_id_and_shikimori_id_columns() {
     .await
     .expect("query information_schema");
 
-    assert_eq!(
-        mal_count, 1,
-        "media_items.mal_id column is missing"
-    );
-    assert_eq!(
-        shiki_count, 1,
-        "media_items.shikimori_id column is missing"
-    );
+    assert_eq!(mal_count, 1, "media_items.mal_id column is missing");
+    assert_eq!(shiki_count, 1, "media_items.shikimori_id column is missing");
 }
 
 #[tokio::test]
@@ -93,7 +87,10 @@ async fn add_to_list_persists_mal_id_and_shikimori_id() {
         .expect("media_items row exists");
 
     assert_eq!(mal_id, Some(21), "mal_id not persisted by add_to_list");
-    assert_eq!(shikimori_id, None, "shikimori_id should be None for MAL-sourced fixture");
+    assert_eq!(
+        shikimori_id, None,
+        "shikimori_id should be None for MAL-sourced fixture"
+    );
     assert_eq!(provider, "mal");
     assert_eq!(external_id, "21");
 }
@@ -138,13 +135,11 @@ async fn update_entry_decodes_numeric_rating_to_f64() {
     svc.add_to_list(user_id, &media, "in_progress")
         .await
         .expect("add_to_list");
-    let entry_id: Uuid = sqlx::query_scalar(
-        "SELECT id FROM tracking_entries WHERE user_id = $1",
-    )
-    .bind(user_id)
-    .fetch_one(&ctx.pool)
-    .await
-    .expect("tracking entry exists");
+    let entry_id: Uuid = sqlx::query_scalar("SELECT id FROM tracking_entries WHERE user_id = $1")
+        .bind(user_id)
+        .fetch_one(&ctx.pool)
+        .await
+        .expect("tracking entry exists");
     sqlx::query("UPDATE tracking_entries SET rating = 9.0 WHERE id = $1")
         .bind(entry_id)
         .execute(&ctx.pool)
@@ -168,13 +163,12 @@ async fn update_entry_decodes_numeric_rating_to_f64() {
         "rating must be preserved by update_entry"
     );
 
-    let (db_progress, db_rating): (i32, Option<String>) = sqlx::query_as(
-        "SELECT progress, rating::text FROM tracking_entries WHERE id = $1",
-    )
-    .bind(entry_id)
-    .fetch_one(&ctx.pool)
-    .await
-    .expect("read back");
+    let (db_progress, db_rating): (i32, Option<String>) =
+        sqlx::query_as("SELECT progress, rating::text FROM tracking_entries WHERE id = $1")
+            .bind(entry_id)
+            .fetch_one(&ctx.pool)
+            .await
+            .expect("read back");
     assert_eq!(db_progress, 1);
     assert_eq!(
         db_rating.expect("rating set"),
@@ -191,13 +185,11 @@ async fn update_entry_with_null_rating_succeeds() {
     svc.add_to_list(user_id, &fixture_mal_anime(), "planned")
         .await
         .expect("add_to_list");
-    let entry_id: Uuid = sqlx::query_scalar(
-        "SELECT id FROM tracking_entries WHERE user_id = $1",
-    )
-    .bind(user_id)
-    .fetch_one(&ctx.pool)
-    .await
-    .expect("entry exists");
+    let entry_id: Uuid = sqlx::query_scalar("SELECT id FROM tracking_entries WHERE user_id = $1")
+        .bind(user_id)
+        .fetch_one(&ctx.pool)
+        .await
+        .expect("entry exists");
 
     let update = UpdateTracking {
         status: Some("in_progress".to_string()),

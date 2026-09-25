@@ -36,18 +36,8 @@ pub async fn auth_middleware(
     mut req: Request,
     next: Next,
 ) -> Response {
-    // Extract session cookie
-    let cookie_header = req.headers().get(axum::http::header::COOKIE);
-    tracing::info!("Cookie header: {:?}", cookie_header);
-
-    let cookie = req
-        .headers()
-        .get(axum::http::header::COOKIE)
-        .and_then(|c| c.to_str().ok())
-        .and_then(|c| c.split(';').find(|c| c.trim().starts_with("session_id=")))
-        .map(|c| c.trim().trim_start_matches("session_id=").to_string());
-
-    let token = match cookie {
+    // Extract session cookie (raw token; the DB stores only its sha256 hash).
+    let token = match crate::utils::session_cookie(req.headers()) {
         Some(t) => t,
         None => {
             tracing::warn!("No session_id cookie found");
@@ -55,12 +45,10 @@ pub async fn auth_middleware(
         }
     };
 
-    tracing::info!("Extracted token: {}", token);
-
     // Validate session
     match state.auth.get_session(&token).await {
         Ok(session) => {
-            tracing::info!("Session valid for user: {}", session.user_id);
+            tracing::debug!(user_id = %session.user_id, "session validated");
             // Get user details
             match state.auth.get_user_by_id(session.user_id).await {
                 Ok(user) => {
