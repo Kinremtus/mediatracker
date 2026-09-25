@@ -1,0 +1,70 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backup-scripts
+  namespace: mediatracker
+data:
+  # Runs inside the CronJob pod. It talks to the `postgres` Service directly
+  # over TCP (no kubectl/RBAC). Encryption and offsite upload degrade
+  # gracefully: a missing age key / rclone config only logs a warning.
+  backup.sh: |
+    #!/bin/sh
+    set -eu
+
+    BACKUP_DIR="${BACKUP_DIR:-/backups}"
+    RETENTION_DAYS="${RETENTION_DAYS:-7}"
+    PGHOST="${PGHOST:-postgres}"
+    PGPORT="${PGPORT:-5432}"
+    PGUSER="${PGUSER:-${POSTGRES_USER:-}}"
+    PGDATABASE="${PGDATABASE:-${POSTGRES_DB:-}}"
+
+    log() { printf '[%s] %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*"; }
+
+    : "${PGUSER:?PGUSER (or POSTGRES_USER) must be set}"
+    : "${PGDATABASE:?PGDATABASE (or POSTGRES_DB) must be set}"
+
+    TIMESTAMP="$(date -u +%Y%m%d_%H%M%S)"
+    DUMP_FILE="${BACKUP_DIR}/${TIMESTAMP}.dump"
+
+    log "Dumping db=${PGDATABASE} host=${PGHOST}:${PGPORT} user=${PGUSER}"
+    pg_dump -Fc -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" > "$DUMP_FILE"
+
+    UPLOAD_FILE="$DUMP_FILE"
+    if [ -n "${AGE_PUBLIC_KEY:-}" ]; then
+      if command -v age >/dev/null 2>&1; then
+        log "Encrypting with age"
+        age -r "$AGE_PUBLIC_KEY" -o "${DUMP_FILE}.age" "$DUMP_FILE"
+        rm -f "$DUMP_FILE"
+        UPLOAD_FILE="${DUMP_FILE}.age"
+      else
+        log "WARNING: AGE_PUBLIC_KEY is set but 'age' is missing; keeping dump UNENCRYPTED"
+      fi
+    else
+      log "WARNING: AGE_PUBLIC_KEY not set; keeping dump UNENCRYPTED"
+    fi
+
+    log "Local backup written: ${UPLOAD_FILE} ($(du -h "$UPLOAD_FILE" | cut -f1))"
+
+    # Offsite upload (rclone -> Cloudflare R2 / any S3-compatible). Optional.
+    if command -v rclone >/dev/null 2>&1 && [ -n "${RCLONE_CONFIG_R2_ACCOUNT:-}" ]; then
+      REMOTE="${BACKUP_RCLONE_REMOTE:-r2:${RCLONE_CONFIG_R2_BUCKET:-mediatracker-backups}}"
+      if rclone copy "$UPLOAD_FILE" "$REMOTE/"; then
+        log "Offsite upload OK -> ${REMOTE}/"
+      elif [ "${BACKUP_REQUIRE_OFFSITE:-0}" = "1" ]; then
+        log "ERROR: offsite upload failed and BACKUP_REQUIRE_OFFSITE=1"
+        exit 1
+      else
+        log "WARNING: offsite upload failed; local backup is still valid"
+      fi
+    elif [ "${BACKUP_REQUIRE_OFFSITE:-0}" = "1" ]; then
+      log "ERROR: rclone/R2 not configured and BACKUP_REQUIRE_OFFSITE=1"
+      exit 1
+    else
+      log "WARNING: rclone/R2 not configured; skipping offsite upload"
+    fi
+
+    log "Pruning local backups older than ${RETENTION_DAYS} days"
+    find "$BACKUP_DIR" -type f \( -name '*.dump' -o -name '*.dump.age' \) \
+      -mtime +"$RETENTION_DAYS" -print -delete || true
+
+    log "Done"

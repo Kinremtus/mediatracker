@@ -9,7 +9,7 @@
 //!   --external-id    Enrich single manga by external_id
 //!   --limit          Max items to process (default: 100)
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use clap::Parser;
 use mediatracker::config::Config;
 use mediatracker::services::chapters::enrich_from_mangadex;
@@ -44,8 +44,9 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| "info".into()))
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
+        )
         .init();
 
     let args = Args::parse();
@@ -54,15 +55,17 @@ async fn main() -> Result<()> {
     let pool = PgPool::connect(&config.database_url).await?;
     sqlx::migrate!("./migrations").run(&pool).await?;
 
-    info!("Starting chapter backfill (force={}, provider={}, limit={})",
-        args.force, args.provider, args.limit);
+    info!(
+        "Starting chapter backfill (force={}, provider={}, limit={})",
+        args.force, args.provider, args.limit
+    );
 
     let rows = if let Some(ext_id) = args.external_id {
         // Single manga
         sqlx::query(
             "SELECT provider, external_id, title FROM media_items \
              WHERE provider = $1 AND external_id = $2 \
-             AND media_type IN ('manga','manhwa','manhua','novel','other-comics')"
+             AND media_type IN ('manga','manhwa','manhua','novel','other-comics')",
         )
         .bind(&args.provider)
         .bind(&ext_id)
@@ -74,7 +77,7 @@ async fn main() -> Result<()> {
             "SELECT provider, external_id, title FROM media_items \
              WHERE provider = $1 \
              AND media_type IN ('manga','manhwa','manhua','novel','other-comics') \
-             ORDER BY created_at ASC LIMIT $2"
+             ORDER BY created_at ASC LIMIT $2",
         )
         .bind(&args.provider)
         .bind(args.limit as i64)
@@ -137,8 +140,12 @@ async fn main() -> Result<()> {
         tokio::time::sleep(Duration::from_millis(args.delay_ms)).await;
     }
 
-    info!("Backfill complete: enriched {} chapters across {} items, {} failed",
-        enriched, rows.len(), failed);
+    info!(
+        "Backfill complete: enriched {} chapters across {} items, {} failed",
+        enriched,
+        rows.len(),
+        failed
+    );
 
     Ok(())
 }

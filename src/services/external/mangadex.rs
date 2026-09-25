@@ -50,10 +50,7 @@ impl MangaDexService {
 
     /// Get chapter list for a manga by MangaDex UUID.
     /// Uses the v2 API: /chapter?manga=<UUID>&translatedLanguage[]=en&translatedLanguage[]=ru
-    pub async fn get_chapters(
-        &self,
-        manga_uuid: &str,
-    ) -> Result<Vec<MangaDexChapter>> {
+    pub async fn get_chapters(&self, manga_uuid: &str) -> Result<Vec<MangaDexChapter>> {
         let mut chapters = Vec::new();
         let mut offset = 0;
         const LIMIT: u32 = 100;

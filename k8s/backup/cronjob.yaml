@@ -1,0 +1,109 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-backup
+  namespace: mediatracker
+spec:
+  # Daily at 03:00 cluster-local time.
+  schedule: "0 3 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app: postgres-backup
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: backup
+              # NOTE: alpine:3.21 (not 3.20) is required because Postgres 17
+              # clients (`postgresql17-client`) only exist from Alpine 3.21.
+              # alpine:3.20 ships pg16 clients, which refuse to dump a pg17 server.
+              image: alpine:3.21
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  apk add --no-cache postgresql17-client age rclone
+                  exec /bin/sh /scripts/backup.sh
+              envFrom:
+                # Provides PGUSER, PGDATABASE, PGHOST, PGPORT, PGPASSWORD
+                # (and POSTGRES_* which the script falls back to).
+                - secretRef:
+                    name: db-secret
+              env:
+                # All backup-secret keys are optional: a missing key just
+                # disables that feature (unencrypted dump / no offsite copy).
+                - name: AGE_PUBLIC_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-secret
+                      key: AGE_PUBLIC_KEY
+                      optional: true
+                - name: RCLONE_CONFIG_R2_TYPE
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-secret
+                      key: RCLONE_CONFIG_R2_TYPE
+                      optional: true
+                - name: RCLONE_CONFIG_R2_ACCOUNT
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-secret
+                      key: RCLONE_CONFIG_R2_ACCOUNT
+                      optional: true
+                - name: RCLONE_CONFIG_R2_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-secret
+                      key: RCLONE_CONFIG_R2_KEY
+                      optional: true
+                - name: RCLONE_CONFIG_R2_ENDPOINT
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-secret
+                      key: RCLONE_CONFIG_R2_ENDPOINT
+                      optional: true
+                - name: RCLONE_CONFIG_R2_BUCKET
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-secret
+                      key: RCLONE_CONFIG_R2_BUCKET
+                      optional: true
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+                - name: backup-data
+                  mountPath: /backups
+              securityContext:
+                # `apk add` requires root. See k8s/backup/README.md for the
+                # hardened alternative (prebuilt image + runAsNonRoot: true).
+                runAsNonRoot: false
+                runAsUser: 0
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                # Must stay writable: the container installs packages at start.
+                readOnlyRootFilesystem: false
+              resources:
+                requests:
+                  memory: 64Mi
+                  cpu: 50m
+                limits:
+                  memory: 256Mi
+                  cpu: 500m
+          volumes:
+            - name: scripts
+              configMap:
+                name: backup-scripts
+                defaultMode: 0555
+            - name: backup-data
+              persistentVolumeClaim:
+                claimName: backup-data

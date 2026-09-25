@@ -13,6 +13,7 @@ Production monitoring stack deployed on a single-node K3s cluster via Terraform.
 | **kube-state-metrics** | Deployment | `registry.k8s.io/kube-state-metrics` | K8s object metrics |
 | **node-exporter** | DaemonSet | `prom/node-exporter` | Node-level metrics (CPU, RAM, disk, net) |
 | **Promtail** | DaemonSet | `grafana/promtail` | Log shipping, CRI pipeline for containerd |
+| **Uptime Kuma** | Deployment | `louislam/uptime-kuma:1` | Uptime monitoring, status pages, alerting |
 
 ## Architecture
 
@@ -48,6 +49,7 @@ and forwards to localhost, where kube-proxy handles DNAT via INPUT (not FORWARD)
 | Loki | 32310 | :3100 | `http://10.6.0.1:3100/ready` |
 | Alertmanager | 30903 | :9093 | `http://10.6.0.1:9093/-/ready` |
 | kube-state-metrics | 31904 | :19000 | `http://10.6.0.1:19000/metrics` |
+| Uptime Kuma | 30011 | :3001 | `http://10.6.0.1:3001` |
 
 Note: kube-state-metrics uses port **19000** (not 31904) because the NodePort
 port itself is intercepted by kube-proxy DNAT in PREROUTING, which sends
@@ -63,16 +65,17 @@ Each service gets its own systemd unit:
 /etc/systemd/system/socat-loki.service
 /etc/systemd/system/socat-alertmanager.service
 /etc/systemd/system/socat-kube-state-metrics.service
+/etc/systemd/system/socat-uptime-kuma.service
 ```
 
 Usage:
 ```bash
 # Deploy all units (run on VPS):
 sudo systemctl daemon-reload
-sudo systemctl enable --now socat-{prometheus,grafana,kube-state-metrics,loki,alertmanager}
+sudo systemctl enable --now socat-{prometheus,grafana,kube-state-metrics,loki,alertmanager,uptime-kuma}
 
 # Check status:
-sudo systemctl status socat-{prometheus,grafana,kube-state-metrics,loki,alertmanager}
+sudo systemctl status socat-{prometheus,grafana,kube-state-metrics,loki,alertmanager,uptime-kuma}
 ```
 
 ## Deployment
@@ -116,6 +119,7 @@ terraform/monitoring/
   kube-state-metrics.tf  -- kube-state-metrics (deployment, service, RBAC)
   node-exporter.tf       -- Node exporter (DaemonSet, hostNetwork)
   promtail.tf            -- Promtail (DaemonSet, log shipping)
+  uptime-kuma.tf         -- Uptime Kuma (deployment, service, PVC)
   telegram-secret.tf     -- Telegram bot token (gitignored)
 ```
 

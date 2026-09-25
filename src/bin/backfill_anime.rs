@@ -28,8 +28,8 @@ use std::time::Duration;
 
 use mediatracker::config::Config;
 use mediatracker::services::backfill::{
-    choose_strategy, mal_id_from_shikimori_anime_response, try_external_id_as_mal, BackfillCandidate,
-    Strategy,
+    BackfillCandidate, Strategy, choose_strategy, mal_id_from_shikimori_anime_response,
+    try_external_id_as_mal,
 };
 use mediatracker::services::episodes;
 use mediatracker::services::external::mal::MalService;
@@ -37,7 +37,8 @@ use sqlx::PgPool;
 use sqlx::Row;
 use uuid::Uuid;
 
-const SHIKIMORI_USER_AGENT: &str = "MediaTracker/0.1 (+https://github.com/Kinremtus/mediatracker) backfill";
+const SHIKIMORI_USER_AGENT: &str =
+    "MediaTracker/0.1 (+https://github.com/Kinremtus/mediatracker) backfill";
 // Shikimori public API: 5 req/sec per IP is the published guidance.
 // We pace to 1 req / 1000 ms = 1 req/sec to leave headroom for the
 // Jikan calls in the same loop.

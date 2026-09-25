@@ -1,18 +1,18 @@
 use askama::Template;
 use axum::{
+    Form,
     extract::State,
     response::{Html, IntoResponse, Redirect},
-    Form,
 };
 use serde::Deserialize;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
+use super::home::SidebarStats;
 use crate::app_state::AppState;
 use crate::middleware::CurrentUser;
 use crate::models::media_item::CreateMediaItem;
 use crate::services::chapters::enrich_from_mangadex;
-use super::home::SidebarStats;
 
 #[derive(Template)]
 #[template(path = "admin.html")]
@@ -29,8 +29,18 @@ struct AdminTemplate {
 }
 
 async fn get_sidebar_stats(state: &AppState, user: &CurrentUser) -> SidebarStats {
-    let (ip, cp, pp, dp) = state.tracking.get_status_counts(user.id).await.unwrap_or_default();
-    SidebarStats { in_progress: ip, completed: cp, planned: pp, dropped: dp, role: user.role.clone() }
+    let (ip, cp, pp, dp) = state
+        .tracking
+        .get_status_counts(user.id)
+        .await
+        .unwrap_or_default();
+    SidebarStats {
+        in_progress: ip,
+        completed: cp,
+        planned: pp,
+        dropped: dp,
+        role: user.role.clone(),
+    }
 }
 
 fn require_admin(user: &CurrentUser) -> bool {
@@ -99,35 +109,38 @@ pub async fn post_refresh_details(
     let db: &PgPool = &state.db;
     let limit = form.limit.unwrap_or(50).clamp(1, 500);
 
-    let mut query = String::from(
-        "SELECT id, provider, external_id, media_type FROM media_items WHERE 1=1",
-    );
+    let mut query =
+        String::from("SELECT id, provider, external_id, media_type FROM media_items WHERE 1=1");
     let mut param_idx = 1;
     let mut bind_count = 0;
 
     if let Some(mt) = &form.media_type
-        && !mt.is_empty() {
-            query.push_str(&format!(" AND media_type = ${}", param_idx));
-            param_idx += 1;
-            bind_count += 1;
-        }
+        && !mt.is_empty()
+    {
+        query.push_str(&format!(" AND media_type = ${}", param_idx));
+        param_idx += 1;
+        bind_count += 1;
+    }
     if let Some(p) = &form.provider
-        && !p.is_empty() {
-            query.push_str(&format!(" AND provider = ${}", param_idx));
-            bind_count += 1;
-        }
+        && !p.is_empty()
+    {
+        query.push_str(&format!(" AND provider = ${}", param_idx));
+        bind_count += 1;
+    }
     query.push_str(&format!(" ORDER BY created_at ASC LIMIT {}", limit));
     let _ = (param_idx, bind_count);
 
     let mut q = sqlx::query_as::<_, (Uuid, String, String, String)>(&query);
     if let Some(mt) = &form.media_type
-        && !mt.is_empty() {
-            q = q.bind(mt);
-        }
+        && !mt.is_empty()
+    {
+        q = q.bind(mt);
+    }
     if let Some(p) = &form.provider
-        && !p.is_empty() {
-            q = q.bind(p);
-        }
+        && !p.is_empty()
+    {
+        q = q.bind(p);
+    }
 
     let rows: Vec<(Uuid, String, String, String)> = match q.fetch_all(db).await {
         Ok(r) => r,
@@ -172,7 +185,10 @@ pub async fn post_refresh_details(
                 .bind(&item.status)
                 .bind(item.score)
                 .bind(&item.format_type)
-                .bind(item.details.unwrap_or(serde_json::Value::Object(Default::default())))
+                .bind(
+                    item.details
+                        .unwrap_or(serde_json::Value::Object(Default::default())),
+                )
                 .bind(item.chapters)
                 .bind(item.volumes)
                 .bind(item.pages)
@@ -316,7 +332,12 @@ pub async fn post_enrich_chapters(
         match enrich_from_mangadex(db, &provider, &external_id).await {
             Ok(count) => enriched += count,
             Err(e) => {
-                tracing::warn!("enrich_from_mangadex failed for {}/{}: {}", provider, external_id, e);
+                tracing::warn!(
+                    "enrich_from_mangadex failed for {}/{}: {}",
+                    provider,
+                    external_id,
+                    e
+                );
                 failed += 1;
             }
         }
@@ -324,7 +345,10 @@ pub async fn post_enrich_chapters(
     }
 
     let stats = get_sidebar_stats(&state, &user).await;
-    let message = format!("Обогащено глав: {} (объектов: {}, ошибок: {})", enriched, total, failed);
+    let message = format!(
+        "Обогащено глав: {} (объектов: {}, ошибок: {})",
+        enriched, total, failed
+    );
     let template = AdminTemplate {
         username: user.username,
         role: user.role,

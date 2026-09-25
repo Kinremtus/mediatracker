@@ -1,7 +1,10 @@
 use askama::Template;
 use axum::{
     extract::{Form, Query, State},
-    http::{header::SET_COOKIE, HeaderValue, StatusCode},
+    http::{
+        HeaderMap, HeaderValue, StatusCode,
+        header::{SET_COOKIE, USER_AGENT},
+    },
     response::{Html, IntoResponse, Redirect, Response},
 };
 use serde::Deserialize;
@@ -71,19 +74,30 @@ pub async fn get_login() -> Html<String> {
 
 pub async fn post_login(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Form(form): Form<LoginForm>,
 ) -> Response {
-    let user_agent = "Unknown"; // TODO: Get from headers
-    let ip = "127.0.0.1"; // TODO: Get from headers
+    let user_agent = headers.get(USER_AGENT).and_then(|v| v.to_str().ok());
+    // Real client IP behind Cloudflare/Traefik: cf-connecting-ip, then the
+    // leftmost x-forwarded-for entry. `client_ip` validates the value as an IP
+    // address (headers are attacker-controlled and `sessions.ip` is INET), so a
+    // bogus/absent source yields NULL.
+    let ip = crate::utils::client_ip(&headers, None);
 
-    match state.auth.login(&form.username, &form.password, Some(user_agent), Some(ip)).await {
+    match state
+        .auth
+        .login(&form.username, &form.password, user_agent, ip.as_deref())
+        .await
+    {
         Ok(token) => {
-            let cookie = format!("session_id={}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000", token);
-            let mut response = Redirect::to("/").into_response();
-            response.headers_mut().insert(
-                SET_COOKIE,
-                HeaderValue::from_str(&cookie).unwrap(),
+            let cookie = format!(
+                "session_id={}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000",
+                token
             );
+            let mut response = Redirect::to("/").into_response();
+            response
+                .headers_mut()
+                .insert(SET_COOKIE, HeaderValue::from_str(&cookie).unwrap());
             response
         }
         Err(e) => {
@@ -141,9 +155,7 @@ pub async fn post_forgot_password(
     if !state.password_reset.channels_available() {
         let html = ForgotPasswordTemplate {
             message: None,
-            error: Some(
-                "Восстановление пароля временно недоступно. Попробуйте позже.".to_string(),
-            ),
+            error: Some("Восстановление пароля временно недоступно. Попробуйте позже.".to_string()),
         }
         .render()
         .unwrap();

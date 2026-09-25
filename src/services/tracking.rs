@@ -1,8 +1,8 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::models::tracking_entry::{TrackingEntry, TrackingEntryWithMedia, UpdateTracking};
 use crate::models::media_item::CreateMediaItem;
+use crate::models::tracking_entry::{TrackingEntry, TrackingEntryWithMedia, UpdateTracking};
 use crate::services::tmdb_episodes;
 
 #[derive(Clone)]
@@ -21,99 +21,93 @@ impl TrackingService {
         media: &CreateMediaItem,
         status: &str,
     ) -> Result<TrackingEntry, anyhow::Error> {
-        // First, ensure media item exists in DB
+        // Find-or-create media, tracking entry and activity row atomically.
+        // A plain SELECT-then-INSERT would let two concurrent adds for the
+        // same title both miss and then collide on UNIQUE(provider,
+        // external_id); a single upsert closes that window. The no-op update
+        // keeps whatever metadata already exists and only bumps updated_at.
+        let mut tx = self.db.begin().await?;
+
         let media_id = sqlx::query_scalar::<_, Uuid>(
-            "SELECT id FROM media_items WHERE provider = $1 AND external_id = $2",
+            r#"
+            INSERT INTO media_items (
+                provider, external_id, media_type, title, title_english, title_native, title_russian,
+                poster_url, episodes, description, status, score,
+                format_type, details,
+                chapters, volumes, pages, runtime_minutes, playtime_hours,
+                year, aired_from, aired_to, premiered_season, premiered_year, broadcast,
+                completed, licensed,
+                source, duration, rating, rating_votes,
+                authors, artists, studios, producers, licensors, publishers,
+                serialized_in, networks, platforms,
+                genres, themes, demographics, categories,
+                mal_id, shikimori_id
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6, $7,
+                $8, $9, $10, $11, $12,
+                $13, $14,
+                $15, $16, $17, $18, $19,
+                $20, $21, $22, $23, $24, $25,
+                $26, $27,
+                $28, $29, $30, $31,
+                $32, $33, $34, $35, $36, $37,
+                $38, $39, $40,
+                $41, $42, $43, $44,
+                $45, $46
+            )
+            ON CONFLICT (provider, external_id) DO UPDATE
+            SET updated_at = NOW()
+            RETURNING id
+            "#,
         )
         .bind(&media.provider)
         .bind(&media.external_id)
-        .fetch_optional(&self.db)
+        .bind(&media.media_type)
+        .bind(&media.title)
+        .bind(&media.title_english)
+        .bind(&media.title_native)
+        .bind(&media.title_russian)
+        .bind(&media.poster_url)
+        .bind(media.episodes)
+        .bind(&media.description)
+        .bind(&media.status)
+        .bind(media.score)
+        .bind(&media.format_type)
+        .bind(media.details.clone().unwrap_or(serde_json::Value::Object(Default::default())))
+        .bind(media.chapters)
+        .bind(media.volumes)
+        .bind(media.pages)
+        .bind(media.runtime_minutes)
+        .bind(media.playtime_hours)
+        .bind(media.year)
+        .bind(media.aired_from)
+        .bind(media.aired_to)
+        .bind(&media.premiered_season)
+        .bind(media.premiered_year)
+        .bind(&media.broadcast)
+        .bind(media.completed)
+        .bind(media.licensed)
+        .bind(&media.source)
+        .bind(&media.duration)
+        .bind(&media.rating)
+        .bind(media.rating_votes)
+        .bind(&media.authors)
+        .bind(&media.artists)
+        .bind(&media.studios)
+        .bind(&media.producers)
+        .bind(&media.licensors)
+        .bind(&media.publishers)
+        .bind(&media.serialized_in)
+        .bind(&media.networks)
+        .bind(&media.platforms)
+        .bind(&media.genres)
+        .bind(&media.themes)
+        .bind(&media.demographics)
+        .bind(&media.categories)
+        .bind(media.mal_id)
+        .bind(media.shikimori_id)
+        .fetch_one(&mut *tx)
         .await?;
-
-        let media_id = match media_id {
-            Some(id) => id,
-            None => {
-                
-                sqlx::query_scalar::<_, Uuid>(
-                    r#"
-                    INSERT INTO media_items (
-                        provider, external_id, media_type, title, title_english, title_native, title_russian,
-                        poster_url, episodes, description, status, score,
-                        format_type, details,
-                        chapters, volumes, pages, runtime_minutes, playtime_hours,
-                        year, aired_from, aired_to, premiered_season, premiered_year, broadcast,
-                        completed, licensed,
-                        source, duration, rating, rating_votes,
-                        authors, artists, studios, producers, licensors, publishers,
-                        serialized_in, networks, platforms,
-                        genres, themes, demographics, categories,
-                        mal_id, shikimori_id
-                    ) VALUES (
-                        $1, $2, $3, $4, $5, $6, $7,
-                        $8, $9, $10, $11, $12,
-                        $13, $14,
-                        $15, $16, $17, $18, $19,
-                        $20, $21, $22, $23, $24, $25,
-                        $26, $27,
-                        $28, $29, $30, $31,
-                        $32, $33, $34, $35, $36, $37,
-                        $38, $39, $40,
-                        $41, $42, $43, $44,
-                        $45, $46
-                    )
-                    RETURNING id
-                    "#,
-                )
-                .bind(&media.provider)
-                .bind(&media.external_id)
-                .bind(&media.media_type)
-                .bind(&media.title)
-                .bind(&media.title_english)
-                .bind(&media.title_native)
-                .bind(&media.title_russian)
-                .bind(&media.poster_url)
-                .bind(media.episodes)
-                .bind(&media.description)
-                .bind(&media.status)
-                .bind(media.score)
-                .bind(&media.format_type)
-                .bind(media.details.clone().unwrap_or(serde_json::Value::Object(Default::default())))
-                .bind(media.chapters)
-                .bind(media.volumes)
-                .bind(media.pages)
-                .bind(media.runtime_minutes)
-                .bind(media.playtime_hours)
-                .bind(media.year)
-                .bind(media.aired_from)
-                .bind(media.aired_to)
-                .bind(&media.premiered_season)
-                .bind(media.premiered_year)
-                .bind(&media.broadcast)
-                .bind(media.completed)
-                .bind(media.licensed)
-                .bind(&media.source)
-                .bind(&media.duration)
-                .bind(&media.rating)
-                .bind(media.rating_votes)
-                .bind(&media.authors)
-                .bind(&media.artists)
-                .bind(&media.studios)
-                .bind(&media.producers)
-                .bind(&media.licensors)
-                .bind(&media.publishers)
-                .bind(&media.serialized_in)
-                .bind(&media.networks)
-                .bind(&media.platforms)
-                .bind(&media.genres)
-                .bind(&media.themes)
-                .bind(&media.demographics)
-                .bind(&media.categories)
-                .bind(media.mal_id)
-                .bind(media.shikimori_id)
-                .fetch_one(&self.db)
-                .await?
-            }
-        };
 
         // Create tracking entry
         let entry = sqlx::query_as::<_, TrackingEntry>(
@@ -122,17 +116,18 @@ impl TrackingService {
         .bind(user_id)
         .bind(media_id)
         .bind(status)
-        .fetch_one(&self.db)
+        .fetch_one(&mut *tx)
         .await?;
 
-        let _ = sqlx::query(
+        sqlx::query(
             "INSERT INTO activity_log (user_id, action, media_id) VALUES ($1, 'added', $2)",
         )
         .bind(user_id)
         .bind(media_id)
-        .execute(&self.db)
-        .await;
+        .execute(&mut *tx)
+        .await?;
 
+        tx.commit().await?;
         Ok(entry)
     }
 
@@ -185,35 +180,56 @@ impl TrackingService {
              progress, created_at, updated_at",
         );
 
+        let mut tx = self.db.begin().await?;
+
         let entry = qb
             .build_query_as::<TrackingEntry>()
-            .fetch_one(&self.db)
+            .fetch_one(&mut *tx)
             .await?;
 
-        let _ = sqlx::query(
+        sqlx::query(
             "INSERT INTO activity_log (user_id, action, media_id) VALUES ($1, 'updated', $2)",
         )
         .bind(user_id)
         .bind(entry.media_id)
-        .execute(&self.db)
-        .await;
+        .execute(&mut *tx)
+        .await?;
 
-        // Sync tmdb_episodes.watched to match tracking_entries.progress
-        if data.progress.is_some() {
-            let tmdb_ext_id: Option<String> = sqlx::query_scalar(
+        tx.commit().await?;
+
+        // Best-effort: mirror the new progress onto this user's own TMDB
+        // episode rows so the TV drawer checkboxes stay consistent with the
+        // tracking form (the reverse of set_progress_greatest/direct). Logged,
+        // never fatal — the tracking update is already committed.
+        if let Some(progress) = data.progress {
+            match sqlx::query_scalar::<_, String>(
                 "SELECT external_id FROM media_items WHERE id = $1 AND provider = 'tmdb'",
             )
             .bind(entry.media_id)
             .fetch_optional(&self.db)
-            .await?;
-
-            if let Some(ref ext_id) = tmdb_ext_id {
-                let _ = tmdb_episodes::sync_tmdb_episodes_from_progress(
-                    &self.db,
-                    ext_id,
-                    data.progress.unwrap_or(0),
-                )
-                .await;
+            .await
+            {
+                Ok(Some(ext_id)) => {
+                    if let Err(e) = tmdb_episodes::sync_tmdb_episodes_from_progress(
+                        &self.db, user_id, &ext_id, progress,
+                    )
+                    .await
+                    {
+                        tracing::warn!(
+                            external_id = %ext_id,
+                            error = %e,
+                            "tmdb progress sync failed"
+                        );
+                    }
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    tracing::warn!(
+                        media_id = %entry.media_id,
+                        error = %e,
+                        "tmdb media lookup failed"
+                    );
+                }
             }
         }
 
@@ -248,7 +264,10 @@ impl TrackingService {
         Ok(())
     }
 
-    pub async fn get_status_counts(&self, user_id: Uuid) -> Result<(i32, i32, i32, i32), anyhow::Error> {
+    pub async fn get_status_counts(
+        &self,
+        user_id: Uuid,
+    ) -> Result<(i32, i32, i32, i32), anyhow::Error> {
         let rows: Vec<(String, i32)> = sqlx::query_as(
             "SELECT status, COUNT(*)::int as count FROM tracking_entries WHERE user_id = $1 GROUP BY status",
         )
@@ -326,9 +345,13 @@ impl TrackingService {
             param_idx += 1;
         }
         if let Some(sq) = search_query
-            && !sq.is_empty() {
-                query.push_str(&format!(" AND media_items.title ILIKE '%' || ${} || '%'", param_idx));
-            }
+            && !sq.is_empty()
+        {
+            query.push_str(&format!(
+                " AND media_items.title ILIKE '%' || ${} || '%'",
+                param_idx
+            ));
+        }
 
         query.push_str(" ORDER BY tracking_entries.updated_at DESC");
 
@@ -340,9 +363,10 @@ impl TrackingService {
             q = q.bind(mt);
         }
         if let Some(sq) = search_query
-            && !sq.is_empty() {
-                q = q.bind(sq);
-            }
+            && !sq.is_empty()
+        {
+            q = q.bind(sq);
+        }
 
         let entries = q.fetch_all(&self.db).await?;
         Ok(entries)

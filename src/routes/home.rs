@@ -1,8 +1,8 @@
 use askama::Template;
 use axum::{
     extract::State,
+    http::{HeaderMap, HeaderValue, header::SET_COOKIE},
     response::{Html, IntoResponse, Redirect, Response},
-    http::{header::SET_COOKIE, HeaderValue},
 };
 use chrono::{Datelike, Utc};
 use serde::Serialize;
@@ -47,7 +47,11 @@ pub struct HomeMediaCard {
 }
 
 fn greeting() -> String {
-    let hour = Utc::now().format("%H").to_string().parse::<u32>().unwrap_or(12);
+    let hour = Utc::now()
+        .format("%H")
+        .to_string()
+        .parse::<u32>()
+        .unwrap_or(12);
     match hour {
         5..=11 => "Доброе утро".to_string(),
         12..=16 => "Добрый день".to_string(),
@@ -59,18 +63,29 @@ fn greeting() -> String {
 fn today_ru() -> String {
     let now = Utc::now();
     let months = [
-        "января", "февраля", "марта", "апреля", "мая", "июня",
-        "июля", "августа", "сентября", "октября", "ноября", "декабря",
+        "января",
+        "февраля",
+        "марта",
+        "апреля",
+        "мая",
+        "июня",
+        "июля",
+        "августа",
+        "сентября",
+        "октября",
+        "ноября",
+        "декабря",
     ];
     let month = months[(now.month() as usize).saturating_sub(1)];
     format!("Сегодня {} {}", now.day(), month)
 }
 
-pub async fn get_home(
-    user: CurrentUser,
-    State(state): State<AppState>,
-) -> Html<String> {
-    let (ip, cp, pp, dp) = state.tracking.get_status_counts(user.id).await.unwrap_or_default();
+pub async fn get_home(user: CurrentUser, State(state): State<AppState>) -> Html<String> {
+    let (ip, cp, pp, dp) = state
+        .tracking
+        .get_status_counts(user.id)
+        .await
+        .unwrap_or_default();
     let stats = SidebarStats {
         in_progress: ip,
         completed: cp,
@@ -80,19 +95,36 @@ pub async fn get_home(
     };
 
     // In-progress entries with progress
-    let entries = state.tracking.get_user_entries(user.id, Some("in_progress"), None, None).await.unwrap_or_default();
+    let entries = state
+        .tracking
+        .get_user_entries(user.id, Some("in_progress"), None, None)
+        .await
+        .unwrap_or_default();
     let in_progress: Vec<HomeMediaCard> = entries
         .into_iter()
         .take(6)
         .map(|e| {
             let total = e.media.episodes;
             let current = e.entry.progress;
-            let percent = total.map(|t| if t > 0 { (current * 100 / t).min(100) as u8 } else { 0 }).unwrap_or(0);
+            let percent = total
+                .map(|t| {
+                    if t > 0 {
+                        (current * 100 / t).min(100) as u8
+                    } else {
+                        0
+                    }
+                })
+                .unwrap_or(0);
             HomeMediaCard {
                 provider: e.media.provider,
                 external_id: e.media.external_id,
                 media_type: e.media.media_type,
-                title: e.media.title_russian.as_deref().unwrap_or(&e.media.title).to_string(),
+                title: e
+                    .media
+                    .title_russian
+                    .as_deref()
+                    .unwrap_or(&e.media.title)
+                    .to_string(),
                 poster_url: e.media.poster_url.unwrap_or_default(),
                 progress_current: current,
                 progress_total: total,
@@ -104,7 +136,17 @@ pub async fn get_home(
     // Ensure fresh schedule data
     let _ = state.release_schedule.ensure_fresh(&state.shikimori).await;
 
-    let upcoming = state.release_schedule.get_upcoming_for_user(user.id, 7).await.unwrap_or_default();
+    let upcoming = match state
+        .release_schedule
+        .get_upcoming_for_user(user.id, 7)
+        .await
+    {
+        Ok(releases) => releases,
+        Err(e) => {
+            tracing::error!("Failed to load upcoming releases: {}", e);
+            Vec::new()
+        }
+    };
 
     HomeTemplate {
         username: user.username,
@@ -122,14 +164,27 @@ pub async fn get_home(
     .into()
 }
 
-pub async fn post_logout(
-    State(_state): State<AppState>,
-    _user: CurrentUser,
-) -> Response {
+fn logout_redirect() -> Response {
     let mut response = Redirect::to("/login").into_response();
     response.headers_mut().insert(
         SET_COOKIE,
-        HeaderValue::from_str("session_id=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0").unwrap(),
+        HeaderValue::from_static("session_id=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0"),
     );
     response
+}
+
+pub async fn post_logout(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    _user: CurrentUser,
+) -> Response {
+    // Invalidate the session server-side so a captured cookie cannot be
+    // replayed after logout. Clearing the cookie alone is not enough.
+    let Some(token) = crate::utils::session_cookie(&headers) else {
+        return logout_redirect();
+    };
+    if let Err(e) = state.auth.logout(&token).await {
+        tracing::warn!("Failed to delete session during logout: {}", e);
+    }
+    logout_redirect()
 }

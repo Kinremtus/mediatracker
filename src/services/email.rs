@@ -43,11 +43,7 @@ impl EmailService {
 }
 
 impl ResendEmailSender {
-    async fn send_password_reset(
-        &self,
-        to: &str,
-        reset_url: &str,
-    ) -> Result<(), anyhow::Error> {
+    async fn send_password_reset(&self, to: &str, reset_url: &str) -> Result<(), anyhow::Error> {
         let html = format!(
             "<p>Здравствуйте!</p>\
              <p>Вы запросили восстановление пароля. Перейдите по ссылке:</p>\

@@ -74,7 +74,10 @@ fn map_details(r: RawgDetails) -> CreateMediaItem {
 
     let mut details = serde_json::Map::new();
     if let Some(m) = r.metacritic {
-        details.insert("metacritic".to_string(), serde_json::Value::Number(m.into()));
+        details.insert(
+            "metacritic".to_string(),
+            serde_json::Value::Number(m.into()),
+        );
     }
 
     CreateMediaItem {

@@ -3,7 +3,9 @@ replicaCount: 1
 image:
   repository: ghcr.io/kinremtus/mediatracker
   tag: latest
-  pullPolicy: Always
+  # Immutable per-commit tags (CI passes --set image.tag=$GITHUB_SHA), so
+  # IfNotPresent is safe and avoids a registry round-trip on every start.
+  pullPolicy: IfNotPresent
 
 imagePullSecrets:
   - name: ghcr-auth
@@ -17,6 +19,18 @@ app:
   name: app
   port: 8080
 
+# Exactly one process may run the background refresh + Telegram notification
+# loop. The web Deployment disables it; the dedicated refresh Deployment
+# (templates/refresh-deployment.yaml) enables it.
+refreshLoopEnabled: false
+
+refreshDeployment:
+  enabled: true
+  replicas: 1
+
+# Time the kubelet gives in-flight requests to drain before SIGKILL.
+terminationGracePeriodSeconds: 30
+
 envFrom:
   - configMapRef:
       name: app-config
@@ -29,6 +43,8 @@ livenessProbe:
     port: 8080
   initialDelaySeconds: 10
   periodSeconds: 30
+  timeoutSeconds: 3
+  failureThreshold: 3
 
 readinessProbe:
   httpGet:
@@ -36,14 +52,16 @@ readinessProbe:
     port: 8080
   initialDelaySeconds: 5
   periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
 
 resources:
   limits:
-    memory: 256Mi
+    memory: 512Mi
     cpu: 500m
   requests:
     memory: 128Mi
-    cpu: 250m
+    cpu: 100m
 
 securityContext:
   readOnlyRootFilesystem: true
@@ -63,6 +81,35 @@ configMap:
   rustLog: "info"
   appBaseUrl: ""
   emailFrom: ""
+  # Background loops run only in the dedicated refresh Deployment (below), so
+  # the web pods disable both. Otherwise every HPA-scaled replica would run the
+  # provider metadata refresh and the release-schedule/Telegram loop.
+  refreshLoopEnabled: "false"
+  refreshIntervalSecs: "0"
+
+# Dedicated single-replica worker for all background work. Kept out of the web
+# Deployment so scaling the web tier never multiplies background jobs. It runs
+# the same image with SERVE_HTTP=false (no listener) and the loops re-enabled.
+refresh:
+  enabled: true
+  replicaCount: 1
+  intervalSecs: "1800"
+
+# ---------------------------------------------------------------------------
+# PostgreSQL is deployed from k8s/deployments/postgres-statefulset.yaml (raw
+# manifest), NOT from this chart. These keys carry the intended hardened
+# defaults so the same values can be reused if Postgres is ever templated into
+# the chart; they are currently documentation/reference only.
+# ---------------------------------------------------------------------------
+postgres:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  storage: 10Gi
 
 autoscaling:
   enabled: true

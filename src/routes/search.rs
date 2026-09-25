@@ -5,11 +5,11 @@ use axum::{
 };
 use serde::Deserialize;
 
+use super::home::SidebarStats;
 use crate::app_state::AppState;
 use crate::middleware::CurrentUser;
 use crate::models::media_item::{CreateMediaItem, SearchSuggestion};
 use crate::services::search;
-use super::home::SidebarStats;
 
 const ITEMS_PER_PAGE: usize = 24;
 
@@ -61,9 +61,11 @@ pub async fn get_search(
     };
 
     for item in &mut all_results {
-        if let Ok(Some(_)) = state.tracking.find_entry_by_media(
-            user.id, &item.provider, &item.external_id,
-        ).await {
+        if let Ok(Some(_)) = state
+            .tracking
+            .find_entry_by_media(user.id, &item.provider, &item.external_id)
+            .await
+        {
             item.is_tracked = true;
         }
     }
@@ -74,10 +76,7 @@ pub async fn get_search(
         (all_results.len() as f64 / ITEMS_PER_PAGE as f64).ceil() as u32
     };
 
-    let page = params
-        .page
-        .unwrap_or(1)
-        .clamp(1, total_pages);
+    let page = params.page.unwrap_or(1).clamp(1, total_pages);
 
     let page_idx = (page - 1) as usize;
     let results: Vec<CreateMediaItem> = all_results
@@ -88,11 +87,15 @@ pub async fn get_search(
 
     let stats = get_sidebar_stats(&state, &user).await;
 
-    let flash_message = params.flash.as_deref().map(|f| match f {
-        "added" => "✓ Медиа добавлено в список".to_string(),
-        "error" => "Ошибка при добавлении".to_string(),
-        _ => String::new(),
-    }).unwrap_or_default();
+    let flash_message = params
+        .flash
+        .as_deref()
+        .map(|f| match f {
+            "added" => "✓ Медиа добавлено в список".to_string(),
+            "error" => "Ошибка при добавлении".to_string(),
+            _ => String::new(),
+        })
+        .unwrap_or_default();
 
     SearchTemplate {
         username: user.username,
@@ -106,7 +109,12 @@ pub async fn get_search(
         flash_message,
         page,
         total_pages,
-        pages: (1..=total_pages).map(|p| PageItem { num: p, current: p == page }).collect(),
+        pages: (1..=total_pages)
+            .map(|p| PageItem {
+                num: p,
+                current: p == page,
+            })
+            .collect(),
     }
     .render()
     .unwrap()
@@ -135,9 +143,11 @@ pub async fn get_search_suggestions(
     let mut results = search::by_media_type(&state, &query, "").await;
 
     for item in &mut results {
-        if let Ok(Some(_)) = state.tracking.find_entry_by_media(
-            user.id, &item.provider, &item.external_id,
-        ).await {
+        if let Ok(Some(_)) = state
+            .tracking
+            .find_entry_by_media(user.id, &item.provider, &item.external_id)
+            .await
+        {
             item.is_tracked = true;
         }
     }
@@ -162,6 +172,16 @@ pub async fn get_search_suggestions(
 }
 
 async fn get_sidebar_stats(state: &AppState, user: &CurrentUser) -> SidebarStats {
-    let (ip, cp, pp, dp) = state.tracking.get_status_counts(user.id).await.unwrap_or_default();
-    SidebarStats { in_progress: ip, completed: cp, planned: pp, dropped: dp, role: user.role.clone() }
+    let (ip, cp, pp, dp) = state
+        .tracking
+        .get_status_counts(user.id)
+        .await
+        .unwrap_or_default();
+    SidebarStats {
+        in_progress: ip,
+        completed: cp,
+        planned: pp,
+        dropped: dp,
+        role: user.role.clone(),
+    }
 }

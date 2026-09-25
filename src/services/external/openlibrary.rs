@@ -58,7 +58,11 @@ impl OpenLibraryDescription {
 
 fn parse_year(s: Option<&str>) -> Option<i16> {
     s.and_then(|s| {
-        let year_str: String = s.chars().take_while(|c| c.is_ascii_digit()).take(4).collect();
+        let year_str: String = s
+            .chars()
+            .take_while(|c| c.is_ascii_digit())
+            .take(4)
+            .collect();
         year_str.parse::<i16>().ok()
     })
 }
@@ -69,9 +73,10 @@ fn parse_published_date(s: Option<&str>) -> Option<chrono::NaiveDate> {
         return Some(d);
     }
     if let Ok(y) = s.parse::<i32>()
-        && let Some(d) = chrono::NaiveDate::from_ymd_opt(y, 1, 1) {
-            return Some(d);
-        }
+        && let Some(d) = chrono::NaiveDate::from_ymd_opt(y, 1, 1)
+    {
+        return Some(d);
+    }
     None
 }
 
@@ -148,7 +153,9 @@ fn map_work(id: &str, work: OpenLibraryWork) -> Result<CreateMediaItem, anyhow::
         .title
         .clone()
         .ok_or_else(|| anyhow::anyhow!("Work has no title"))?;
-    let description = work.description.and_then(OpenLibraryDescription::into_string);
+    let description = work
+        .description
+        .and_then(OpenLibraryDescription::into_string);
 
     let poster_url = work
         .covers

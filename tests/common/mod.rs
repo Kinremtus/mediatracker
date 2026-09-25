@@ -1,7 +1,7 @@
 use mediatracker::app_state::AppState;
 use sqlx::PgPool;
-use testcontainers::runners::AsyncRunner;
 use testcontainers::ContainerAsync;
+use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::postgres::Postgres as PostgresImage;
 
 #[allow(dead_code)]

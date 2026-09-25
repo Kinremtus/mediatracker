@@ -178,9 +178,7 @@ fn balance(source: &str) -> (usize, usize, usize, usize, usize, usize) {
                                             i += 1;
                                             break 'nested;
                                         }
-                                        '$' if i + 1 < bytes.len()
-                                            && bytes[i + 1] == b'{' =>
-                                        {
+                                        '$' if i + 1 < bytes.len() && bytes[i + 1] == b'{' => {
                                             depth += 1;
                                             i += 2;
                                         }
@@ -242,8 +240,7 @@ fn read_root(path: &str) -> String {
 
 fn repo_path(rel: &str) -> PathBuf {
     // CARGO_MANIFEST_DIR is set by `cargo test` to the crate root.
-    let base = std::env::var("CARGO_MANIFEST_DIR")
-        .unwrap_or_else(|_| ".".to_string());
+    let base = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
     Path::new(&base).join(rel)
 }
 
@@ -356,8 +353,7 @@ fn search_html_calls_open_media_drawer() {
 fn drawer_content_has_delete_action() {
     let src = read_root(DRAWER_CONTENT_HTML);
     assert!(
-        src.contains("drawer-action-btn")
-            && (src.contains("delete") || src.contains("Удалить")),
+        src.contains("drawer-action-btn") && (src.contains("delete") || src.contains("Удалить")),
         "{DRAWER_CONTENT_HTML}: drawer must expose a delete action button. \
          `drawer-action-btn` with class `delete` is what app.js's afterDelete fallback listens for."
     );

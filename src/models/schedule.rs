@@ -1,4 +1,4 @@
-use chrono::{NaiveDate, DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]
@@ -21,7 +21,9 @@ impl ReleaseEntry {
     }
 
     pub fn poster_or_placeholder(&self) -> &str {
-        self.poster_url.as_deref().unwrap_or("/static/images/placeholders/poster.svg")
+        self.poster_url
+            .as_deref()
+            .unwrap_or("/static/images/placeholders/poster.svg")
     }
 }
 

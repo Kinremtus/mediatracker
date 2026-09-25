@@ -20,3 +20,12 @@ docs/
 scripts/
 backups/
 *.sql.gz
+
+# Infrastructure as Code (build context does not need Terraform)
+terraform/
+**/*.tfstate*
+*.tfvars
+
+# Local AI tooling / planning artifacts
+.opencode/
+thoughts/

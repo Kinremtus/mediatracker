@@ -1,19 +1,16 @@
 use askama::Template;
-use axum::{
-    extract::State,
-    response::Html,
-};
 use askama::filters::Safe;
+use axum::{extract::State, response::Html};
 
 use std::collections::HashMap;
 
 use chrono::NaiveDate;
 
+use super::home::SidebarStats;
 use crate::app_state::AppState;
 use crate::middleware::CurrentUser;
 use crate::models::stats::{StatsOverview, TitleProgress};
 use crate::utils::activity_calendar::build_activity_calendar;
-use super::home::SidebarStats;
 
 fn translate_status(status: &str) -> String {
     match status {
@@ -63,17 +60,18 @@ struct StatsTemplate {
     current_status: String,
 }
 
-pub async fn get_stats(
-    user: CurrentUser,
-    State(state): State<AppState>,
-) -> Html<String> {
+pub async fn get_stats(user: CurrentUser, State(state): State<AppState>) -> Html<String> {
     let mut overview = state.stats.get_overview(user.id).await.unwrap_or_default();
     let activity_by_day: HashMap<NaiveDate, i32> = state
         .stats
         .get_activity_by_day(user.id)
         .await
         .unwrap_or_default();
-    let progress = state.stats.get_title_progress(user.id).await.unwrap_or_default();
+    let progress = state
+        .stats
+        .get_title_progress(user.id)
+        .await
+        .unwrap_or_default();
     let sidebar_stats = get_sidebar_stats(&state, &user).await;
 
     let calendar = build_activity_calendar(&activity_by_day);
@@ -87,12 +85,25 @@ pub async fn get_stats(
     }
 
     // Create status labels (status_key, label, count, percentage)
-    let status_labels: Vec<(String, String, i32, i32)> = overview.status_counts.iter().map(|sc| {
-        (sc.status.clone(), translate_status(&sc.status), sc.count, sc.percentage)
-    }).collect();
+    let status_labels: Vec<(String, String, i32, i32)> = overview
+        .status_counts
+        .iter()
+        .map(|sc| {
+            (
+                sc.status.clone(),
+                translate_status(&sc.status),
+                sc.count,
+                sc.percentage,
+            )
+        })
+        .collect();
 
     // Translate top category
-    let top_category_label = overview.top_category.as_ref().map(|t| translate_media_type(t)).unwrap_or_else(|| "—".to_string());
+    let top_category_label = overview
+        .top_category
+        .as_ref()
+        .map(|t| translate_media_type(t))
+        .unwrap_or_else(|| "—".to_string());
 
     StatsTemplate {
         username: user.username,
@@ -115,6 +126,16 @@ pub async fn get_stats(
 }
 
 async fn get_sidebar_stats(state: &AppState, user: &CurrentUser) -> SidebarStats {
-    let (ip, cp, pp, dp) = state.tracking.get_status_counts(user.id).await.unwrap_or_default();
-    SidebarStats { in_progress: ip, completed: cp, planned: pp, dropped: dp, role: user.role.clone() }
+    let (ip, cp, pp, dp) = state
+        .tracking
+        .get_status_counts(user.id)
+        .await
+        .unwrap_or_default();
+    SidebarStats {
+        in_progress: ip,
+        completed: cp,
+        planned: pp,
+        dropped: dp,
+        role: user.role.clone(),
+    }
 }

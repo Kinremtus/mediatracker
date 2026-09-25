@@ -133,19 +133,11 @@ fn media_type_for(series_type: Option<&str>) -> String {
         Some("Manhwa") => "manhwa".to_string(),
         Some("Manhua") => "manhua".to_string(),
         Some("Novel") => "novel".to_string(),
-        Some("OEL")
-        | Some("Doujinshi")
-        | Some("Filipino")
-        | Some("Indonesian")
-        | Some("Thai")
-        | Some("Vietnamese")
-        | Some("Malaysian")
-        | Some("Nordic")
-        | Some("French")
-        | Some("Spanish")
-        | Some("German")
-        | Some("Drama CD")
-        | Some("Artbook") => "other-comics".to_string(),
+        Some("OEL") | Some("Doujinshi") | Some("Filipino") | Some("Indonesian") | Some("Thai")
+        | Some("Vietnamese") | Some("Malaysian") | Some("Nordic") | Some("French")
+        | Some("Spanish") | Some("German") | Some("Drama CD") | Some("Artbook") => {
+            "other-comics".to_string()
+        }
         _ => "manga".to_string(),
     }
 }
@@ -230,19 +222,22 @@ fn map_series(series: MangaUpdatesSeries) -> CreateMediaItem {
         .map(|p| p.publication_name.clone())
         .collect();
 
-    let year_parsed = series
-        .year
-        .as_ref()
-        .and_then(|y| y.parse::<i16>().ok());
+    let year_parsed = series.year.as_ref().and_then(|y| y.parse::<i16>().ok());
 
     let (status, volumes) = parse_mu_status(series.status);
 
     let mut details = serde_json::Map::new();
     if let Some(start) = series.anime.as_ref().and_then(|a| a.start.clone()) {
-        details.insert("anime_start_chapter".to_string(), serde_json::Value::String(start));
+        details.insert(
+            "anime_start_chapter".to_string(),
+            serde_json::Value::String(start),
+        );
     }
     if let Some(end) = series.anime.as_ref().and_then(|a| a.end.clone()) {
-        details.insert("anime_end_chapter".to_string(), serde_json::Value::String(end));
+        details.insert(
+            "anime_end_chapter".to_string(),
+            serde_json::Value::String(end),
+        );
     }
 
     CreateMediaItem {
@@ -427,7 +422,10 @@ mod tests {
         assert!(item.genres.contains(&"Adventure".to_string()));
         assert!(item.authors.contains(&"Kishimoto Masashi".to_string()));
         assert!(item.publishers.contains(&"Shueisha".to_string()));
-        assert!(item.serialized_in.contains(&"Shukan Shounen Jump".to_string()));
+        assert!(
+            item.serialized_in
+                .contains(&"Shukan Shounen Jump".to_string())
+        );
         assert!(item.categories.contains(&"Adapted to Anime".to_string()));
         let details = item.details.expect("details should exist");
         assert_eq!(

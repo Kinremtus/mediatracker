@@ -60,22 +60,18 @@ fn season_name(season_number: i32) -> String {
     }
 }
 
-async fn get_media_id_by_external(
-    pool: &sqlx::PgPool,
-    external_id: &str,
-) -> Option<Uuid> {
-    sqlx::query_scalar(
-        "SELECT id FROM media_items WHERE provider = 'tmdb' AND external_id = $1",
-    )
-    .bind(external_id)
-    .fetch_optional(pool)
-    .await
-    .unwrap_or(None)
+async fn get_media_id_by_external(pool: &sqlx::PgPool, external_id: &str) -> Option<Uuid> {
+    sqlx::query_scalar("SELECT id FROM media_items WHERE provider = 'tmdb' AND external_id = $1")
+        .bind(external_id)
+        .fetch_optional(pool)
+        .await
+        .unwrap_or(None)
 }
 
 async fn build_season_rows_from_tmdb(
     state: &AppState,
     external_id: &str,
+    user_id: Uuid,
 ) -> Vec<TmdbSeasonRowData> {
     let seasons = match state.tmdb.fetch_seasons(external_id).await {
         Ok(s) => s,
@@ -85,11 +81,11 @@ async fn build_season_rows_from_tmdb(
         }
     };
 
-    let watched_counts: std::collections::HashMap<i32, i32> = crate::services::tmdb_episodes
-        ::get_season_watched_counts(&state.db, external_id)
-        .await
-        .map(|v| v.into_iter().collect())
-        .unwrap_or_default();
+    let watched_counts: std::collections::HashMap<i32, i32> =
+        crate::services::tmdb_episodes::get_season_watched_counts(&state.db, external_id, user_id)
+            .await
+            .map(|v| v.into_iter().collect())
+            .unwrap_or_default();
 
     let mut rows: Vec<TmdbSeasonRowData> = seasons
         .into_iter()
@@ -114,13 +110,12 @@ async fn build_season_rows_from_tmdb(
 async fn build_season_rows_from_db(
     state: &AppState,
     external_id: &str,
+    user_id: Uuid,
 ) -> Vec<TmdbSeasonRowData> {
-    let groups = crate::services::tmdb_episodes::get_season_group_counts(
-        &state.db,
-        external_id,
-    )
-    .await
-    .unwrap_or_default();
+    let groups =
+        crate::services::tmdb_episodes::get_season_group_counts(&state.db, external_id, user_id)
+            .await
+            .unwrap_or_default();
 
     let mut rows: Vec<TmdbSeasonRowData> = groups
         .into_iter()
@@ -139,12 +134,13 @@ async fn build_season_rows_from_db(
 }
 
 pub async fn get_tmdb_seasons(
+    user: CurrentUser,
     State(state): State<AppState>,
     Path(external_id): Path<String>,
 ) -> impl IntoResponse {
-    let mut rows = build_season_rows_from_tmdb(&state, &external_id).await;
+    let mut rows = build_season_rows_from_tmdb(&state, &external_id, user.id).await;
     if rows.is_empty() {
-        rows = build_season_rows_from_db(&state, &external_id).await;
+        rows = build_season_rows_from_db(&state, &external_id, user.id).await;
     }
 
     let html = TmdbSeasonsV2Template { rows, external_id }
@@ -164,6 +160,7 @@ pub async fn post_tmdb_season_watched(
 ) -> impl IntoResponse {
     if let Err(e) = crate::services::tmdb_episodes::set_season_watched(
         &state.db,
+        user.id,
         &external_id,
         season_number,
         form.watched,
@@ -176,6 +173,7 @@ pub async fn post_tmdb_season_watched(
 
     let max_watched = crate::services::tmdb_episodes::get_total_watched_episodes(
         &state.db,
+        user.id,
         &external_id,
     )
     .await
@@ -197,6 +195,7 @@ pub async fn post_tmdb_season_watched(
         &state.db,
         &external_id,
         season_number,
+        user.id,
     )
     .await
     .unwrap_or((0, 0));
@@ -233,10 +232,8 @@ pub async fn post_tmdb_season_watched(
     }
 
     let mut resp = Html(oob_html).into_response();
-    resp.headers_mut().insert(
-        "HX-Trigger",
-        trigger.to_string().parse().unwrap(),
-    );
+    resp.headers_mut()
+        .insert("HX-Trigger", trigger.to_string().parse().unwrap());
     resp
 }
 
@@ -250,6 +247,7 @@ async fn render_episodes(
         &state.db,
         external_id,
         season_number,
+        user.id,
     )
     .await
     .unwrap_or_default();
@@ -270,32 +268,11 @@ async fn render_episodes(
         tracing::warn!(external_id, season_number, error = %e, "store episodes failed");
     }
 
-    // Sync user's tracking progress into tmdb_episodes watched state
-    if let Some(media_id) = get_media_id_by_external(&state.db, external_id).await {
-        let user_progress: Option<i32> = sqlx::query_scalar(
-            "SELECT progress FROM tracking_entries WHERE user_id = $1 AND media_id = $2",
-        )
-        .bind(user.id)
-        .bind(media_id)
-        .fetch_optional(&state.db)
-        .await
-        .unwrap_or(None);
-        if let Some(progress) = user_progress.filter(|&p| p > 0)
-            && let Err(e) = crate::services::tmdb_episodes::sync_tmdb_episodes_from_progress(
-                &state.db,
-                external_id,
-                progress,
-            )
-            .await
-        {
-            tracing::warn!(external_id, error = %e, "sync tmdb episodes failed");
-        }
-    }
-
     episodes = crate::services::tmdb_episodes::get_episodes(
         &state.db,
         external_id,
         season_number,
+        user.id,
     )
     .await
     .unwrap_or_default();
@@ -328,6 +305,7 @@ pub async fn set_tmdb_episode_watched(
 ) -> impl IntoResponse {
     if let Err(e) = crate::services::tmdb_episodes::set_watched(
         &state.db,
+        user.id,
         &external_id,
         season_number,
         episode_number,
@@ -341,6 +319,7 @@ pub async fn set_tmdb_episode_watched(
 
     let total_watched = crate::services::tmdb_episodes::get_total_watched_episodes(
         &state.db,
+        user.id,
         &external_id,
     )
     .await
@@ -365,10 +344,14 @@ pub async fn set_tmdb_episode_watched(
             &state.db,
             &external_id,
             season_number,
+            user.id,
         )
         .await
         .unwrap_or_default();
-        if let Some(ep) = episodes.iter_mut().find(|e| e.episode_number == episode_number) {
+        if let Some(ep) = episodes
+            .iter_mut()
+            .find(|e| e.episode_number == episode_number)
+        {
             TmdbEpisodeItemTemplate {
                 episode: ep.clone(),
                 external_id: external_id.clone(),
@@ -384,6 +367,7 @@ pub async fn set_tmdb_episode_watched(
         &state.db,
         &external_id,
         season_number,
+        user.id,
     )
     .await
     .unwrap_or((0, 0));
@@ -408,6 +392,7 @@ pub async fn set_tmdb_episode_watched(
 
     let states = crate::services::tmdb_episodes::get_episode_states(
         &state.db,
+        user.id,
         &external_id,
         season_number,
     )
@@ -434,9 +419,7 @@ pub async fn set_tmdb_episode_watched(
     }
     let combined = format!("{}{}", episode_html, oob_html);
     let mut resp = Html(combined).into_response();
-    resp.headers_mut().insert(
-        "HX-Trigger",
-        trigger.to_string().parse().unwrap(),
-    );
+    resp.headers_mut()
+        .insert("HX-Trigger", trigger.to_string().parse().unwrap());
     resp
 }

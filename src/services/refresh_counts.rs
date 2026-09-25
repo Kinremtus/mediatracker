@@ -1,5 +1,5 @@
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
 use sqlx::PgPool;
@@ -17,8 +17,11 @@ use crate::services::external::openlibrary::OpenLibraryService;
 use crate::services::external::rawg::RawgService;
 use crate::services::external::shikimori::ShikimoriService;
 use crate::services::external::tmdb::TmdbService;
+use crate::services::notifications::TelegramNotifier;
+use crate::services::release_schedule::ReleaseScheduleService;
 
 const REFRESH_INTERVAL: Duration = Duration::from_secs(6 * 3600);
+const NOTIFY_INTERVAL: Duration = Duration::from_secs(15 * 60);
 const LOCK_ID: i64 = 42;
 
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -48,6 +51,8 @@ pub struct RefreshCtx {
     pub igdb: IgdbService,
     pub google_books: GoogleBooksService,
     pub openlibrary: OpenLibraryService,
+    pub release_schedule: ReleaseScheduleService,
+    pub telegram: TelegramNotifier,
 }
 
 #[derive(Clone)]
@@ -63,7 +68,11 @@ enum Provider {
 }
 
 impl Provider {
-    async fn fetch(&self, external_id: &str, media_type: &str) -> Result<CreateMediaItem, anyhow::Error> {
+    async fn fetch(
+        &self,
+        external_id: &str,
+        media_type: &str,
+    ) -> Result<CreateMediaItem, anyhow::Error> {
         match self {
             Self::Shikimori(s) => s.get_details(external_id).await,
             Self::Mal(s) => s.get_details(external_id).await,
@@ -111,8 +120,12 @@ impl Provider {
 }
 
 pub async fn run_refresh_loop(ctx: RefreshCtx, cancel: CancellationToken) {
-    let mut interval = tokio::time::interval(REFRESH_INTERVAL);
-    interval.tick().await;
+    let mut refresh_interval = tokio::time::interval(REFRESH_INTERVAL);
+    let mut notify_interval = tokio::time::interval(NOTIFY_INTERVAL);
+    // Consume the immediate first tick of each interval so the first cycle
+    // runs after a full period (preserves the previous refresh behaviour).
+    refresh_interval.tick().await;
+    notify_interval.tick().await;
 
     loop {
         tokio::select! {
@@ -120,19 +133,33 @@ pub async fn run_refresh_loop(ctx: RefreshCtx, cancel: CancellationToken) {
                 info!("refresh_counts: cancelled, shutting down");
                 break;
             }
-            _ = interval.tick() => {
+            _ = refresh_interval.tick() => {
                 if let Err(e) = try_refresh(&ctx).await {
                     warn!(error = %e, "refresh_counts: cycle failed");
+                }
+            }
+            _ = notify_interval.tick() => {
+                if let Err(e) = run_notify_cycle(&ctx).await {
+                    warn!(error = %e, "refresh_counts: notify cycle failed");
                 }
             }
         }
     }
 }
 
+/// Acquire the cycle advisory lock on a dedicated connection.
+///
+/// Advisory locks are session-scoped, so `pg_try_advisory_lock` and
+/// `pg_advisory_unlock` MUST run on the same physical connection. Checking out
+/// one pooled connection for the whole cycle also guarantees the lock is held
+/// for the entire duration of the work (previously it was taken and released
+/// possibly on different pooled connections, which made it useless).
 async fn try_refresh(ctx: &RefreshCtx) -> Result<(), anyhow::Error> {
+    let mut conn = ctx.db.acquire().await?;
+
     let (locked,): (bool,) = sqlx::query_as("SELECT pg_try_advisory_lock($1)")
         .bind(LOCK_ID)
-        .fetch_one(&ctx.db)
+        .fetch_one(&mut *conn)
         .await?;
 
     if !locked {
@@ -142,10 +169,54 @@ async fn try_refresh(ctx: &RefreshCtx) -> Result<(), anyhow::Error> {
 
     let result = do_refresh(ctx).await;
 
-    sqlx::query("SELECT pg_advisory_unlock($1)")
+    if let Err(e) = sqlx::query("SELECT pg_advisory_unlock($1)")
         .bind(LOCK_ID)
-        .execute(&ctx.db)
+        .execute(&mut *conn)
+        .await
+    {
+        warn!(error = %e, "refresh_counts: failed to release advisory lock");
+    }
+
+    result
+}
+
+/// Refresh the release schedule and send Telegram notifications.
+///
+/// Guarded by the same advisory lock so only one replica notifies; the
+/// per-notification atomic claim inside `notify_new_episodes` is the second
+/// line of defence against duplicates.
+async fn run_notify_cycle(ctx: &RefreshCtx) -> Result<(), anyhow::Error> {
+    let mut conn = ctx.db.acquire().await?;
+
+    let (locked,): (bool,) = sqlx::query_as("SELECT pg_try_advisory_lock($1)")
+        .bind(LOCK_ID)
+        .fetch_one(&mut *conn)
         .await?;
+
+    if !locked {
+        return Ok(());
+    }
+
+    let result: Result<(), anyhow::Error> = async {
+        ctx.release_schedule.ensure_fresh(&ctx.shikimori).await?;
+        let sent = ctx
+            .release_schedule
+            .notify_new_episodes(&ctx.telegram)
+            .await?;
+        if sent > 0 {
+            info!(sent, "refresh_counts: telegram notifications sent");
+        }
+        Ok(())
+    }
+    .await;
+
+    if let Err(e) = sqlx::query("SELECT pg_advisory_unlock($1)")
+        .bind(LOCK_ID)
+        .execute(&mut *conn)
+        .await
+    {
+        warn!(error = %e, "refresh_counts: failed to release advisory lock");
+    }
 
     result
 }
@@ -184,7 +255,11 @@ async fn do_refresh(ctx: &RefreshCtx) -> Result<(), anyhow::Error> {
             "google_books" => Some(Provider::GoogleBooks(ctx.google_books.clone())),
             "openlibrary" => Some(Provider::OpenLibrary(ctx.openlibrary.clone())),
             other => {
-                debug!(provider = other, n = items.len(), "refresh_counts: unknown provider, skipping");
+                debug!(
+                    provider = other,
+                    n = items.len(),
+                    "refresh_counts: unknown provider, skipping"
+                );
                 None
             }
         };
@@ -199,7 +274,8 @@ async fn do_refresh(ctx: &RefreshCtx) -> Result<(), anyhow::Error> {
 }
 
 fn group_by_provider(rows: &[MediaItemRow]) -> std::collections::HashMap<&str, Vec<&MediaItemRow>> {
-    let mut map: std::collections::HashMap<&str, Vec<&MediaItemRow>> = std::collections::HashMap::new();
+    let mut map: std::collections::HashMap<&str, Vec<&MediaItemRow>> =
+        std::collections::HashMap::new();
     for row in rows {
         map.entry(row.provider.as_str()).or_default().push(row);
     }
@@ -232,17 +308,15 @@ async fn refresh_group(db: &PgPool, items: Vec<MediaItemRow>, provider: Provider
             let _permit = permit;
             tokio::time::sleep(delay).await;
             match provider.fetch(&ext_id, &media_type).await {
-                Ok(details) => {
-                    match update_item(&db, &item, &details).await {
-                        Ok(true) => {
-                            updated.fetch_add(1, Ordering::Relaxed);
-                        }
-                        Ok(false) => {}
-                        Err(e) => {
-                            warn!(external_id = %ext_id, error = %e, "refresh: update_item failed");
-                        }
+                Ok(details) => match update_item(&db, &item, &details).await {
+                    Ok(true) => {
+                        updated.fetch_add(1, Ordering::Relaxed);
                     }
-                }
+                    Ok(false) => {}
+                    Err(e) => {
+                        warn!(external_id = %ext_id, error = %e, "refresh: update_item failed");
+                    }
+                },
                 Err(e) => {
                     warn!(external_id = %ext_id, error = %e, "refresh: fetch failed");
                 }
@@ -258,14 +332,15 @@ async fn refresh_group(db: &PgPool, items: Vec<MediaItemRow>, provider: Provider
     let unchanged = total - updated;
     info!(
         provider = provider.name(),
-        total,
-        updated,
-        unchanged,
-        "refresh_counts: provider done"
+        total, updated, unchanged, "refresh_counts: provider done"
     );
 }
 
-async fn update_item(db: &PgPool, old: &MediaItemRow, new: &CreateMediaItem) -> Result<bool, anyhow::Error> {
+async fn update_item(
+    db: &PgPool,
+    old: &MediaItemRow,
+    new: &CreateMediaItem,
+) -> Result<bool, anyhow::Error> {
     let result = sqlx::query(
         r#"
         UPDATE media_items

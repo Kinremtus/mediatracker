@@ -43,7 +43,11 @@ struct GoogleBooksImageLinks {
 fn parse_year(s: Option<&str>) -> Option<i16> {
     s.and_then(|s| {
         // "1999" или "1999-05-15" — берём первые 4 цифры
-        let year_str: String = s.chars().take_while(|c| c.is_ascii_digit()).take(4).collect();
+        let year_str: String = s
+            .chars()
+            .take_while(|c| c.is_ascii_digit())
+            .take(4)
+            .collect();
         year_str.parse::<i16>().ok()
     })
 }
@@ -60,9 +64,10 @@ fn parse_published_date(s: Option<&str>) -> Option<chrono::NaiveDate> {
     }
     // YYYY
     if let Ok(y) = s.parse::<i32>()
-        && let Some(d) = chrono::NaiveDate::from_ymd_opt(y, 1, 1) {
-            return Some(d);
-        }
+        && let Some(d) = chrono::NaiveDate::from_ymd_opt(y, 1, 1)
+    {
+        return Some(d);
+    }
     None
 }
 
@@ -85,10 +90,16 @@ fn map_item(r: GoogleBooksItem) -> CreateMediaItem {
 
     let mut details = serde_json::Map::new();
     if let Some(lang) = r.volume_info.language.as_ref() {
-        details.insert("language".to_string(), serde_json::Value::String(lang.clone()));
+        details.insert(
+            "language".to_string(),
+            serde_json::Value::String(lang.clone()),
+        );
     }
     if let Some(pt) = r.volume_info.print_type.as_ref() {
-        details.insert("print_type".to_string(), serde_json::Value::String(pt.clone()));
+        details.insert(
+            "print_type".to_string(),
+            serde_json::Value::String(pt.clone()),
+        );
     }
 
     CreateMediaItem {
@@ -173,7 +184,12 @@ impl GoogleBooksService {
 
         let response = self.client.get(url.as_str()).send().await?;
         let results: GoogleBooksResponse = response.json().await?;
-        Ok(results.items.unwrap_or_default().into_iter().map(map_item).collect())
+        Ok(results
+            .items
+            .unwrap_or_default()
+            .into_iter()
+            .map(map_item)
+            .collect())
     }
 
     pub async fn get_details(&self, id: &str) -> Result<CreateMediaItem, anyhow::Error> {

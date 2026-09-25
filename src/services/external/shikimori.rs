@@ -48,10 +48,7 @@ where
             .as_f64()
             .map(Some)
             .ok_or_else(|| serde::de::Error::custom("invalid number")),
-        Some(serde_json::Value::String(s)) => s
-            .parse()
-            .map(Some)
-            .map_err(serde::de::Error::custom),
+        Some(serde_json::Value::String(s)) => s.parse().map(Some).map_err(serde::de::Error::custom),
         _ => Err(serde::de::Error::custom("expected number or string")),
     }
 }
@@ -134,15 +131,18 @@ fn map_anime(r: ShikimoriSearchResult) -> CreateMediaItem {
     // aired_on / released_on могут быть одинаковыми для аниме; используем aired_on
     let (aired_from, aired_to) = (r.aired_on, r.released_on);
 
-    let format_type = r.kind.as_ref().map(|k| match k.as_str() {
-        "tv" => "TV",
-        "movie" => "Movie",
-        "ova" => "OVA",
-        "ona" => "ONA",
-        "special" => "Special",
-        "music" => "Music",
-        other => other,
-    }.to_string());
+    let format_type = r.kind.as_ref().map(|k| {
+        match k.as_str() {
+            "tv" => "TV",
+            "movie" => "Movie",
+            "ova" => "OVA",
+            "ona" => "ONA",
+            "special" => "Special",
+            "music" => "Music",
+            other => other,
+        }
+        .to_string()
+    });
 
     let duration_text = r.duration.map(|m| format!("{m} min."));
 
@@ -259,7 +259,10 @@ impl ShikimoriService {
     /// shikimori.one and shikimori.io. We use Jikan v4 for episodes
     /// instead (see `MalService::fetch_episodes` in `mal.rs`). This
     /// method is kept for when Shikimori restores the endpoint.
-    pub async fn fetch_episodes(&self, shikimori_id: i64) -> Result<Vec<ShikimoriEpisode>, anyhow::Error> {
+    pub async fn fetch_episodes(
+        &self,
+        shikimori_id: i64,
+    ) -> Result<Vec<ShikimoriEpisode>, anyhow::Error> {
         let url = format!("{}/animes/{}/episodes", BASE_URL, shikimori_id);
         let response = self.client.get(&url).send().await?;
         if !response.status().is_success() {
