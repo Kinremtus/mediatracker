@@ -46,7 +46,7 @@ spec:
             - name: REFRESH_INTERVAL_SECS
               value: {{ .Values.refreshDeployment.intervalSecs | quote }}
           resources:
-            {{- toYaml .Values.resources | nindent 12 }}
+            {{- toYaml .Values.refreshDeployment.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           {{- with .Values.tmpVolume }}

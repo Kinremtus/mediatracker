@@ -1,3 +1,10 @@
+# Capacity budget (learned the hard way). VPS1 allocates 1 CPU / 2 GiB and
+# the kubelet only schedules pods whose CPU *requests* fit. Static load:
+# kube-system ~200m + monitoring ~500m. This chart adds postgres 100m +
+# refresh 25m + 2 x app 50m = ~925m of 1000m. Crossing that line leaves a
+# pod Pending, `helm --atomic` then times out and rolls the whole release
+# back - which is exactly how the first attempt at this deploy ended.
+# Keep the sum below ~950m, or move monitoring off this node.
 # Two replicas keep the app available during rolling updates and node
 # drains: with podDisruptionBudget.minAvailable: 1 a single replica
 # would block voluntary evictions (kubectl drain) indefinitely.
@@ -12,6 +19,15 @@ image:
 
 # Optional. Left empty the key renders nothing, so a public image (or a node
 # that is already authenticated) does not need a bogus pull secret.
+#
+# [!] ghcr.io/kinremtus/mediatracker is currently PRIVATE and the token in
+# the ghcr-auth secret is dead: kubelet gets `403 Forbidden` on the oauth
+# token endpoint, which is what took prod down on 2026-09-26. Two ways out:
+#   a) make the package public (package settings -> Change visibility) and
+#      leave this empty - nothing left to rotate, which is what the chart
+#      assumes; or
+#   b) keep it private: set imagePullSecrets: [{name: ghcr-auth}] and refresh
+#      that secret with a PAT that carries read:packages.
 imagePullSecrets: []
 
 # The app never calls the Kubernetes API, so it gets a dedicated
@@ -38,6 +54,15 @@ refreshDeployment:
   replicas: 1
   # Interval for the release-schedule/Telegram loop inside the worker.
   intervalSecs: "1800"
+  # Explicit requests: without them the container inherits the LimitRange
+  # defaultRequest (100m), which this node cannot afford.
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
 
 # Time the kubelet gives in-flight requests to drain before SIGKILL.
 terminationGracePeriodSeconds: 30
@@ -83,7 +108,9 @@ resources:
     cpu: 500m
   requests:
     memory: 128Mi
-    cpu: 100m
+    # 50m, not 100m: on a 1-vCPU node three pods' worth of requests decide
+    # whether a rolling update schedules or sits Pending.
+    cpu: 50m
 
 securityContext:
   readOnlyRootFilesystem: true
@@ -169,7 +196,10 @@ podDisruptionBudget:
   minAvailable: 1
 
 autoscaling:
-  enabled: true
+  # Disabled: the node has 1 vCPU, so scale-up cannot be scheduled, and an
+  # HPA ramp during a rollout is what pushed pods into Pending. Two static
+  # replicas + PDB minAvailable 1 keep drains safe. Re-enable when VPS1 grows.
+  enabled: false
   minReplicas: 2
   maxReplicas: 5
   targetCPU: 70
@@ -180,11 +210,11 @@ autoscaling:
 # These used to be a loose k8s/resourcequota.yaml, which the CI deploy never
 # applied (it applies only k8s/<dir>/ directories) - so the namespace ran
 # without any quota in practice. Sizing must survive the worst case
-# (autoscaling.maxReplicas: 5) plus the Postgres StatefulSet, the refresh
-# worker and one backup Job:
+# (autoscaling disabled: replicaCount 2) plus the Postgres StatefulSet, the
+# refresh worker and one backup Job:
 #
-#   limits:  5x app 500m/512Mi + postgres 1000m/1Gi
-#            + refresh 500m/512Mi + backup 500m/256Mi  ~= 4.5 CPU / 4.3Gi
+#   limits:  2x app 500m/512Mi + postgres 1000m/1Gi
+#            + refresh 250m/256Mi + backup 500m/256Mi  ~= 2.8 CPU / 2.5Gi
 #
 # hence limits.cpu/limits.memory = 6 with headroom. requests stay low because
 # the node is small; pods/PVCs simply cap runaway fan-out.

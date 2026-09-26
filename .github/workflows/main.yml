@@ -140,3 +140,21 @@ jobs:
             # --atomic: roll back automatically if the rollout does not become
             # ready within the timeout, instead of leaving a broken release.
             sudo helm --kubeconfig /etc/rancher/k3s/k3s.yaml upgrade --install app chart/ --namespace mediatracker --create-namespace --atomic --timeout 10m --set image.tag=${{ github.sha }} --set configMap.appBaseUrl=https://$APP_HOST --set configMap.emailFrom="MediaTracker <no-reply@$APP_HOST>"
+
+            # Post-deploy smoke check. --atomic only watches Kubernetes
+            # readiness: a pod can be Ready while the app answers 500, or the
+            # Tunnel/ingress can be broken. Fail the job instead of reporting
+            # a green deploy that left prod down.
+            ok=0
+            for _ in $(seq 1 30); do
+              if curl -fsS --max-time 5 "https://$APP_HOST/health" >/dev/null; then
+                ok=1
+                break
+              fi
+              sleep 5
+            done
+            if [ "$ok" != "1" ]; then
+              echo "post-deploy health check FAILED: https://$APP_HOST/health"
+              exit 1
+            fi
+            echo "post-deploy health check OK"
