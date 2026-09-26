@@ -1,4 +1,6 @@
-use crate::services::external::mangadex::{MangaDexChapter, MangaDexService};
+use crate::services::external::mangadex::{
+    MangaDexChapter, MangaDexMangaAttributes, MangaDexService,
+};
 use sqlx::PgPool;
 use std::collections::HashMap;
 
@@ -541,16 +543,20 @@ pub async fn enrich_from_mangadex(
 
     // MangaDex search is fuzzy and `search_results[0]` can be an unrelated
     // series: verify title similarity before writing another title's data.
-    let Some(candidate) = search_results
+    // Exact normalized matches win across the whole list, so a fuzzy hit
+    // ranked first can never shadow a later exact hit.
+    let attributes: Vec<MangaDexMangaAttributes> = search_results
         .iter()
-        .find(|r| mangadex_title_matches(&title, &r.attributes.title))
-    else {
+        .map(|r| r.attributes.clone())
+        .collect();
+    let Some(idx) = select_mangadex_candidate(&title, &attributes) else {
         tracing::info!(
             title = %title,
             "MangaDex: no close title match, skipping enrichment"
         );
         return Ok(0);
     };
+    let candidate = &search_results[idx];
     let md_chapters = md.get_chapters(&candidate.id).await?;
 
     let rows = build_md_rows(&md_chapters);
@@ -564,11 +570,13 @@ pub async fn enrich_from_mangadex(
     Ok(affected)
 }
 
-/// Normalize a title for comparison: lowercase, non-alphanumeric -> space,
-/// collapsed whitespace.
+/// Normalize a title for comparison: lowercase, strip apostrophes (so
+/// "Extra's" and "Extras" collapse to the same token stream), then map every
+/// other non-alphanumeric to a space and collapse whitespace.
 fn normalize_title(raw: &str) -> String {
     raw.to_lowercase()
         .chars()
+        .filter(|c| !matches!(c, '\'' | '\u{2019}' | '`'))
         .map(|c| if c.is_alphanumeric() { c } else { ' ' })
         .collect::<String>()
         .split_whitespace()
@@ -588,15 +596,28 @@ fn token_overlap(a: &str, b: &str) -> f32 {
     intersection / union
 }
 
-/// True when ANY MangaDex title variant plausibly denotes the local title.
-/// Deliberately conservative: a false negative only skips enrichment, while a
-/// false positive would overwrite chapter titles from an unrelated series.
-fn mangadex_title_matches(local: &str, titles: &HashMap<String, String>) -> bool {
+/// Token overlap required in addition to a prefix relationship. "Solo Leveling"
+/// vs "Solo Leveling: Ragnarok" is 2/3 (~0.667) and must match, while "Naruto"
+/// vs "NARUTO: Sasuke Retsuden ..." is ~1/9 and must not.
+const PREFIX_MIN_OVERLAP: f32 = 0.66;
+
+/// True when ANY MangaDex title variant (primary `title` or any `altTitles`
+/// value) plausibly denotes the local title. Deliberately conservative: a false
+/// negative only skips enrichment, while a false positive would write chapter
+/// titles from an unrelated series (the "Naruto" vs "Renge to Naruto!" bug).
+///
+/// A candidate matches only on:
+///   1. exact equality after normalization, or
+///   2. a whole-word prefix relationship AND token overlap >= 0.66.
+///
+/// Bare containment is intentionally NOT enough: 'naruto' is contained in
+/// 'renge to naruto', which previously polluted the wrong series.
+fn mangadex_title_matches(local: &str, attributes: &MangaDexMangaAttributes) -> bool {
     let local_norm = normalize_title(local);
     if local_norm.is_empty() {
         return false;
     }
-    titles.values().any(|candidate| {
+    attributes.title_candidates().any(|candidate| {
         let candidate_norm = normalize_title(candidate);
         if candidate_norm.is_empty() {
             return false;
@@ -609,11 +630,51 @@ fn mangadex_title_matches(local: &str, titles: &HashMap<String, String>) -> bool
         } else {
             (local_norm.as_str(), candidate_norm.as_str())
         };
-        if shorter.chars().count() >= 4 && longer.contains(shorter) {
-            return true;
-        }
-        token_overlap(&local_norm, &candidate_norm) >= 0.8
+        is_word_prefix_of(shorter, longer)
+            && token_overlap(&local_norm, &candidate_norm) >= PREFIX_MIN_OVERLAP
     })
+}
+
+/// True when `shorter` is `longer` or a whole-word prefix of it. The word
+/// boundary stops "solo" from prefixing "sololeveling".
+fn is_word_prefix_of(shorter: &str, longer: &str) -> bool {
+    match longer.strip_prefix(shorter) {
+        Some(rest) => rest.is_empty() || rest.starts_with(' '),
+        None => false,
+    }
+}
+
+/// True when the local title normalizes to exactly the same string as ANY
+/// MangaDex title candidate (primary `title` or any `altTitles` value). This is
+/// the strict half of `mangadex_title_matches`, exposed separately so exact
+/// hits can be ranked above fuzzy ones. Empty titles never match.
+fn mangadex_exact_match(local: &str, attributes: &MangaDexMangaAttributes) -> bool {
+    let local_norm = normalize_title(local);
+    if local_norm.is_empty() {
+        return false;
+    }
+    attributes
+        .title_candidates()
+        .any(|candidate| normalize_title(candidate) == local_norm)
+}
+
+/// Pick the best MangaDex search result for `local`, returning its index.
+///
+/// Two passes: an exact normalized match anywhere in the list wins outright,
+/// so a fuzzy hit that MangaDex happened to rank first cannot shadow a later
+/// exact hit ("Solo Leveling": fuzzy "Solo Leveling: Ragnarok" at index 0 must
+/// lose to the exact match at index 2). Only when no exact match exists do we
+/// fall back to the fuzzy matcher, in result order.
+fn select_mangadex_candidate(local: &str, results: &[MangaDexMangaAttributes]) -> Option<usize> {
+    if let Some(idx) = results
+        .iter()
+        .position(|attributes| mangadex_exact_match(local, attributes))
+    {
+        return Some(idx);
+    }
+    results
+        .iter()
+        .position(|attributes| mangadex_title_matches(local, attributes))
 }
 
 #[cfg(test)]
@@ -739,31 +800,130 @@ mod tests {
         );
     }
 
+    /// Build MangaDex attributes from JSON so the tests exercise the real
+    /// deserialization path (including the `altTitles` default).
+    fn md_attrs(json: &str) -> MangaDexMangaAttributes {
+        serde_json::from_str(json).expect("valid MangaDex attributes JSON")
+    }
+
     #[test]
-    fn title_match_accepts_identical_and_containment() {
-        let mut titles = std::collections::HashMap::new();
-        titles.insert("en".to_string(), "Solo Leveling".to_string());
-        assert!(mangadex_title_matches("Solo Leveling", &titles));
-        assert!(mangadex_title_matches("solo leveling!", &titles));
-        assert!(mangadex_title_matches("Solo Leveling: Ragnarok", &titles));
+    fn title_match_accepts_identical_and_normalized_variants() {
+        let attrs = md_attrs(r#"{"title":{"en":"Solo Leveling"}}"#);
+        assert!(mangadex_title_matches("Solo Leveling", &attrs));
+        assert!(mangadex_title_matches("solo leveling!", &attrs));
+    }
+
+    #[test]
+    fn title_match_accepts_prefix_extension() {
+        // "Solo Leveling: Ragnarok" shares both tokens (jaccard 2/3) and extends
+        // the local title -> same franchise, safe to enrich.
+        let attrs = md_attrs(r#"{"title":{"en":"Solo Leveling: Ragnarok"}}"#);
+        assert!(mangadex_title_matches("Solo Leveling", &attrs));
     }
 
     #[test]
     fn title_match_accepts_romaji_variant() {
-        let mut titles = std::collections::HashMap::new();
-        titles.insert("ja".to_string(), "Ore dake Level Up na Ken".to_string());
-        assert!(mangadex_title_matches("Ore dake Level Up na Ken", &titles));
+        let attrs = md_attrs(r#"{"title":{"ja":"Ore dake Level Up na Ken"}}"#);
+        assert!(mangadex_title_matches("Ore dake Level Up na Ken", &attrs));
     }
 
     #[test]
     fn title_match_rejects_unrelated_and_empty() {
-        let mut titles = std::collections::HashMap::new();
-        titles.insert("en".to_string(), "Berserk".to_string());
-        assert!(!mangadex_title_matches("Solo Leveling", &titles));
-        assert!(!mangadex_title_matches("", &titles));
-        assert!(!mangadex_title_matches(
-            "Solo Leveling",
-            &std::collections::HashMap::new()
+        let attrs = md_attrs(r#"{"title":{"en":"Berserk"}}"#);
+        assert!(!mangadex_title_matches("Solo Leveling", &attrs));
+        assert!(!mangadex_title_matches("", &attrs));
+        let empty = md_attrs(r#"{"title":{}}"#);
+        assert!(!mangadex_title_matches("Solo Leveling", &empty));
+    }
+
+    #[test]
+    fn title_match_rejects_containment_regression() {
+        // Prod incident: "Naruto" must NOT match "Renge to Naruto!" just because
+        // the shorter string is contained in the longer one (jaccard 1/3).
+        let attrs = md_attrs(r#"{"title":{"en":"Renge to Naruto!"}}"#);
+        assert!(!mangadex_title_matches("Naruto", &attrs));
+    }
+
+    #[test]
+    fn title_match_rejects_long_prefix_with_low_overlap() {
+        // "Naruto" IS a whole-word prefix here, but only 1 of 9 tokens overlap.
+        let attrs = md_attrs(
+            r#"{"title":{"en":"NARUTO: Sasuke Retsuden—Uchiha no Matsuei to Tenkyuu no Hoshikuzu"}}"#,
+        );
+        assert!(!mangadex_title_matches("Naruto", &attrs));
+    }
+
+    #[test]
+    fn title_match_uses_alt_titles() {
+        // The exact English name lives only in altTitles; the primary map is Korean.
+        let attrs = md_attrs(
+            r#"{"title":{"ko-ro":"Academy eseo Saranamgi"},"altTitles":[{"en":"The Extra's Academy Survival Guide"}]}"#,
+        );
+        assert!(mangadex_title_matches(
+            "The Extra's Academy Survival Guide",
+            &attrs
         ));
+    }
+
+    #[test]
+    fn title_match_strips_apostrophes() {
+        // "Extra's" vs "Extras" must collapse to the same normalized tokens.
+        let attrs = md_attrs(r#"{"title":{"en":"The Extras Academy Survival Guide"}}"#);
+        assert!(mangadex_title_matches(
+            "The Extra's Academy Survival Guide",
+            &attrs
+        ));
+    }
+
+    #[test]
+    fn title_match_rejects_no_shared_tokens() {
+        let attrs = md_attrs(r#"{"title":{"en":"Only I Level Up"}}"#);
+        assert!(!mangadex_title_matches("Solo Leveling", &attrs));
+    }
+
+    #[test]
+    fn select_candidate_prefers_exact_over_fuzzy() {
+        // Fuzzy Ragnarok at index 0 must not shadow the exact match at index 2.
+        let results = vec![
+            md_attrs(r#"{"title":{"en":"Solo Leveling: Ragnarok"}}"#),
+            md_attrs(r#"{"title":{"en":"Berserk"}}"#),
+            md_attrs(r#"{"title":{"en":"Solo Leveling"}}"#),
+        ];
+        assert_eq!(
+            select_mangadex_candidate("Solo Leveling", &results),
+            Some(2)
+        );
+    }
+
+    #[test]
+    fn select_candidate_falls_back_to_fuzzy() {
+        let results = vec![
+            md_attrs(r#"{"title":{"en":"Solo Leveling: Ragnarok"}}"#),
+            md_attrs(r#"{"title":{"en":"Berserk"}}"#),
+        ];
+        assert_eq!(
+            select_mangadex_candidate("Solo Leveling", &results),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn select_candidate_returns_none_without_match() {
+        let results = vec![md_attrs(r#"{"title":{"en":"Berserk"}}"#)];
+        assert_eq!(select_mangadex_candidate("Solo Leveling", &results), None);
+    }
+
+    #[test]
+    fn exact_match_requires_normalized_equality() {
+        let fuzzy = md_attrs(r#"{"title":{"en":"Solo Leveling: Ragnarok"}}"#);
+        assert!(!mangadex_exact_match("Solo Leveling", &fuzzy));
+        let exact = md_attrs(
+            r#"{"title":{"ko-ro":"Academy eseo Saranamgi"},"altTitles":[{"en":"The Extra's Academy Survival Guide"}]}"#,
+        );
+        assert!(mangadex_exact_match(
+            "The Extra's Academy Survival Guide",
+            &exact
+        ));
+        assert!(!mangadex_exact_match("", &exact));
     }
 }
