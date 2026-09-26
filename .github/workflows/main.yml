@@ -77,15 +77,25 @@ jobs:
 
       # Advisory image scan: reports HIGH/CRITICAL CVEs but does not block the
       # pipeline (base-image CVEs would otherwise freeze every deploy).
+      # Runs the scanner container directly instead of trivy-action: the action
+      # is a composite that pulls aquasecurity/setup-trivy@v0.2.1, a tag that no
+      # longer exists after the 2025 tag cleanup, and an unresolvable nested
+      # action aborts the job at "Set up job" where continue-on-error cannot
+      # help. 0.74.0 is the scanner release, not an action ref.
       - name: Scan image with Trivy
         continue-on-error: true
-        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
-        with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.REPO_LOWER }}:${{ github.sha }}
-          format: table
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          exit-code: "0"
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          docker run --rm \
+            -e TRIVY_USERNAME -e TRIVY_PASSWORD \
+            aquasecurity/trivy:0.74.0 image \
+              --format table \
+              --severity HIGH,CRITICAL \
+              --ignore-unfixed \
+              --exit-code 0 \
+              "${REGISTRY}/${REPO_LOWER}:${GITHUB_SHA}"
 
   deploy:
     needs: [build]
