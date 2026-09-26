@@ -6,7 +6,7 @@ Checks:
 - Required fields: apiVersion, kind, metadata.name
 - Namespace present on namespaced resources
 - Service port consistency (IngressRoute vs Service, Prometheus targets vs Service)
-- IngressRoute references existing Service
+- IngressRoute references existing Service (k8s/ or the Helm chart)
 - Bad fields: clusterIP in Deployment/DaemonSet, serviceAccountName at wrong level
 
 Usage: python3 scripts/validate-k8s-yaml.py
@@ -18,6 +18,8 @@ import yaml
 
 
 K8S_DIR = "k8s"
+CHART_DIR = "chart/templates"
+CHART_VALUES = "chart/values.yaml"
 CLUSTER_SCOPED = {
     "Namespace", "ClusterRole", "ClusterRoleBinding",
     "StorageClass", "VolumeSnapshotClass",
@@ -80,6 +82,38 @@ def build_service_map(parsed):
                         "file": fpath,
                     }
     return services
+
+def build_chart_service_map():
+    """Services rendered by the Helm chart.
+
+    The app Service/Deployment live in chart/templates (the raw k8s duplicates
+    were removed), so an IngressRoute in k8s/ must also match chart Services.
+    The chart names its Service after .Values.app.name and exposes
+    .Values.service.port; both are resolved from chart/values.yaml. The
+    namespace is left as None (wildcard) because the chart renders into
+    .Release.Namespace, which is not known statically.
+    """
+    services = {}
+    service_files = glob.glob(os.path.join(CHART_DIR, "*.yaml"))
+    has_service = False
+    for fpath in service_files:
+        with open(fpath) as fh:
+            if "kind: Service" in fh.read():
+                has_service = True
+                break
+    if not has_service:
+        return services
+
+    values = {}
+    if os.path.exists(CHART_VALUES):
+        with open(CHART_VALUES) as fh:
+            values = yaml.safe_load(fh) or {}
+    name = (values.get("app") or {}).get("name")
+    port = (values.get("service") or {}).get("port")
+    if name:
+        services[(name, None)] = {"port": port, "file": "chart/templates/service.yaml"}
+    return services
+
 
 def validate_syntax(parsed):
     pass
@@ -162,6 +196,9 @@ def validate_ingress_routes(parsed, services):
                         if svc_name:
                             key = (svc_name, ns)
                             if key not in services:
+                                # Helm-rendered Service: namespace unknown
+                                key = (svc_name, None)
+                            if key not in services:
                                 err(
                                     f"IngressRoute references service '{svc_name}' "
                                     f"in namespace '{ns}' but no matching Service exists",
@@ -185,6 +222,7 @@ def main():
         sys.exit(1)
 
     services = build_service_map(parsed)
+    services.update(build_chart_service_map())
 
     validate_required_fields(parsed)
     validate_namespace(parsed)

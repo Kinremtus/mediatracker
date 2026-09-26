@@ -1,0 +1,39 @@
+{{- if .Values.resourceQuota.enabled }}
+# Namespace-wide guardrails. Moved here from the raw k8s/resourcequota.yaml:
+# the CI deploy applies only k8s/<dir>/ directories, so a loose YAML file in
+# k8s/ was silently never applied. Rendering it from the chart keeps the quota
+# in sync with the workloads it is sized for.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: mediatracker-quota
+  namespace: {{ .Release.Namespace }}
+spec:
+  hard:
+    requests.cpu: {{ .Values.resourceQuota.hard.requestsCpu | quote }}
+    requests.memory: {{ .Values.resourceQuota.hard.requestsMemory | quote }}
+    limits.cpu: {{ .Values.resourceQuota.hard.limitsCpu | quote }}
+    limits.memory: {{ .Values.resourceQuota.hard.limitsMemory | quote }}
+    pods: {{ .Values.resourceQuota.hard.pods | quote }}
+    persistentvolumeclaims: {{ .Values.resourceQuota.hard.persistentvolumeclaims | quote }}
+---
+# Supplies requests/limits to containers that omit them (one-off debug pods,
+# Jobs), so the quota above cannot be bypassed by an empty resource spec.
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: mediatracker-limits
+  namespace: {{ .Release.Namespace }}
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: {{ .Values.resourceQuota.limitRange.default.cpu | quote }}
+        memory: {{ .Values.resourceQuota.limitRange.default.memory | quote }}
+      defaultRequest:
+        cpu: {{ .Values.resourceQuota.limitRange.defaultRequest.cpu | quote }}
+        memory: {{ .Values.resourceQuota.limitRange.defaultRequest.memory | quote }}
+      max:
+        cpu: {{ .Values.resourceQuota.limitRange.max.cpu | quote }}
+        memory: {{ .Values.resourceQuota.limitRange.max.memory | quote }}
+{{- end }}
