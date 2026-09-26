@@ -16,23 +16,23 @@ resource "kubernetes_persistent_volume_claim_v1" "prometheus" {
 }
 
 resource "kubernetes_service_v1" "prometheus" {
-    metadata {
-      name      = "prometheus"
-      namespace = "monitoring"
+  metadata {
+    name      = "prometheus"
+    namespace = "monitoring"
+  }
+  spec {
+    type = "NodePort"
+
+    selector = {
+      app = "prometheus-server"
     }
-    spec {
-      type = "NodePort"
-      
-      selector = {
-        app = "prometheus-server"
-      }
-      port {
-        port = 9090
-        target_port = 9090
-        node_port   = 30909
-      }
+    port {
+      port        = 9090
+      target_port = 9090
+      node_port   = 30909
     }
-  
+  }
+
 }
 
 resource "kubernetes_config_map_v1" "prometheus" {
@@ -129,7 +129,7 @@ resource "kubernetes_deployment_v1" "prometheus" {
   }
   spec {
     replicas = 1
-    
+
     selector {
       match_labels = {
         app = "prometheus-server"
@@ -162,13 +162,17 @@ resource "kubernetes_deployment_v1" "prometheus" {
             mount_path = "/prometheus"
           }
           resources {
+            requests = {
+              memory = "150Mi"
+              cpu    = "50m"
+            }
             limits = {
               memory = "150Mi"
               cpu    = "100m"
             }
           }
         }
-        enable_service_links            = false
+        enable_service_links = false
 
         volume {
           name = "config"

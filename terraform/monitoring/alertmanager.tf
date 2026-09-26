@@ -1,25 +1,25 @@
 resource "kubernetes_service_v1" "alertmanager" {
-    metadata {
-      name      = "alertmanager"
-      namespace = "monitoring"
-    }
-    spec {
-      type = "NodePort"
+  metadata {
+    name      = "alertmanager"
+    namespace = "monitoring"
+  }
+  spec {
+    type = "NodePort"
 
-      selector = {
-        app = "alertmanager-server"
-      }
-      port {
-        port = 9093
-        target_port = 9093
-        node_port   = 30903
-      }
-    } 
+    selector = {
+      app = "alertmanager-server"
+    }
+    port {
+      port        = 9093
+      target_port = 9093
+      node_port   = 30903
+    }
+  }
 }
 
 resource "kubernetes_config_map_v1" "alertmanager" {
   metadata {
-    name = "alertmanager-config"
+    name      = "alertmanager-config"
     namespace = "monitoring"
   }
   data = {
@@ -39,7 +39,7 @@ EOF
 
 resource "kubernetes_deployment_v1" "alertmanager" {
   metadata {
-    name = "alertmanager-deployment"
+    name      = "alertmanager-deployment"
     namespace = "monitoring"
     labels = {
       app = "alertmanager-server"
@@ -60,25 +60,25 @@ resource "kubernetes_deployment_v1" "alertmanager" {
       }
       spec {
         container {
-          name = "alertmanager"
+          name  = "alertmanager"
           image = "prom/alertmanager"
-          args = ["--config.file=/etc/alertmanager/alertmanager.yml"]
+          args  = ["--config.file=/etc/alertmanager/alertmanager.yml"]
           port {
             container_port = 9093
           }
           volume_mount {
-            name = "config"
+            name       = "config"
             mount_path = "/etc/alertmanager/"
           }
           volume_mount {
-            name = "telegram-token"
+            name       = "telegram-token"
             mount_path = "/etc/alertmanager/secrets/"
-            read_only = true
+            read_only  = true
           }
           resources {
             limits = {
               memory = "30Mi"
-              cpu = "30m"
+              cpu    = "30m"
             }
           }
         }

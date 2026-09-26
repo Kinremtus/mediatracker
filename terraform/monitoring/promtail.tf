@@ -1,6 +1,6 @@
 resource "kubernetes_config_map_v1" "promtail" {
   metadata {
-    name = "promtail-config"
+    name      = "promtail-config"
     namespace = "monitoring"
   }
   data = {
@@ -32,7 +32,7 @@ EOF
 
 resource "kubernetes_daemon_set_v1" "promtail" {
   metadata {
-    name = "promtail-deployment"
+    name      = "promtail-deployment"
     namespace = "monitoring"
     labels = {
       app = "promtail-server"
@@ -52,26 +52,26 @@ resource "kubernetes_daemon_set_v1" "promtail" {
       }
       spec {
         container {
-          name = "promtail"
+          name  = "promtail"
           image = "grafana/promtail"
-          args = ["-config.file=/etc/promtail/promtail-config.yaml"]
+          args  = ["-config.file=/etc/promtail/promtail-config.yaml"]
           volume_mount {
-            name = "config"
+            name       = "config"
             mount_path = "/etc/promtail/"
           }
           volume_mount {
-            name = "varlog"
+            name       = "varlog"
             mount_path = "/var/log"
           }
           volume_mount {
-            name = "dockercontainers"
+            name       = "dockercontainers"
             mount_path = "/var/lib/docker/containers"
-            read_only = true
+            read_only  = true
           }
           resources {
             limits = {
               memory = "30Mi"
-              cpu = "20m"
+              cpu    = "20m"
             }
           }
         }

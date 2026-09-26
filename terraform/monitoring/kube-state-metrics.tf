@@ -1,22 +1,22 @@
 resource "kubernetes_service_v1" "kube-state-metrics" {
-    metadata {
-      name      = "kube-state-metrics"
-      namespace = "monitoring"
+  metadata {
+    name      = "kube-state-metrics"
+    namespace = "monitoring"
+  }
+  spec {
+    selector = {
+      app = "kube-state-metrics-server"
     }
-    spec {
-      selector = {
-        app = "kube-state-metrics-server"
-      }
-      port {
-        port = 8080
-        target_port = 8080
-      }
-    } 
+    port {
+      port        = 8080
+      target_port = 8080
+    }
+  }
 }
 
 resource "kubernetes_service_account_v1" "kube-state-metrics" {
   metadata {
-    name = "kube-state-metrics"
+    name      = "kube-state-metrics"
     namespace = "monitoring"
   }
 }
@@ -27,13 +27,13 @@ resource "kubernetes_cluster_role_v1" "kube-state-metrics" {
   }
   rule {
     api_groups = [""]
-    resources = ["nodes", "pods", "services", "persistentvolumeclaims"]
-    verbs = ["list", "watch"]
+    resources  = ["nodes", "pods", "services", "persistentvolumeclaims"]
+    verbs      = ["list", "watch"]
   }
   rule {
     api_groups = ["apps"]
-    resources = ["deployments", "daemonsets", "statefulsets"]
-    verbs = ["list", "watch"]
+    resources  = ["deployments", "daemonsets", "statefulsets"]
+    verbs      = ["list", "watch"]
   }
   # Required for the backup alerts: kube-state-metrics can only emit
   # kube_job_* / kube_cronjob_* metrics for resources it may list.
@@ -50,19 +50,19 @@ resource "kubernetes_cluster_role_binding_v1" "kube-state-metrics" {
   }
   role_ref {
     api_group = "rbac.authorization.k8s.io"
-    kind = "ClusterRole"
-    name = "kube-state-metrics"
+    kind      = "ClusterRole"
+    name      = "kube-state-metrics"
   }
   subject {
-    kind = "ServiceAccount"
-    name = "kube-state-metrics"
+    kind      = "ServiceAccount"
+    name      = "kube-state-metrics"
     namespace = "monitoring"
   }
 }
 
 resource "kubernetes_deployment_v1" "kube-state-metrics" {
   metadata {
-    name = "kube-state-metrics-deployment"
+    name      = "kube-state-metrics-deployment"
     namespace = "monitoring"
     labels = {
       app = "kube-state-metrics-server"
@@ -84,7 +84,7 @@ resource "kubernetes_deployment_v1" "kube-state-metrics" {
       spec {
         service_account_name = "kube-state-metrics"
         container {
-          name = "kube-state-metrics"
+          name  = "kube-state-metrics"
           image = "registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.19.1"
           port {
             container_port = 8080
@@ -92,7 +92,7 @@ resource "kubernetes_deployment_v1" "kube-state-metrics" {
           resources {
             limits = {
               memory = "40Mi"
-              cpu = "30m"
+              cpu    = "30m"
             }
           }
         }
