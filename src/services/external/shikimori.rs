@@ -6,7 +6,6 @@ use crate::models::media_item::CreateMediaItem;
 use crate::utils::clean_description;
 
 const BASE_URL: &str = "https://shikimori.one/api";
-const USER_AGENT: &str = "MediaTracker/0.1 (+https://github.com/Kinremtus/mediatracker)";
 
 #[derive(Debug, Deserialize)]
 #[expect(dead_code)]
@@ -216,10 +215,7 @@ impl Default for ShikimoriService {
 impl ShikimoriService {
     pub fn new() -> Self {
         Self {
-            client: Client::builder()
-                .user_agent(USER_AGENT)
-                .build()
-                .expect("reqwest client"),
+            client: super::http_client(),
         }
     }
 
