@@ -104,6 +104,8 @@ terraform apply
 |-------|-----------|----------|--------|
 | AppDown | `up{app="app"} == 0` for 1m | critical | Telegram |
 | HighCPU | `rate(process_cpu_seconds_total{app="app"}[5m]) > 0.8` for 2m | warning | Telegram |
+| BackupJobFailed | `kube_job_status_failed{job_name=~"postgres-backup-.*"} > 0` for 5m | critical | Telegram |
+| BackupStale | `time() - kube_cronjob_status_last_successful_time{cronjob="postgres-backup"} > 26h` for 30m | critical | Telegram |
 
 ## Files
 
@@ -121,7 +123,28 @@ terraform/monitoring/
   promtail.tf            -- Promtail (DaemonSet, log shipping)
   uptime-kuma.tf         -- Uptime Kuma (deployment, service, PVC)
   telegram-secret.tf     -- Telegram bot token (gitignored)
+  backend.r2.example.hcl -- partial S3/R2 backend config (state offsite)
 ```
+
+## Terraform state on R2 (recommended)
+
+The state file is **not** in git (`.gitignore` covers `terraform/**/*.tfstate`)
+and currently lives only on the workstation that ran `apply`. Losing it means
+drift plus manual `terraform import` of every object, and the file contains
+secrets. `backend.r2.example.hcl` moves it into Cloudflare R2 (same bucket as
+the DB dumps, different prefix):
+
+```bash
+# 1. add `backend "s3" {}` to the terraform block in providers.tf
+# 2. create the R2 bucket + an API token (Object Read & Write)
+export AWS_ACCESS_KEY_ID=<token key>
+export AWS_SECRET_ACCESS_KEY=<token secret>
+# 3. fill in the endpoint in backend.r2.example.hcl, then:
+terraform init -backend-config=backend.r2.example.hcl -migrate-state
+```
+
+Until the backend is enabled, keep a manual copy of `terraform.tfstate`
+somewhere safe (it is the only source of truth for this stack).
 
 ## Troubleshooting
 

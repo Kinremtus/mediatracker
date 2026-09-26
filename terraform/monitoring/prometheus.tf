@@ -92,6 +92,29 @@ groups:
         for: 2m
         labels:
           severity: warning
+  - name: backup
+    rules:
+      # A failed Job stays failed in kube-state-metrics until the history
+      # limit prunes it, so `for: 5m` is enough to page once per bad night.
+      - alert: BackupJobFailed
+        expr: kube_job_status_failed{namespace="mediatracker", job_name=~"postgres-backup-.*"} > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Postgres backup job failed"
+          description: "job {{ $labels.job_name }} failed; inspect: kubectl -n mediatracker logs job/{{ $labels.job_name }}"
+      # Fires when the daily 03:00 backup has not succeeded for > 26h
+      # (one missed night + margin). A silent PVC/CronJob failure shows up
+      # here instead of being discovered during a restore.
+      - alert: BackupStale
+        expr: time() - kube_cronjob_status_last_successful_time{namespace="mediatracker", cronjob="postgres-backup"} > 26 * 3600
+        for: 30m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No successful Postgres backup in 26h"
+          description: "CronJob postgres-backup has not completed successfully; check pods/jobs in namespace mediatracker"
 EOF
   }
 }
