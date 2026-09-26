@@ -1,4 +1,4 @@
-use crate::services::external::mangadex::MangaDexService;
+use crate::services::external::mangadex::{MangaDexChapter, MangaDexService};
 use sqlx::PgPool;
 use std::collections::HashMap;
 
@@ -19,23 +19,27 @@ impl StoredChapter {
     }
 }
 
-// Chapter number stored in DB as integer * 10 (105 = chapter 10.5).
-// UI helpers below format it back to human-readable form.
+// Chapter number stored in DB as integer * 100 (1050 = chapter 10.5,
+// 1 = chapter 0.01, 100 = chapter 1). UI helpers format it back.
 
-/// Format chapter number for display: 10 → "1", 105 → "10.5", 120 → "12".
+/// Format chapter number for display:
+/// 100 -> "1", 1050 -> "10.5", 1 -> "0.01", 10110 -> "101.1".
 pub fn format_chapter(chapter_number: i32) -> String {
-    if chapter_number % 10 == 0 {
-        format!("{}", chapter_number / 10)
+    let whole = chapter_number / 100;
+    let frac = chapter_number % 100;
+    if frac == 0 {
+        format!("{}", whole)
+    } else if frac % 10 == 0 {
+        format!("{}.{}", whole, frac / 10)
     } else {
-        let whole = chapter_number / 10;
-        let frac = chapter_number % 10;
-        format!("{}.{}", whole, frac)
+        format!("{}.{:02}", whole, frac)
     }
 }
 
-/// Parse a chapter string like "10" or "10.5" into the stored integer.
-/// Only first digit after decimal is kept (tenths): "10.5" → 105, "10.05" → 100.
-/// Negative numbers are rejected.
+/// Parse a chapter string like "10", "10.5" or "0.01" into the stored integer
+/// (scale x100). The fractional part is normalized to exactly two digits:
+/// "10.5" -> 1050, "0.01" -> 1, "101.1" -> 10110, "10.05" -> 1005.
+/// Digits beyond the second are ignored. Negative numbers are rejected.
 pub fn parse_chapter(s: &str) -> Option<i32> {
     let s = s.trim();
     if s.starts_with('-') {
@@ -48,7 +52,7 @@ pub fn parse_chapter(s: &str) -> Option<i32> {
             if whole < 0 {
                 return None;
             }
-            Some(whole * 10)
+            Some(whole * 100)
         }
         2 => {
             let whole: i32 = parts[0].parse().ok()?;
@@ -56,9 +60,13 @@ pub fn parse_chapter(s: &str) -> Option<i32> {
                 return None;
             }
             let frac_str = parts[1];
-            // Take only first digit (tenths). "5"→5, "50"→5, "05"→0.
-            let frac: i32 = frac_str.chars().next()?.to_digit(10)? as i32;
-            Some(whole * 10 + frac)
+            let mut chars = frac_str.chars();
+            let d1 = chars.next()?.to_digit(10)? as i32;
+            let d2 = match chars.next() {
+                Some(c) => c.to_digit(10)? as i32,
+                None => 0,
+            };
+            Some(whole * 100 + d1 * 10 + d2)
         }
         _ => None,
     }
@@ -84,8 +92,8 @@ pub async fn store_chapters_mu(
     }
 
     let external_id = series_id.to_string();
-    // Chapter 1 → 10, chapter 2 → 20, … (tenths are stored in the low digit).
-    let chapter_numbers: Vec<i32> = (1..=latest_chapter).map(|ch| ch * 10).collect();
+    // Chapter 1 -> 100, chapter 2 -> 200, … (fraction goes in the low digits).
+    let chapter_numbers: Vec<i32> = (1..=latest_chapter).map(|ch| ch * 100).collect();
 
     // One statement instead of N: a mid-way failure can no longer leave a
     // partially populated skeleton. The media_items sync runs in the same
@@ -108,21 +116,21 @@ pub async fn store_chapters_mu(
 
     let count = result.rows_affected();
 
-    // Sync media_items.chapters = MAX(chapter_number) / 10 of what
-    // we just stored, so the tracking card denominator matches.
+    // Sync media_items.chapters = ceil(MAX(chapter_number) / 100) so the
+    // tracking card denominator matches. Never lower an existing value.
     if count > 0 {
         sqlx::query(
             r#"
             UPDATE media_items
-            SET chapters = sub.max_ch
+            SET chapters = GREATEST(COALESCE(media_items.chapters, 0), sub.max_ch)
             FROM (
-                SELECT MAX(chapter_number) / 10 AS max_ch
+                SELECT ((MAX(chapter_number) + 99) / 100) AS max_ch
                 FROM series_chapters
                 WHERE provider = 'mangaupdates' AND external_id = $1
             ) AS sub
             WHERE media_items.provider = 'mangaupdates'
               AND media_items.external_id = $1
-              AND (media_items.chapters IS NULL OR media_items.chapters = 0)
+              AND sub.max_ch > COALESCE(media_items.chapters, 0)
             "#,
         )
         .bind(&external_id)
@@ -317,8 +325,9 @@ pub async fn count_read(
     .bind(external_id)
     .fetch_one(pool)
     .await?;
-    // chapter_number is stored as ch * 10, so divide back for display
-    Ok(row.0.map(|v| v / 10).unwrap_or(0))
+    // chapter_number is stored as ch * 100, so divide back for display
+    // (integer division floors fractional progress, e.g. 10.5 -> 10).
+    Ok(row.0.map(|v| v / 100).unwrap_or(0))
 }
 
 /// Get all (chapter_number, read) pairs for a manga and user, ordered
@@ -391,10 +400,120 @@ pub async fn lookup_media_id(
     Ok(row.map(|(v,)| v))
 }
 
-/// Enrich chapter titles from MangaDex.
-/// Searches MangaDex by the manga title from media_items,
-/// fetches chapter list, and updates title_en/title_ru/volume
-/// for matching chapter numbers.
+/// One chapter row destined for `series_chapters`, produced from a MangaDex
+/// feed entry after dedup by chapter number.
+#[derive(Debug, Clone)]
+pub struct MdChapterRow {
+    pub chapter_number: i32,
+    pub title_en: Option<String>,
+    pub title_ru: Option<String>,
+    pub volume: Option<i32>,
+    pub release_date: Option<chrono::NaiveDate>,
+}
+
+/// Collapse a MangaDex feed into one row per chapter number.
+///
+/// Multiple translations/groups of the same chapter (en + ru, or two
+/// scanlation groups) merge into one row; the first non-null value wins. This
+/// matches the storage semantics where a filled column is never overwritten.
+/// Entries with `chapter: null` (no number) are skipped with a debug log
+/// instead of failing the whole feed.
+fn build_md_rows(chapters: &[MangaDexChapter]) -> Vec<MdChapterRow> {
+    let mut map: HashMap<i32, MdChapterRow> = HashMap::new();
+    for ch in chapters {
+        let Some(number) = ch.chapter_number_10() else {
+            tracing::debug!(title = ?ch.title, "MangaDex: chapter without a number, skipping");
+            continue;
+        };
+        let volume = ch.volume.as_ref().and_then(|v| v.parse::<i32>().ok());
+        let release_date = ch
+            .publish_at
+            .as_deref()
+            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+            .map(|dt| dt.date_naive());
+        let (title_en, title_ru) = match ch.translated_language.as_str() {
+            "en" => (ch.title.clone(), None),
+            "ru" => (None, ch.title.clone()),
+            _ => (None, None),
+        };
+        map.entry(number)
+            .and_modify(|row| {
+                if row.title_en.is_none() {
+                    row.title_en = title_en.clone();
+                }
+                if row.title_ru.is_none() {
+                    row.title_ru = title_ru.clone();
+                }
+                if row.volume.is_none() {
+                    row.volume = volume;
+                }
+                if row.release_date.is_none() {
+                    row.release_date = release_date;
+                }
+            })
+            .or_insert(MdChapterRow {
+                chapter_number: number,
+                title_en,
+                title_ru,
+                volume,
+                release_date,
+            });
+    }
+    map.into_values().collect()
+}
+
+/// Insert missing chapters and COALESCE-fill existing ones in one statement.
+/// `(provider, external_id, chapter_number)` is the dedup key, so repeated
+/// enrichment is idempotent and never overwrites a filled column with NULL.
+pub async fn upsert_series_chapters(
+    pool: &PgPool,
+    provider: &str,
+    external_id: &str,
+    rows: &[MdChapterRow],
+) -> Result<usize, sqlx::Error> {
+    if rows.is_empty() {
+        return Ok(0);
+    }
+    let chapter_numbers: Vec<i32> = rows.iter().map(|r| r.chapter_number).collect();
+    let title_en: Vec<Option<String>> = rows.iter().map(|r| r.title_en.clone()).collect();
+    let title_ru: Vec<Option<String>> = rows.iter().map(|r| r.title_ru.clone()).collect();
+    let volumes: Vec<Option<i32>> = rows.iter().map(|r| r.volume).collect();
+    let release_dates: Vec<Option<chrono::NaiveDate>> =
+        rows.iter().map(|r| r.release_date).collect();
+
+    let mut tx = pool.begin().await?;
+    let result = sqlx::query(
+        r#"
+        INSERT INTO series_chapters
+            (provider, external_id, chapter_number, title_en, title_ru, volume, release_date)
+        SELECT $1, $2, u.chapter_number, u.title_en, u.title_ru, u.volume, u.release_date
+        FROM UNNEST($3::int[], $4::text[], $5::text[], $6::int[], $7::date[])
+            AS u(chapter_number, title_en, title_ru, volume, release_date)
+        ON CONFLICT (provider, external_id, chapter_number) DO UPDATE
+        SET title_en = COALESCE(series_chapters.title_en, EXCLUDED.title_en),
+            title_ru = COALESCE(series_chapters.title_ru, EXCLUDED.title_ru),
+            volume = COALESCE(series_chapters.volume, EXCLUDED.volume),
+            release_date = COALESCE(series_chapters.release_date, EXCLUDED.release_date)
+        "#,
+    )
+    .bind(provider)
+    .bind(external_id)
+    .bind(&chapter_numbers)
+    .bind(&title_en)
+    .bind(&title_ru)
+    .bind(&volumes)
+    .bind(&release_dates)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+
+    Ok(result.rows_affected() as usize)
+}
+
+/// Enrich chapter titles/dates from MangaDex.
+/// Searches MangaDex by the manga title from media_items, fetches the chapter
+/// list, and upserts every chapter (integer + fractional) into
+/// `series_chapters`.
 pub async fn enrich_from_mangadex(
     pool: &PgPool,
     provider: &str,
@@ -421,8 +540,7 @@ pub async fn enrich_from_mangadex(
     }
 
     // MangaDex search is fuzzy and `search_results[0]` can be an unrelated
-    // series: verify title similarity before overwriting chapter titles with
-    // another title's data.
+    // series: verify title similarity before writing another title's data.
     let Some(candidate) = search_results
         .iter()
         .find(|r| mangadex_title_matches(&title, &r.attributes.title))
@@ -435,76 +553,15 @@ pub async fn enrich_from_mangadex(
     };
     let md_chapters = md.get_chapters(&candidate.id).await?;
 
-    // Build lookup: chapter_number_10 -> (title_en, title_ru, volume)
-    #[allow(clippy::type_complexity)]
-    let mut md_map: HashMap<i32, (Option<String>, Option<String>, Option<i32>)> = HashMap::new();
-    for ch in md_chapters {
-        if let Some(ch_num_10) = ch.chapter_number_10() {
-            let vol = ch.volume.as_ref().and_then(|v| v.parse::<i32>().ok());
-            let (en, ru) = match ch.translated_language.as_str() {
-                "en" => (ch.title.clone(), None),
-                "ru" => (None, ch.title.clone()),
-                _ => (None, None),
-            };
-            md_map
-                .entry(ch_num_10)
-                .and_modify(|(e, r, v)| {
-                    if e.is_none() {
-                        *e = en.clone();
-                    }
-                    if r.is_none() {
-                        *r = ru.clone();
-                    }
-                    if v.is_none() {
-                        *v = vol;
-                    }
-                })
-                .or_insert((en, ru, vol));
-        }
-    }
-
-    // Update series_chapters in one batched statement (single round-trip and
-    // atomic) instead of one UPDATE per chapter.
-    if md_map.is_empty() {
+    let rows = build_md_rows(&md_chapters);
+    if rows.is_empty() {
         return Ok(0);
     }
 
-    let mut chapter_numbers: Vec<i32> = Vec::with_capacity(md_map.len());
-    let mut title_en: Vec<Option<String>> = Vec::with_capacity(md_map.len());
-    let mut title_ru: Vec<Option<String>> = Vec::with_capacity(md_map.len());
-    let mut volumes: Vec<Option<i32>> = Vec::with_capacity(md_map.len());
-    for (ch_num_10, (en, ru, vol)) in md_map {
-        chapter_numbers.push(ch_num_10);
-        title_en.push(en);
-        title_ru.push(ru);
-        volumes.push(vol);
-    }
-
-    let mut tx = pool.begin().await?;
-    let result = sqlx::query(
-        r#"
-        UPDATE series_chapters sc
-        SET title_en = COALESCE(sc.title_en, u.title_en),
-            title_ru = COALESCE(sc.title_ru, u.title_ru),
-            volume = COALESCE(sc.volume, u.volume)
-        FROM UNNEST($3::int[], $4::text[], $5::text[], $6::int[])
-            AS u(chapter_number, title_en, title_ru, volume)
-        WHERE sc.provider = $1
-          AND sc.external_id = $2
-          AND sc.chapter_number = u.chapter_number
-        "#,
-    )
-    .bind(provider)
-    .bind(external_id)
-    .bind(&chapter_numbers)
-    .bind(&title_en)
-    .bind(&title_ru)
-    .bind(&volumes)
-    .execute(&mut *tx)
-    .await?;
-    tx.commit().await?;
-
-    Ok(result.rows_affected() as usize)
+    // `provider` stays 'mangaupdates' even for MangaDex-sourced rows: it is the
+    // storage key (provider='mangaupdates', external_id=MU series id).
+    let affected = upsert_series_chapters(pool, provider, external_id, &rows).await?;
+    Ok(affected)
 }
 
 /// Normalize a title for comparison: lowercase, non-alphanumeric -> space,
@@ -565,30 +622,35 @@ mod tests {
 
     #[test]
     fn format_chapter_integer() {
-        assert_eq!(format_chapter(10), "1");
-        assert_eq!(format_chapter(20), "2");
-        assert_eq!(format_chapter(100), "10");
+        assert_eq!(format_chapter(100), "1");
+        assert_eq!(format_chapter(200), "2");
+        assert_eq!(format_chapter(1000), "10");
     }
 
     #[test]
     fn format_chapter_fractional() {
-        assert_eq!(format_chapter(105), "10.5");
-        assert_eq!(format_chapter(250), "25");
-        assert_eq!(format_chapter(101), "10.1");
+        assert_eq!(format_chapter(1050), "10.5");
+        assert_eq!(format_chapter(250), "2.5");
+        assert_eq!(format_chapter(10110), "101.1");
+        assert_eq!(format_chapter(1), "0.01");
+        assert_eq!(format_chapter(1005), "10.05");
+        assert_eq!(format_chapter(50), "0.5");
     }
 
     #[test]
     fn parse_chapter_integer() {
-        assert_eq!(parse_chapter("1"), Some(10));
-        assert_eq!(parse_chapter("10"), Some(100));
-        assert_eq!(parse_chapter("25"), Some(250));
+        assert_eq!(parse_chapter("1"), Some(100));
+        assert_eq!(parse_chapter("10"), Some(1000));
+        assert_eq!(parse_chapter("25"), Some(2500));
     }
 
     #[test]
     fn parse_chapter_fractional() {
-        assert_eq!(parse_chapter("10.5"), Some(105));
-        assert_eq!(parse_chapter("1.1"), Some(11));
-        assert_eq!(parse_chapter("25.0"), Some(250));
+        assert_eq!(parse_chapter("10.5"), Some(1050));
+        assert_eq!(parse_chapter("1.1"), Some(110));
+        assert_eq!(parse_chapter("25.0"), Some(2500));
+        assert_eq!(parse_chapter("0.01"), Some(1));
+        assert_eq!(parse_chapter("101.1"), Some(10110));
     }
 
     #[test]
@@ -599,9 +661,22 @@ mod tests {
     }
 
     #[test]
+    fn parse_chapter_edge_cases() {
+        // Digits beyond the second are ignored (normalized to 2 places).
+        assert_eq!(parse_chapter("10.50"), Some(1050));
+        assert_eq!(parse_chapter("10.05"), Some(1005));
+        assert_eq!(parse_chapter("10.99"), Some(1099));
+        assert_eq!(parse_chapter("1.05"), Some(105));
+        // No whole part
+        assert_eq!(parse_chapter(".5"), None);
+        // Negative not supported
+        assert_eq!(parse_chapter("-1"), None);
+    }
+
+    #[test]
     fn stored_chapter_formatted() {
         let ch = StoredChapter {
-            chapter_number: 105,
+            chapter_number: 1050,
             volume: Some(10),
             title_en: Some("Test".to_string()),
             title_ru: None,
@@ -611,7 +686,7 @@ mod tests {
         assert_eq!(ch.formatted(), "10.5");
 
         let ch2 = StoredChapter {
-            chapter_number: 20,
+            chapter_number: 200,
             volume: None,
             title_en: None,
             title_ru: None,
@@ -622,17 +697,46 @@ mod tests {
     }
 
     #[test]
-    fn parse_chapter_edge_cases() {
-        // Multiple digits after decimal - only first counts
-        assert_eq!(parse_chapter("10.50"), Some(105));
-        assert_eq!(parse_chapter("10.05"), Some(100));
-        assert_eq!(parse_chapter("10.99"), Some(109));
-        // Leading zeros in fractional part
-        assert_eq!(parse_chapter("1.05"), Some(10));
-        // No whole part
-        assert_eq!(parse_chapter(".5"), None);
-        // Negative not supported
-        assert_eq!(parse_chapter("-1"), None);
+    fn build_md_rows_skips_null_and_merges_duplicates() {
+        let mk = |number: Option<&str>,
+                  lang: &str,
+                  title: Option<&str>,
+                  volume: Option<&str>,
+                  published: Option<&str>| MangaDexChapter {
+            title: title.map(str::to_string),
+            chapter: number.map(str::to_string),
+            volume: volume.map(str::to_string),
+            translated_language: lang.to_string(),
+            publish_at: published.map(str::to_string),
+        };
+
+        let feed = vec![
+            mk(None, "en", Some("No number"), None, None),
+            mk(
+                Some("101.1"),
+                "en",
+                Some("Extra"),
+                Some("12"),
+                Some("2021-03-05T09:00:00+00:00"),
+            ),
+            mk(Some("101.1"), "ru", Some("Экстра"), Some("12"), None),
+            mk(Some("5.5"), "en", Some("Special"), None, None),
+        ];
+
+        let mut rows = build_md_rows(&feed);
+        rows.sort_by_key(|r| r.chapter_number);
+
+        assert_eq!(rows.len(), 2, "null-number skipped; 101.1 merged");
+        assert_eq!(rows[0].chapter_number, 550);
+        assert_eq!(rows[0].title_en.as_deref(), Some("Special"));
+        assert_eq!(rows[1].chapter_number, 10110);
+        assert_eq!(rows[1].title_en.as_deref(), Some("Extra"));
+        assert_eq!(rows[1].title_ru.as_deref(), Some("Экстра"));
+        assert_eq!(rows[1].volume, Some(12));
+        assert_eq!(
+            rows[1].release_date,
+            chrono::NaiveDate::from_ymd_opt(2021, 3, 5)
+        );
     }
 
     #[test]
