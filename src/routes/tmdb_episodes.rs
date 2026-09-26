@@ -350,16 +350,21 @@ pub async fn set_tmdb_episode_watched(
 
     let media_id = get_media_id_by_external(&state.db, &external_id).await;
 
-    if let Some(media_id) = media_id
-        && let Err(e) = crate::services::tmdb_episodes::set_progress_greatest(
+    let mut progress_from_db: Option<i32> = None;
+    if let Some(media_id) = media_id {
+        match crate::services::tmdb_episodes::set_progress_greatest(
             &state.db,
             user.id,
             media_id,
             total_watched,
         )
         .await
-    {
-        tracing::warn!(external_id, error = %e, "set_progress_greatest failed");
+        {
+            Ok(progress) => progress_from_db = progress,
+            Err(e) => {
+                tracing::warn!(external_id, error = %e, "set_progress_greatest failed");
+            }
+        }
     }
 
     let episode_html = {
@@ -444,6 +449,7 @@ pub async fn set_tmdb_episode_watched(
     let mut trigger = serde_json::json!({
         "progressUpdated": {
             "maxWatched": total_watched,
+            "progress": progress_from_db,
         },
         "episodesChanged": {
             "states": states_json,

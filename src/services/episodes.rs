@@ -381,31 +381,33 @@ pub async fn count_watched(
     Ok(row.0.unwrap_or(0))
 }
 
-/// Bumps `tracking_entries.progress` to at least `watched_count`.
-/// Uses `GREATEST(progress, $1)` so it never regresses — un-checking
-/// the highest episode doesn't drop your progress, you'd have to do
-/// that manually with the +1/-1 buttons.
+/// Bumps `tracking_entries.progress` to at least `watched_count` and
+/// returns the resulting value. Uses `GREATEST(progress, $1)` so it
+/// never regresses — un-checking the highest episode doesn't drop your
+/// progress, you'd have to do that manually with the +1/-1 buttons.
+/// `None` when the user has no tracking entry for this media.
 pub async fn update_progress_from_watched(
     pool: &PgPool,
     user_id: Uuid,
     media_id: Uuid,
     watched_count: i32,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
+) -> Result<Option<i32>, sqlx::Error> {
+    let row: Option<(i32,)> = sqlx::query_as(
         r#"
         UPDATE tracking_entries
         SET progress = GREATEST(progress, $1),
             updated_at = NOW()
         WHERE user_id = $2
           AND media_id = $3
+        RETURNING progress
         "#,
     )
     .bind(watched_count)
     .bind(user_id)
     .bind(media_id)
-    .execute(pool)
+    .fetch_optional(pool)
     .await?;
-    Ok(())
+    Ok(row.map(|(progress,)| progress))
 }
 
 /// Read a single episode by (mal_id, episode_number) with this user's
