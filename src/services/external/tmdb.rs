@@ -279,7 +279,7 @@ pub struct TmdbService {
 impl TmdbService {
     pub fn new(api_key: String) -> Self {
         Self {
-            client: Client::new(),
+            client: super::http_client(),
             api_key,
         }
     }

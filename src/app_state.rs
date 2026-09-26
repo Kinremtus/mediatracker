@@ -117,7 +117,7 @@ impl AppState {
         app_base_url: &str,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         sqlx::migrate!("./migrations").run(&db).await?;
-        let http_client = Client::new();
+        let http_client = crate::services::external::http_client();
         let auth = AuthService::new(db.clone());
         let shikimori = ShikimoriService::new();
         let mal = MalService::new();

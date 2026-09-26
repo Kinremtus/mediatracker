@@ -19,7 +19,7 @@ impl TelegramNotifier {
     pub fn with_base_url(bot_token: String, base_url: String) -> Self {
         Self {
             bot_token,
-            client: Client::new(),
+            client: crate::services::external::http_client(),
             base_url,
         }
     }
