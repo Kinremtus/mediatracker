@@ -1,7 +1,7 @@
 use askama::Template;
 use axum::{
     extract::{Query, State},
-    response::Html,
+    response::{Html, IntoResponse},
 };
 use chrono::{Datelike, Duration, NaiveDate, Utc};
 use serde::Deserialize;
@@ -53,10 +53,16 @@ pub async fn get_calendar(
     user: CurrentUser,
     State(state): State<AppState>,
     Query(params): Query<CalendarQuery>,
-) -> Html<String> {
+) -> axum::response::Response {
     let now = Utc::now();
     let year = params.year.unwrap_or_else(|| now.year());
     let month = params.month.unwrap_or_else(|| now.month());
+
+    // Reject nonsense month/year before any date math: `?month=13` used to panic
+    // inside `NaiveDate::from_ymd_opt(..).expect(..)` (500 / DoS).
+    let Some((first, last)) = month_bounds(year, month) else {
+        return super::bad_request("calendar: year/month out of range");
+    };
 
     let stats = get_sidebar_stats(&state, &user).await;
 
@@ -67,14 +73,6 @@ pub async fn get_calendar(
         .copied()
         .unwrap_or("")
         .to_string();
-
-    // Calculate first/last day of month
-    let first = NaiveDate::from_ymd_opt(year, month, 1).expect("valid date");
-    let last = if month == 12 {
-        NaiveDate::from_ymd_opt(year + 1, 1, 1).expect("valid date")
-    } else {
-        NaiveDate::from_ymd_opt(year, month + 1, 1).expect("valid date")
-    } - Duration::days(1);
 
     // Start from Monday of the week containing the 1st
     let start = first - Duration::days(first.weekday().num_days_from_monday() as i64);
@@ -150,7 +148,7 @@ pub async fn get_calendar(
     let prev_month_url = format!("/calendar?year={}&month={}", prev_year, prev_month);
     let next_month_url = format!("/calendar?year={}&month={}", next_year, next_month);
 
-    CalendarTemplate {
+    let rendered = CalendarTemplate {
         username: user.username,
         role: user.role,
         stats,
@@ -163,10 +161,50 @@ pub async fn get_calendar(
         prev_month_url,
         next_month_url,
     }
-    .render()
-    .unwrap_or_else(|e| {
-        tracing::error!(error = %e, "template render failed");
-        String::from("Internal Server Error")
-    })
-    .into()
+    .render();
+    match rendered {
+        Ok(html) => Html(html).into_response(),
+        Err(e) => super::internal_error("calendar: template render", e),
+    }
+}
+
+/// Inclusive first/last day of `year`/`month`, or `None` when the request is
+/// out of range so the handler can answer 400 instead of panicking.
+fn month_bounds(year: i32, month: u32) -> Option<(NaiveDate, NaiveDate)> {
+    if !(1..=12).contains(&month) || !(1900..=2999).contains(&year) {
+        return None;
+    }
+    let first = NaiveDate::from_ymd_opt(year, month, 1)?;
+    let last = if month == 12 {
+        NaiveDate::from_ymd_opt(year + 1, 1, 1)?
+    } else {
+        NaiveDate::from_ymd_opt(year, month + 1, 1)?
+    } - Duration::days(1);
+    Some((first, last))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn month_bounds_accepts_december() {
+        let (first, last) = month_bounds(2026, 12).expect("december is valid");
+        assert_eq!(first, NaiveDate::from_ymd_opt(2026, 12, 1).unwrap());
+        assert_eq!(last, NaiveDate::from_ymd_opt(2026, 12, 31).unwrap());
+    }
+
+    #[test]
+    fn month_bounds_handles_leap_february() {
+        let (_, last) = month_bounds(2028, 2).expect("february 2028 is valid");
+        assert_eq!(last, NaiveDate::from_ymd_opt(2028, 2, 29).unwrap());
+    }
+
+    #[test]
+    fn month_bounds_rejects_out_of_range_input() {
+        assert!(month_bounds(2026, 13).is_none());
+        assert!(month_bounds(2026, 0).is_none());
+        assert!(month_bounds(1800, 1).is_none());
+        assert!(month_bounds(i32::MAX, 1).is_none());
+    }
 }
