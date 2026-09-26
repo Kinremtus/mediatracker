@@ -8,14 +8,14 @@ Keep a personal log of everything you watch, read, and play in one place.
 - **Unified tracking** — single interface for movies, TV, anime, manga, manhwa, books, games, and more
 - **Multiple statuses** — `in_progress`, `completed`, `planned`, `dropped`, `paused`
 - **Rich metadata** — posters, descriptions, ratings from external providers
-- **External providers** — TMDB (movies/TV), Shikimori & MAL (anime), MangaUpdates (manga/manhwa), RAWG & IGDB (games), Google Books & OpenLibrary (books)
+- **External providers** — TMDB (movies/TV), Shikimori & MAL (anime), MangaUpdates + MangaDex (manga/manhwa/manhua/novels/comics), RAWG & IGDB (games), Google Books & OpenLibrary (books)
 - **Release schedule** — upcoming episodes/chapters in a calendar view
 - **Telegram notifications** — get notified when new episodes are available
 - **Search** — unified search across all media types
 - **Themes** — light, graphite, dark mode
 - **Session-based auth** — Argon2 password hashing, PostgreSQL sessions
 - **HTMX-driven UI** — fast, no full page reloads
-- **Docker Compose** — one-command deployment
+- **GitOps deployment** — the image is built by CI and rolled out to k3s with Helm
 - **Statistics** — track your consumption over time
 
 ## Tech Stack
@@ -28,20 +28,27 @@ Keep a personal log of everything you watch, read, and play in one place.
 | Templates | Askama 0.16 |
 | Frontend | HTMX + Alpine.js |
 | Auth | Argon2, session-based (PostgreSQL) |
-| Containers | Docker Compose, multi-stage build |
-| IaC | Terraform (Cloudflare, VULTR) |
+| Container | Docker (multi-stage build) |
+| Runtime | Kubernetes (k3s) + Helm |
+| Ingress | Traefik, published through Cloudflare Tunnel |
+| Registry | GHCR (`ghcr.io/kinremtus/mediatracker`) |
+| CI/CD | GitHub Actions (self-hosted runner) |
+| IaC | Terraform (Cloudflare, VULTR, monitoring) |
 
-## Quick Start
+## Quick Start (development)
 
 ```bash
 git clone https://github.com/Kinremtus/mediatracker
 cd mediatracker
-cp .env.example .env
-# edit .env with your settings
-docker compose up -d
+cp .env.example .env   # DATABASE_URL, COOKIE_SECRET, provider keys
+cargo run              # requires a reachable PostgreSQL 17
 ```
 
-The app will be available at `http://localhost:8080`.
+The app listens on `http://localhost:8080`.
+
+Static assets are served by the application itself — nginx is no longer part of
+the stack. Browsers revalidate them on every request through `ETag` /
+`Last-Modified`, so no cache-busting query strings are needed.
 
 ### Environment Variables
 
@@ -58,22 +65,39 @@ The app will be available at `http://localhost:8080`.
 | `GOOGLE_BOOKS_API_KEY` | No | — | For book metadata |
 | `MANGAUPDATES_API_KEY` | No | — | For manga metadata |
 
+MangaDex needs no API key — it is used for chapter enrichment only.
+
+## Deployment
+
+Production runs on k3s (single VPS) and is driven entirely by `git push`:
+
+1. **check** — `cargo clippy -D warnings`, `cargo test`, `cargo audit`, plus k8s YAML validation
+2. **build** — Docker buildx pushes `ghcr.io/kinremtus/mediatracker:latest` to GHCR
+3. **deploy** — the self-hosted runner SSHs to the VPS and runs
+   `helm upgrade --install app chart/ -n mediatracker`
+
+PostgreSQL also runs in-cluster: it is a StatefulSet managed by the same Helm
+chart, with the image pinned by digest. Monitoring is applied separately from
+`terraform/monitoring/` and is intentionally not part of the application deploy
+— the deploy only touches `k8s/` directories that actually exist.
+
 ## Architecture
 
 ```
-┌─────────┐     ┌──────────┐     ┌──────────┐
-│ Browser │────▶│  Nginx   │────▶│  Axum    │
-│ (HTMX)  │     │ (static) │     │ (server) │
-└─────────┘     └──────────┘     └────┬─────┘
-                                      │
-                               ┌──────▼──────┐
-                               │ PostgreSQL  │
-                               └──────┬──────┘
-                                      │
-                               ┌──────▼──────┐
-                               │ External    │
-                               │ Providers   │
-                               └─────────────┘
++---------+   +-------------+   +----------+   +-----------+
+| Browser |-->| Cloudflare  |-->| Traefik  |-->|   Axum    |
+| (HTMX)  |   |   Tunnel    |   | ingress  |   |  server   |
++---------+   +-------------+   +----------+   +-----+-----+
+                                                     |
+                                              +------v-------+
+                                              |  PostgreSQL  |
+                                              | (StatefulSet)|
+                                              +------+-------+
+                                                     |
+                                              +------v-------+
+                                              |   External   |
+                                              |   Providers  |
+                                              +--------------+
 ```
 
 ## Project Structure
@@ -85,15 +109,31 @@ The app will be available at `http://localhost:8080`.
 │   │   ├── external/   # Provider clients (TMDB, Shikimori, MAL, IGDB, …)
 │   │   └── notifications/ # Telegram bot
 │   ├── models/         # Database models
-│   └── middleware/     # Auth, sessions, etc.
-├── terraform/           # Infrastructure as Code (Cloudflare, VULTR)
+│   ├── middleware/     # Auth, sessions, security headers, rate limiting
+│   └── bin/            # One-off backfill utilities
+├── terraform/          # Infrastructure as Code (Cloudflare, VULTR, monitoring)
 ├── templates/          # Askama HTML templates
-├── migrations/         # SQLx migrations
-├── static/             # CSS, JS, images (served by nginx)
-├── k8s/                # Kubernetes manifests
-├── chart/              # Helm chart
-└── scripts/            # Backup, restore utilities
+├── migrations/         # SQLx migrations, applied automatically on startup
+├── static/             # CSS, JS, images (served by the app, ETag revalidation)
+├── k8s/                # Manifests applied by CI (ingress, backup, cloudflared)
+├── chart/              # Helm chart (app, postgres, PDB, network policies)
+├── scripts/            # Backup, restore, backfill and deploy helpers
+└── thoughts/           # Design docs, plans and session ledgers
 ```
+
+## Backups
+
+`scripts/backup-db.sh` dumps the cluster database (`pg_dump -Fc`) by running
+`kubectl exec` against `statefulset/postgres`, encrypts the dump with `age` and
+keeps 7 days of history locally. Restore with `scripts/restore-db.sh`
+(requires `CONFIRM=yes`), and prove a dump is usable with
+`scripts/restore-drill.sh`, which restores the newest dump into an ephemeral
+PostgreSQL 17 container and compares row counts.
+
+In the cluster the same job runs as a CronJob from `k8s/backup/`
+(CronJob + PVC + encrypted secret). Retention, RPO/RTO targets and the
+open offsite-copy decision are documented in
+[`k8s/backup/README.md`](k8s/backup/README.md).
 
 ## Infrastructure as Code
 
@@ -104,6 +144,7 @@ The [`terraform/`](terraform/) directory contains IaC for managing cloud infrast
 | **Cloudflare** | `cloudflare_record.main` | DNS CNAME for Cloudflare Tunnel → InterServer VPS |
 | **Cloudflare** | `cloudflare_record.dev` | A-record for ephemeral VULTR test VPS |
 | **VULTR** | `vultr_instance`, `vultr_ssh_key` | Full lifecycle of a test VM (Docker, Ubuntu) |
+| **Terraform** | `monitoring/` | Prometheus/Grafana stack, applied separately from the app deploy |
 
 Key Terraform patterns used:
 - **`terraform import`** — adopt existing resources under management
