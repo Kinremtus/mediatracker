@@ -85,15 +85,32 @@ the job logs a warning and still succeeds because the local dump is valid.
 Set `BACKUP_REQUIRE_OFFSITE=1` (env in `cronjob.yaml`) once R2 is trusted to
 make a failed upload fail the whole job.
 
-## RPO / RTO
+## Retention / RPO / RTO
 
 | Metric | Value | Notes |
 |--------|-------|-------|
+| Local retention | 7 days | `RETENTION_DAYS` in `backup.sh`; PVC `backup-data` (5Gi) |
+| Offsite retention | 30 days (planned) | once R2 is on: set an R2 bucket lifecycle rule expiring objects after 30 days |
 | RPO | up to 24h | daily 03:00 schedule; tighten `spec.schedule` to reduce |
-| RTO | ~minutes | restore dump + app rollout for the current data size |
+| RTO | < 1h | restore dump + `helm` app rollout for the current data size |
 
-Local dumps are pruned after 7 days (`RETENTION_DAYS` in `backup.sh`). Offsite
-copies are kept according to the R2 bucket lifecycle policy (set that up in R2).
+Enabling WAL archiving (`archive_mode = on` plus an `archive_command`) would
+cut the RPO to minutes, at the cost of running `pgbackrest`/`wal-g` and a
+second bucket. Not set up today: the current target is "lose at most one day".
+
+## Open decisions (owner, 2026-09-26)
+
+- **Offsite backup (Cloudflare R2): deliberately deferred.** The deployment
+  has a handful of users and a partial loss is tolerable, so the extra moving
+  part is not worth it yet. The rclone path is already wired, so enabling it
+  later is: create the R2 bucket and its lifecycle rule, write the keys into
+  `backup-secret` (see `secret.example.yaml`), optionally set
+  `BACKUP_REQUIRE_OFFSITE=1`. No manifest changes are needed.
+- **CSRF: accepted as-is.** The session cookie stays `HttpOnly; Secure;
+  SameSite=Lax` and there is no double-submit token: every state-changing
+  request is a same-site HTMX form post, and `SameSite=Lax` blocks
+  cross-site POSTs. Revisit only if an embeddable third-party integration
+  appears.
 
 ## Restore procedure
 
