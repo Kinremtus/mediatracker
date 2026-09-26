@@ -162,10 +162,8 @@ async fn notify_new_episodes_claims_notification_atomically() {
     insert_release(&ctx, Utc::now() - Duration::hours(1), 12).await;
 
     let addr = spawn_stub_telegram();
-    let notifier = TelegramNotifier::with_base_url(
-        "test-token".to_string(),
-        format!("http://{addr}"),
-    );
+    let notifier =
+        TelegramNotifier::with_base_url("test-token".to_string(), format!("http://{addr}"));
 
     let service = ReleaseScheduleService::new(ctx.pool.clone());
     let first = service

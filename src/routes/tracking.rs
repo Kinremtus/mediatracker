@@ -7,7 +7,7 @@ use axum::{
 use serde::{Deserialize, Deserializer};
 use uuid::Uuid;
 
-use super::home::SidebarStats;
+use super::home::{SidebarStats, get_sidebar_stats};
 use crate::app_state::AppState;
 use crate::middleware::CurrentUser;
 use crate::models::tracking_entry::{TrackingEntryWithMedia, UpdateTracking};
@@ -82,15 +82,18 @@ pub async fn get_tracking_list(
     user: CurrentUser,
     State(state): State<AppState>,
     Query(params): Query<TrackingQuery>,
-) -> Html<String> {
+) -> Response {
     let status = params.status.as_deref();
     let media_type = params.media_type.as_deref();
     let search_query = params.q.as_deref();
-    let entries = state
+    let entries = match state
         .tracking
         .get_user_entries(user.id, status, media_type, search_query)
         .await
-        .unwrap_or_default();
+    {
+        Ok(entries) => entries,
+        Err(e) => return super::internal_error("tracking: list entries", e),
+    };
     let stats = get_sidebar_stats(&state, &user).await;
     let current_status = params.status.unwrap_or_default();
     let current_media_type = params.media_type.unwrap_or_default();
@@ -144,8 +147,11 @@ pub async fn get_tracking_list(
         current_type_label,
     }
     .render()
-    .unwrap()
-    .into()
+    .unwrap_or_else(|e| {
+        tracing::error!(error = %e, "template render failed");
+        String::from("Internal Server Error")
+    })
+    .into_response()
 }
 
 fn csv_str<'de, D>(de: D) -> Result<Vec<String>, D::Error>
@@ -402,7 +408,7 @@ pub async fn post_add_to_tracking(
             }
         }
         Err(e) => {
-            eprintln!("Error adding to tracking: {}", e);
+            tracing::error!(error = %e, "failed to add to tracking");
             if is_htmx {
                 let mut resp = Html(r#"<span class="btn btn-secondary" style="width:100%;height:32px;font-size:12px;display:flex;align-items:center;justify-content:center;cursor:default;opacity:0.6;color:var(--dropped);">✕ Ошибка</span>"#.to_string()).into_response();
                 resp.headers_mut()
@@ -450,7 +456,7 @@ pub async fn post_update_tracking(
     match state.tracking.update_entry(id, user.id, &update).await {
         Ok(_) => Redirect::to("/tracking").into_response(),
         Err(e) => {
-            eprintln!("Error updating tracking: {}", e);
+            tracing::error!(error = %e, "failed to update tracking");
             Redirect::to("/tracking").into_response()
         }
     }
@@ -464,7 +470,7 @@ pub async fn post_delete_tracking(
     match state.tracking.delete_entry(id, user.id).await {
         Ok(_) => Redirect::to("/tracking").into_response(),
         Err(e) => {
-            eprintln!("Error deleting tracking: {}", e);
+            tracing::error!(error = %e, "failed to delete tracking");
             Redirect::to("/tracking").into_response()
         }
     }
@@ -522,27 +528,26 @@ pub async fn htmx_update_tracking(
     };
 
     match state.tracking.update_entry(id, user.id, &update).await {
-        Ok(_entry) => {
-            let entries = state
-                .tracking
-                .get_user_entries(user.id, None, None, None)
-                .await
-                .unwrap_or_default();
-            let entry_with_media = entries.iter().find(|e| e.entry.id == id).cloned();
-            match entry_with_media {
-                Some(ewm) => {
-                    let html = TrackingCardPartial {
-                        entry_with_media: ewm,
-                    }
-                    .render()
-                    .unwrap();
-                    ([("HX-Trigger", "trackingUpdated")], Html(html)).into_response()
+        Ok(_entry) => match state.tracking.get_entry_with_media(user.id, id).await {
+            Ok(Some(ewm)) => {
+                let html = TrackingCardPartial {
+                    entry_with_media: ewm,
                 }
-                None => Redirect::to("/tracking").into_response(),
+                .render()
+                .unwrap_or_else(|e| {
+                    tracing::error!(error = %e, "template render failed");
+                    String::from("Internal Server Error")
+                });
+                ([("HX-Trigger", "trackingUpdated")], Html(html)).into_response()
             }
-        }
+            Ok(None) => Redirect::to("/tracking").into_response(),
+            Err(e) => {
+                tracing::error!(error = %e, "failed to load updated tracking entry");
+                Redirect::to("/tracking").into_response()
+            }
+        },
         Err(e) => {
-            eprintln!("Error updating tracking: {}", e);
+            tracing::error!(error = %e, "failed to update tracking");
             Redirect::to("/tracking").into_response()
         }
     }
@@ -556,7 +561,7 @@ pub async fn htmx_delete_tracking(
     match state.tracking.delete_entry(id, user.id).await {
         Ok(_) => ([("HX-Trigger", "trackingUpdated")], "").into_response(),
         Err(e) => {
-            eprintln!("Error deleting tracking: {}", e);
+            tracing::error!(error = %e, "failed to delete tracking");
             Redirect::to("/tracking").into_response()
         }
     }
@@ -596,11 +601,14 @@ pub async fn htmx_tracking_partial(
     let status = params.status.as_deref();
     let media_type = params.media_type.as_deref();
     let search_query = params.q.as_deref();
-    let entries = state
+    let entries = match state
         .tracking
         .get_user_entries(user.id, status, media_type, search_query)
         .await
-        .unwrap_or_default();
+    {
+        Ok(entries) => entries,
+        Err(e) => return super::internal_error("tracking: list entries partial", e),
+    };
 
     Html(
         TrackingGridPartial {
@@ -610,22 +618,10 @@ pub async fn htmx_tracking_partial(
             search_query: params.q.unwrap_or_default(),
         }
         .render()
-        .unwrap(),
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "template render failed");
+            String::from("Internal Server Error")
+        }),
     )
     .into_response()
-}
-
-async fn get_sidebar_stats(state: &AppState, user: &CurrentUser) -> SidebarStats {
-    let (ip, cp, pp, dp) = state
-        .tracking
-        .get_status_counts(user.id)
-        .await
-        .unwrap_or_default();
-    SidebarStats {
-        in_progress: ip,
-        completed: cp,
-        planned: pp,
-        dropped: dp,
-        role: user.role.clone(),
-    }
 }

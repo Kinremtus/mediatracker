@@ -24,6 +24,18 @@ struct RegisterTemplate {
     error: Option<String>,
 }
 
+/// Renders an auth page, degrading to a 500 instead of panicking the request
+/// task if a template ever fails to render.
+fn render_auth_page<T: Template>(template: &T) -> Response {
+    match template.render() {
+        Ok(html) => Html(html).into_response(),
+        Err(e) => {
+            tracing::error!(error = %e, "template render failed");
+            (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response()
+        }
+    }
+}
+
 #[derive(Deserialize)]
 pub struct LoginForm {
     username: String,
@@ -68,8 +80,8 @@ pub struct ResetTokenQuery {
     token: String,
 }
 
-pub async fn get_login() -> Html<String> {
-    LoginTemplate { error: None }.render().unwrap().into()
+pub async fn get_login() -> Response {
+    render_auth_page(&LoginTemplate { error: None })
 }
 
 pub async fn post_login(
@@ -105,14 +117,17 @@ pub async fn post_login(
                 error: Some(e.to_string()),
             }
             .render()
-            .unwrap();
+            .unwrap_or_else(|e| {
+                tracing::error!(error = %e, "template render failed");
+                String::from("Internal Server Error")
+            });
             (StatusCode::UNAUTHORIZED, Html(html)).into_response()
         }
     }
 }
 
-pub async fn get_register() -> Html<String> {
-    RegisterTemplate { error: None }.render().unwrap().into()
+pub async fn get_register() -> Response {
+    render_auth_page(&RegisterTemplate { error: None })
 }
 
 pub async fn post_register(
@@ -132,7 +147,10 @@ pub async fn post_register(
                 error: Some(e.to_string()),
             }
             .render()
-            .unwrap();
+            .unwrap_or_else(|e| {
+                tracing::error!(error = %e, "template render failed");
+                String::from("Internal Server Error")
+            });
             (StatusCode::BAD_REQUEST, Html(html)).into_response()
         }
     }
@@ -144,7 +162,10 @@ pub async fn get_forgot_password() -> Html<String> {
         error: None,
     }
     .render()
-    .unwrap()
+    .unwrap_or_else(|e| {
+        tracing::error!(error = %e, "template render failed");
+        String::from("Internal Server Error")
+    })
     .into()
 }
 
@@ -158,7 +179,10 @@ pub async fn post_forgot_password(
             error: Some("Восстановление пароля временно недоступно. Попробуйте позже.".to_string()),
         }
         .render()
-        .unwrap();
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "template render failed");
+            String::from("Internal Server Error")
+        });
         return (StatusCode::SERVICE_UNAVAILABLE, Html(html)).into_response();
     }
 
@@ -172,7 +196,10 @@ pub async fn post_forgot_password(
         error: None,
     }
     .render()
-    .unwrap();
+    .unwrap_or_else(|e| {
+        tracing::error!(error = %e, "template render failed");
+        String::from("Internal Server Error")
+    });
     Html(html).into_response()
 }
 
@@ -187,7 +214,10 @@ pub async fn get_reset_password(
                 error: None,
             }
             .render()
-            .unwrap();
+            .unwrap_or_else(|e| {
+                tracing::error!(error = %e, "template render failed");
+                String::from("Internal Server Error")
+            });
             Html(html).into_response()
         }
         Err(_) => {
@@ -196,7 +226,10 @@ pub async fn get_reset_password(
                 error: Some(ResetError::InvalidToken.to_string()),
             }
             .render()
-            .unwrap();
+            .unwrap_or_else(|e| {
+                tracing::error!(error = %e, "template render failed");
+                String::from("Internal Server Error")
+            });
             (StatusCode::BAD_REQUEST, Html(html)).into_response()
         }
     }
@@ -218,7 +251,10 @@ pub async fn post_reset_password(
                 error: Some(ResetError::InvalidToken.to_string()),
             }
             .render()
-            .unwrap();
+            .unwrap_or_else(|e| {
+                tracing::error!(error = %e, "template render failed");
+                String::from("Internal Server Error")
+            });
             (StatusCode::BAD_REQUEST, Html(html)).into_response()
         }
         Err(e) => {
@@ -227,7 +263,10 @@ pub async fn post_reset_password(
                 error: Some(e.to_string()),
             }
             .render()
-            .unwrap();
+            .unwrap_or_else(|e| {
+                tracing::error!(error = %e, "template render failed");
+                String::from("Internal Server Error")
+            });
             (StatusCode::BAD_REQUEST, Html(html)).into_response()
         }
     }

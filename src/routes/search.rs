@@ -5,7 +5,7 @@ use axum::{
 };
 use serde::Deserialize;
 
-use super::home::SidebarStats;
+use super::home::{SidebarStats, get_sidebar_stats};
 use crate::app_state::AppState;
 use crate::middleware::CurrentUser;
 use crate::models::media_item::{CreateMediaItem, SearchSuggestion};
@@ -60,16 +60,7 @@ pub async fn get_search(
         search::by_media_type(&state, &query, &search_type).await
     };
 
-    for item in &mut all_results {
-        if let Ok(Some(_)) = state
-            .tracking
-            .find_entry_by_media(user.id, &item.provider, &item.external_id)
-            .await
-        {
-            item.is_tracked = true;
-        }
-    }
-
+    mark_tracked(&state, user.id, &mut all_results).await;
     let total_pages = if all_results.is_empty() {
         1
     } else {
@@ -117,7 +108,10 @@ pub async fn get_search(
             .collect(),
     }
     .render()
-    .unwrap()
+    .unwrap_or_else(|e| {
+        tracing::error!(error = %e, "template render failed");
+        String::from("Internal Server Error")
+    })
     .into()
 }
 
@@ -142,15 +136,7 @@ pub async fn get_search_suggestions(
 
     let mut results = search::by_media_type(&state, &query, "").await;
 
-    for item in &mut results {
-        if let Ok(Some(_)) = state
-            .tracking
-            .find_entry_by_media(user.id, &item.provider, &item.external_id)
-            .await
-        {
-            item.is_tracked = true;
-        }
-    }
+    mark_tracked(&state, user.id, &mut results).await;
 
     let suggestions: Vec<SearchSuggestion> = results
         .into_iter()
@@ -171,17 +157,23 @@ pub async fn get_search_suggestions(
     Json(suggestions)
 }
 
-async fn get_sidebar_stats(state: &AppState, user: &CurrentUser) -> SidebarStats {
-    let (ip, cp, pp, dp) = state
-        .tracking
-        .get_status_counts(user.id)
-        .await
-        .unwrap_or_default();
-    SidebarStats {
-        in_progress: ip,
-        completed: cp,
-        planned: pp,
-        dropped: dp,
-        role: user.role.clone(),
+/// Fill `is_tracked` for every result with a single batched query (P2-F),
+/// instead of one `find_entry_by_media` round-trip per item.
+async fn mark_tracked(state: &AppState, user_id: uuid::Uuid, items: &mut [CreateMediaItem]) {
+    let pairs: Vec<(String, String)> = items
+        .iter()
+        .map(|i| (i.provider.clone(), i.external_id.clone()))
+        .collect();
+    let tracked = match state.tracking.find_tracked_media(user_id, &pairs).await {
+        Ok(set) => set,
+        Err(e) => {
+            tracing::warn!(error = %e, "search: failed to load tracked media");
+            return;
+        }
+    };
+    for item in items {
+        if tracked.contains(&(item.provider.clone(), item.external_id.clone())) {
+            item.is_tracked = true;
+        }
     }
 }

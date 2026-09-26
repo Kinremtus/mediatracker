@@ -7,8 +7,16 @@ image:
   # IfNotPresent is safe and avoids a registry round-trip on every start.
   pullPolicy: IfNotPresent
 
-imagePullSecrets:
-  - name: ghcr-auth
+# Optional. Left empty the key renders nothing, so a public image (or a node
+# that is already authenticated) does not need a bogus pull secret.
+imagePullSecrets: []
+
+# The app never calls the Kubernetes API, so it gets a dedicated
+# ServiceAccount with no mounted token instead of the namespace default.
+serviceAccount:
+  create: true
+  name: app
+  automountServiceAccountToken: false
 
 service:
   type: ClusterIP
@@ -19,14 +27,14 @@ app:
   name: app
   port: 8080
 
-# Exactly one process may run the background refresh + Telegram notification
-# loop. The web Deployment disables it; the dedicated refresh Deployment
-# (templates/refresh-deployment.yaml) enables it.
-refreshLoopEnabled: false
-
+# Exactly one process may run the background loops. The web Deployment disables
+# them through the configmap; the dedicated refresh Deployment
+# (templates/refresh-deployment.yaml) enables them.
 refreshDeployment:
   enabled: true
   replicas: 1
+  # Interval for the release-schedule/Telegram loop inside the worker.
+  intervalSecs: "1800"
 
 # Time the kubelet gives in-flight requests to drain before SIGKILL.
 terminationGracePeriodSeconds: 30
@@ -54,6 +62,17 @@ readinessProbe:
   periodSeconds: 10
   timeoutSeconds: 3
   failureThreshold: 3
+
+# Gives a slow first boot (migrations, connection-pool warm-up) room to finish
+# before liveness starts counting failures. Without it a long startup can be
+# killed by the liveness probe.
+startupProbe:
+  httpGet:
+    path: /health
+    port: 8080
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 30
 
 resources:
   limits:
@@ -87,21 +106,33 @@ configMap:
   refreshLoopEnabled: "false"
   refreshIntervalSecs: "0"
 
-# Dedicated single-replica worker for all background work. Kept out of the web
-# Deployment so scaling the web tier never multiplies background jobs. It runs
-# the same image with SERVE_HTTP=false (no listener) and the loops re-enabled.
-refresh:
-  enabled: true
-  replicaCount: 1
-  intervalSecs: "1800"
-
 # ---------------------------------------------------------------------------
-# PostgreSQL is deployed from k8s/deployments/postgres-statefulset.yaml (raw
-# manifest), NOT from this chart. These keys carry the intended hardened
-# defaults so the same values can be reused if Postgres is ever templated into
-# the chart; they are currently documentation/reference only.
+# PostgreSQL, templated by templates/postgres-statefulset.yaml.
+#
+# Adopting the existing (kubectl-applied) objects into this release: label and
+# annotate them once, then a normal `helm upgrade` takes ownership:
+#   kubectl -n mediatracker annotate statefulset postgres \
+#     meta.helm.sh/release-name=app meta.helm.sh/release-namespace=mediatracker
+#   kubectl -n mediatracker label statefulset postgres app.kubernetes.io/managed-by=Helm
+#   kubectl -n mediatracker annotate service postgres \
+#     meta.helm.sh/release-name=app meta.helm.sh/release-namespace=mediatracker
+#   kubectl -n mediatracker label service postgres app.kubernetes.io/managed-by=Helm
+#
+# `storage`/`storageClassName` must match the live volumeClaimTemplates: that
+# block is immutable on an existing StatefulSet, so a changed value makes the
+# upgrade fail. The PVC itself is created by the StatefulSet (not tracked by
+# Helm) and is never deleted by `helm uninstall`.
 # ---------------------------------------------------------------------------
 postgres:
+  enabled: true
+  image:
+    repository: postgres
+    tag: 17-alpine
+    pullPolicy: IfNotPresent
+  port: 5432
+  secretName: db-secret
+  storageClassName: local-path
+  storage: 5Gi
   resources:
     requests:
       cpu: 100m
@@ -109,7 +140,26 @@ postgres:
     limits:
       cpu: 1000m
       memory: 1Gi
-  storage: 10Gi
+
+# Rolling-update safety: keep enough history to roll back to a good image.
+revisionHistoryLimit: 5
+# How long a rollout may make no progress before it is marked failed.
+progressDeadlineSeconds: 600
+
+# Default-deny + allow-list, templated by templates/networkpolicy.yaml.
+# Adoption note (run once if the raw k8s/networkpolicy.yaml was ever applied):
+#   for n in default-deny allow-dns-egress allow-intra-namespace \
+#            allow-app-ingress allow-app-egress-internet allow-backup-egress-internet; do
+#     kubectl -n mediatracker annotate networkpolicy "$n" \
+#       meta.helm.sh/release-name=app meta.helm.sh/release-namespace=mediatracker
+#     kubectl -n mediatracker label networkpolicy "$n" app.kubernetes.io/managed-by=Helm
+#   done
+networkPolicy:
+  enabled: true
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
 
 autoscaling:
   enabled: true

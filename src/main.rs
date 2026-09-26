@@ -226,8 +226,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 igdb: bg_state.igdb,
                 google_books: bg_state.google_books,
                 openlibrary: bg_state.openlibrary,
-                release_schedule: bg_state.release_schedule,
-                telegram: bg_state.telegram,
             };
             refresh_counts::run_refresh_loop(ctx, refresh_cancel).await;
         });

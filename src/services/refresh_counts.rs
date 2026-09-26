@@ -17,11 +17,8 @@ use crate::services::external::openlibrary::OpenLibraryService;
 use crate::services::external::rawg::RawgService;
 use crate::services::external::shikimori::ShikimoriService;
 use crate::services::external::tmdb::TmdbService;
-use crate::services::notifications::TelegramNotifier;
-use crate::services::release_schedule::ReleaseScheduleService;
 
 const REFRESH_INTERVAL: Duration = Duration::from_secs(6 * 3600);
-const NOTIFY_INTERVAL: Duration = Duration::from_secs(15 * 60);
 const LOCK_ID: i64 = 42;
 
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -51,8 +48,6 @@ pub struct RefreshCtx {
     pub igdb: IgdbService,
     pub google_books: GoogleBooksService,
     pub openlibrary: OpenLibraryService,
-    pub release_schedule: ReleaseScheduleService,
-    pub telegram: TelegramNotifier,
 }
 
 #[derive(Clone)]
@@ -120,12 +115,10 @@ impl Provider {
 }
 
 pub async fn run_refresh_loop(ctx: RefreshCtx, cancel: CancellationToken) {
-    let mut refresh_interval = tokio::time::interval(REFRESH_INTERVAL);
-    let mut notify_interval = tokio::time::interval(NOTIFY_INTERVAL);
-    // Consume the immediate first tick of each interval so the first cycle
-    // runs after a full period (preserves the previous refresh behaviour).
-    refresh_interval.tick().await;
-    notify_interval.tick().await;
+    let mut interval = tokio::time::interval(REFRESH_INTERVAL);
+    // Consume the immediate first tick so the first cycle runs after a full
+    // period (preserves the previous refresh behaviour).
+    interval.tick().await;
 
     loop {
         tokio::select! {
@@ -133,14 +126,9 @@ pub async fn run_refresh_loop(ctx: RefreshCtx, cancel: CancellationToken) {
                 info!("refresh_counts: cancelled, shutting down");
                 break;
             }
-            _ = refresh_interval.tick() => {
+            _ = interval.tick() => {
                 if let Err(e) = try_refresh(&ctx).await {
                     warn!(error = %e, "refresh_counts: cycle failed");
-                }
-            }
-            _ = notify_interval.tick() => {
-                if let Err(e) = run_notify_cycle(&ctx).await {
-                    warn!(error = %e, "refresh_counts: notify cycle failed");
                 }
             }
         }
@@ -168,47 +156,6 @@ async fn try_refresh(ctx: &RefreshCtx) -> Result<(), anyhow::Error> {
     }
 
     let result = do_refresh(ctx).await;
-
-    if let Err(e) = sqlx::query("SELECT pg_advisory_unlock($1)")
-        .bind(LOCK_ID)
-        .execute(&mut *conn)
-        .await
-    {
-        warn!(error = %e, "refresh_counts: failed to release advisory lock");
-    }
-
-    result
-}
-
-/// Refresh the release schedule and send Telegram notifications.
-///
-/// Guarded by the same advisory lock so only one replica notifies; the
-/// per-notification atomic claim inside `notify_new_episodes` is the second
-/// line of defence against duplicates.
-async fn run_notify_cycle(ctx: &RefreshCtx) -> Result<(), anyhow::Error> {
-    let mut conn = ctx.db.acquire().await?;
-
-    let (locked,): (bool,) = sqlx::query_as("SELECT pg_try_advisory_lock($1)")
-        .bind(LOCK_ID)
-        .fetch_one(&mut *conn)
-        .await?;
-
-    if !locked {
-        return Ok(());
-    }
-
-    let result: Result<(), anyhow::Error> = async {
-        ctx.release_schedule.ensure_fresh(&ctx.shikimori).await?;
-        let sent = ctx
-            .release_schedule
-            .notify_new_episodes(&ctx.telegram)
-            .await?;
-        if sent > 0 {
-            info!(sent, "refresh_counts: telegram notifications sent");
-        }
-        Ok(())
-    }
-    .await;
 
     if let Err(e) = sqlx::query("SELECT pg_advisory_unlock($1)")
         .bind(LOCK_ID)

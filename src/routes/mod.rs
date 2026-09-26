@@ -1,3 +1,18 @@
+use axum::response::IntoResponse;
+
+/// Log an internal error and return a generic 500 response.
+pub(crate) fn internal_error(
+    context: &str,
+    error: impl std::fmt::Display,
+) -> axum::response::Response {
+    tracing::error!(context = context, error = %error, "internal error");
+    (
+        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+        "Internal Server Error",
+    )
+        .into_response()
+}
+
 pub mod admin;
 pub mod auth;
 pub mod calendar;

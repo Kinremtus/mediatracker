@@ -156,6 +156,25 @@ impl AuthService {
             .await?;
         Ok(())
     }
+
+    /// Delete all of a user's sessions except the one whose hash is
+    /// `keep_token_hash`.
+    ///
+    /// Called after a password change so every other (possibly stolen) cookie
+    /// is invalidated while the current, legitimate session keeps working.
+    /// Returns the number of sessions removed.
+    pub async fn delete_other_sessions(
+        &self,
+        user_id: Uuid,
+        keep_token_hash: &str,
+    ) -> Result<u64, anyhow::Error> {
+        let result = sqlx::query("DELETE FROM sessions WHERE user_id = $1 AND token_hash <> $2")
+            .bind(user_id)
+            .bind(keep_token_hash)
+            .execute(&self.db)
+            .await?;
+        Ok(result.rows_affected())
+    }
 }
 
 #[cfg(test)]

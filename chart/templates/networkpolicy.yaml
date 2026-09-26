@@ -1,22 +1,21 @@
-# NetworkPolicies for the `mediatracker` namespace: default-deny, then an
-# explicit allow-list.
+{{- if .Values.networkPolicy.enabled }}
+# Default-deny, then an explicit allow-list.
 #
 # Real traffic paths in this cluster:
 #   Internet -> Cloudflare -> cloudflared (ns: cloudflared)
-#            -> traefik.kube-system:80 -> app:8080
-#   app (mediatracker) -> postgres:5432 (same namespace)
+#            -> traefik.kube-system:80 -> app:{{ .Values.app.port }}
+#   app (this namespace) -> postgres:5432 (same namespace)
 #   app -> external providers (443/tcp, 80/tcp)
 #   postgres-backup CronJob -> postgres:5432 + CDN egress for `apk add` (80/443)
 #
-# NOTE: Traefik runs in kube-system, so the app requires ingress from that
-# namespace. "Intra-namespace only" would make the app unreachable from the
-# internet. The kube-system allowance below is therefore required.
-
+# Traefik runs in kube-system, so the app requires ingress from that
+# namespace. "Intra-namespace only" would make the app unreachable.
+---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: default-deny
-  namespace: mediatracker
+  namespace: {{ .Release.Namespace }}
 spec:
   podSelector: {}
   policyTypes:
@@ -28,7 +27,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: allow-dns-egress
-  namespace: mediatracker
+  namespace: {{ .Release.Namespace }}
 spec:
   podSelector: {}
   policyTypes:
@@ -50,7 +49,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: allow-intra-namespace
-  namespace: mediatracker
+  namespace: {{ .Release.Namespace }}
 spec:
   podSelector: {}
   policyTypes:
@@ -63,22 +62,22 @@ spec:
     - to:
         - podSelector: {}
 ---
-# Ingress to the app is restricted to (a) the namespace itself (covered above)
-# and (b) the Traefik ingress controller in kube-system, on the container port.
-# The chart renders the app pod with the `app: app` label; `app: mediatracker`
-# is included so the raw k8s/deployments/app-deployment.yaml is also covered.
+# Ingress to the app is restricted to the namespace itself (above) and the
+# Traefik ingress controller in kube-system, on the container port. The chart
+# renders the app pod with the `app: {{ .Values.app.name }}` label; `app: mediatracker`
+# is kept so the raw k8s/deployments/app-deployment.yaml is also covered.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: allow-app-ingress
-  namespace: mediatracker
+  namespace: {{ .Release.Namespace }}
 spec:
   podSelector:
     matchExpressions:
       - key: app
         operator: In
         values:
-          - app
+          - {{ .Values.app.name }}
           - mediatracker
   policyTypes:
     - Ingress
@@ -89,7 +88,7 @@ spec:
               kubernetes.io/metadata.name: kube-system
       ports:
         - protocol: TCP
-          port: 8080
+          port: {{ .Values.app.port }}
 ---
 # The app reaches external providers over the public internet on 443/80.
 # Private ranges (pod/service CIDRs, LAN) are excluded so this is not a
@@ -98,16 +97,16 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: allow-app-egress-internet
-  namespace: mediatracker
+  namespace: {{ .Release.Namespace }}
 spec:
   podSelector:
     matchExpressions:
       - key: app
         operator: In
         values:
-          - app
+          - {{ .Values.app.name }}
           - mediatracker
-          - app-refresh
+          - {{ .Values.app.name }}-refresh
   policyTypes:
     - Egress
   egress:
@@ -125,13 +124,12 @@ spec:
           port: 80
 ---
 # The backup CronJob installs `postgresql17-client age rclone` via `apk add`
-# at startup, which needs CDN egress. Without this rule default-deny egress
-# would make every backup fail. Offsite rclone uploads also use 443.
+# at startup, which needs CDN egress. Offsite rclone uploads also use 443.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: allow-backup-egress-internet
-  namespace: mediatracker
+  namespace: {{ .Release.Namespace }}
 spec:
   podSelector:
     matchLabels:
@@ -151,3 +149,4 @@ spec:
           port: 443
         - protocol: TCP
           port: 80
+{{- end }}

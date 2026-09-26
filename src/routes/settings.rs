@@ -6,7 +6,7 @@ use axum::{
 };
 use serde::Deserialize;
 
-use super::home::SidebarStats;
+use super::home::{SidebarStats, get_sidebar_stats};
 use crate::app_state::AppState;
 use crate::middleware::CurrentUser;
 
@@ -67,7 +67,10 @@ pub async fn get_settings(user: CurrentUser, State(state): State<AppState>) -> H
         telegram_notifications_enabled: user_data.3,
     }
     .render()
-    .unwrap()
+    .unwrap_or_else(|e| {
+        tracing::error!(error = %e, "template render failed");
+        String::from("Internal Server Error")
+    })
     .into()
 }
 
@@ -111,7 +114,10 @@ pub async fn post_profile(
                     telegram_notifications_enabled: false,
                 }
                 .render()
-                .unwrap(),
+                .unwrap_or_else(|e| {
+                    tracing::error!(error = %e, "template render failed");
+                    String::from("Internal Server Error")
+                }),
             )
             .into_response()
         }
@@ -133,16 +139,36 @@ pub async fn post_profile(
                     telegram_notifications_enabled: false,
                 }
                 .render()
-                .unwrap(),
+                .unwrap_or_else(|e| {
+                    tracing::error!(error = %e, "template render failed");
+                    String::from("Internal Server Error")
+                }),
             )
             .into_response()
         }
     }
 }
 
+/// After a password change, drop every other session so stolen cookies die
+/// with the old password while the current (legitimate) session stays valid.
+async fn invalidate_other_sessions(
+    state: &AppState,
+    user: &CurrentUser,
+    headers: &axum::http::HeaderMap,
+) {
+    let Some(token) = crate::utils::session_cookie(headers) else {
+        return;
+    };
+    let keep = crate::services::auth::hash_token(&token);
+    if let Err(e) = state.auth.delete_other_sessions(user.id, &keep).await {
+        tracing::warn!(error = %e, "password change: failed to invalidate other sessions");
+    }
+}
+
 pub async fn post_password(
     user: CurrentUser,
     State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
     Form(form): Form<PasswordForm>,
 ) -> Response {
     if form.new_password != form.confirm_password {
@@ -163,7 +189,10 @@ pub async fn post_password(
                 telegram_notifications_enabled: false,
             }
             .render()
-            .unwrap(),
+            .unwrap_or_else(|e| {
+                tracing::error!(error = %e, "template render failed");
+                String::from("Internal Server Error")
+            }),
         )
         .into_response();
     }
@@ -186,7 +215,10 @@ pub async fn post_password(
                 telegram_notifications_enabled: false,
             }
             .render()
-            .unwrap(),
+            .unwrap_or_else(|e| {
+                tracing::error!(error = %e, "template render failed");
+                String::from("Internal Server Error")
+            }),
         )
         .into_response();
     }
@@ -228,7 +260,10 @@ pub async fn post_password(
                     telegram_notifications_enabled: false,
                 }
                 .render()
-                .unwrap(),
+                .unwrap_or_else(|e| {
+                    tracing::error!(error = %e, "template render failed");
+                    String::from("Internal Server Error")
+                }),
             )
             .into_response();
         }
@@ -255,7 +290,10 @@ pub async fn post_password(
                 telegram_notifications_enabled: false,
             }
             .render()
-            .unwrap(),
+            .unwrap_or_else(|e| {
+                tracing::error!(error = %e, "template render failed");
+                String::from("Internal Server Error")
+            }),
         )
         .into_response();
     }
@@ -283,7 +321,10 @@ pub async fn post_password(
                     telegram_notifications_enabled: false,
                 }
                 .render()
-                .unwrap(),
+                .unwrap_or_else(|e| {
+                    tracing::error!(error = %e, "template render failed");
+                    String::from("Internal Server Error")
+                }),
             )
             .into_response();
         }
@@ -298,6 +339,7 @@ pub async fn post_password(
 
     match result {
         Ok(_) => {
+            invalidate_other_sessions(&state, &user, &headers).await;
             let stats = get_sidebar_stats(&state, &user).await;
             Html(
                 SettingsTemplate {
@@ -315,7 +357,10 @@ pub async fn post_password(
                     telegram_notifications_enabled: false,
                 }
                 .render()
-                .unwrap(),
+                .unwrap_or_else(|e| {
+                    tracing::error!(error = %e, "template render failed");
+                    String::from("Internal Server Error")
+                }),
             )
             .into_response()
         }
@@ -337,7 +382,10 @@ pub async fn post_password(
                     telegram_notifications_enabled: false,
                 }
                 .render()
-                .unwrap(),
+                .unwrap_or_else(|e| {
+                    tracing::error!(error = %e, "template render failed");
+                    String::from("Internal Server Error")
+                }),
             )
             .into_response()
         }
@@ -406,21 +454,6 @@ pub async fn post_delete_account(user: CurrentUser, State(state): State<AppState
     response
 }
 
-async fn get_sidebar_stats(state: &AppState, user: &CurrentUser) -> SidebarStats {
-    let (ip, cp, pp, dp) = state
-        .tracking
-        .get_status_counts(user.id)
-        .await
-        .unwrap_or_default();
-    SidebarStats {
-        in_progress: ip,
-        completed: cp,
-        planned: pp,
-        dropped: dp,
-        role: user.role.clone(),
-    }
-}
-
 // ========== HTMX Endpoints ==========
 
 #[derive(Template)]
@@ -450,7 +483,10 @@ pub async fn htmx_update_profile(
                 error: None,
             }
             .render()
-            .unwrap();
+            .unwrap_or_else(|e| {
+                tracing::error!(error = %e, "template render failed");
+                String::from("Internal Server Error")
+            });
             ([("HX-Trigger", "profileUpdated")], Html(html)).into_response()
         }
         Err(e) => {
@@ -459,7 +495,10 @@ pub async fn htmx_update_profile(
                 error: Some(format!("Ошибка: {}", e)),
             }
             .render()
-            .unwrap();
+            .unwrap_or_else(|e| {
+                tracing::error!(error = %e, "template render failed");
+                String::from("Internal Server Error")
+            });
             Html(html).into_response()
         }
     }
@@ -468,6 +507,7 @@ pub async fn htmx_update_profile(
 pub async fn htmx_update_password(
     user: CurrentUser,
     State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
     Form(form): Form<PasswordForm>,
 ) -> Response {
     if form.new_password != form.confirm_password {
@@ -476,7 +516,10 @@ pub async fn htmx_update_password(
             error: Some("Новые пароли не совпадают".to_string()),
         }
         .render()
-        .unwrap();
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "template render failed");
+            String::from("Internal Server Error")
+        });
         return Html(html).into_response();
     }
 
@@ -486,7 +529,10 @@ pub async fn htmx_update_password(
             error: Some("Пароль должен быть не менее 6 символов".to_string()),
         }
         .render()
-        .unwrap();
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "template render failed");
+            String::from("Internal Server Error")
+        });
         return Html(html).into_response();
     }
 
@@ -515,7 +561,10 @@ pub async fn htmx_update_password(
                 error: Some("Ошибка проверки пароля".to_string()),
             }
             .render()
-            .unwrap();
+            .unwrap_or_else(|e| {
+                tracing::error!(error = %e, "template render failed");
+                String::from("Internal Server Error")
+            });
             return Html(html).into_response();
         }
     };
@@ -529,7 +578,10 @@ pub async fn htmx_update_password(
             error: Some("Текущий пароль неверен".to_string()),
         }
         .render()
-        .unwrap();
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "template render failed");
+            String::from("Internal Server Error")
+        });
         return Html(html).into_response();
     }
 
@@ -544,7 +596,10 @@ pub async fn htmx_update_password(
                 error: Some("Ошибка хеширования пароля".to_string()),
             }
             .render()
-            .unwrap();
+            .unwrap_or_else(|e| {
+                tracing::error!(error = %e, "template render failed");
+                String::from("Internal Server Error")
+            });
             return Html(html).into_response();
         }
     };
@@ -558,12 +613,16 @@ pub async fn htmx_update_password(
 
     match result {
         Ok(_) => {
+            invalidate_other_sessions(&state, &user, &headers).await;
             let html = MessagePartial {
                 message: Some("Пароль успешно изменён".to_string()),
                 error: None,
             }
             .render()
-            .unwrap();
+            .unwrap_or_else(|e| {
+                tracing::error!(error = %e, "template render failed");
+                String::from("Internal Server Error")
+            });
             ([("HX-Trigger", "passwordUpdated")], Html(html)).into_response()
         }
         Err(e) => {
@@ -572,7 +631,10 @@ pub async fn htmx_update_password(
                 error: Some(format!("Ошибка: {}", e)),
             }
             .render()
-            .unwrap();
+            .unwrap_or_else(|e| {
+                tracing::error!(error = %e, "template render failed");
+                String::from("Internal Server Error")
+            });
             Html(html).into_response()
         }
     }
@@ -605,7 +667,10 @@ pub async fn htmx_save_telegram_chat_id(
                 error: None,
             }
             .render()
-            .unwrap();
+            .unwrap_or_else(|e| {
+                tracing::error!(error = %e, "template render failed");
+                String::from("Internal Server Error")
+            });
             Html(html).into_response()
         }
         Err(e) => {
@@ -614,7 +679,10 @@ pub async fn htmx_save_telegram_chat_id(
                 error: Some(format!("Ошибка: {}", e)),
             }
             .render()
-            .unwrap();
+            .unwrap_or_else(|e| {
+                tracing::error!(error = %e, "template render failed");
+                String::from("Internal Server Error")
+            });
             Html(html).into_response()
         }
     }
@@ -637,7 +705,10 @@ pub async fn htmx_test_telegram(user: CurrentUser, State(state): State<AppState>
                 error: Some("Сначала укажите Telegram_CHAT_ID".to_string()),
             }
             .render()
-            .unwrap();
+            .unwrap_or_else(|e| {
+                tracing::error!(error = %e, "template render failed");
+                String::from("Internal Server Error")
+            });
             return Html(html).into_response();
         }
     };
@@ -649,7 +720,10 @@ pub async fn htmx_test_telegram(user: CurrentUser, State(state): State<AppState>
                 error: None,
             }
             .render()
-            .unwrap();
+            .unwrap_or_else(|e| {
+                tracing::error!(error = %e, "template render failed");
+                String::from("Internal Server Error")
+            });
             Html(html).into_response()
         }
         Err(e) => {
@@ -658,7 +732,10 @@ pub async fn htmx_test_telegram(user: CurrentUser, State(state): State<AppState>
                 error: Some(format!("Ошибка отправки: {}", e)),
             }
             .render()
-            .unwrap();
+            .unwrap_or_else(|e| {
+                tracing::error!(error = %e, "template render failed");
+                String::from("Internal Server Error")
+            });
             Html(html).into_response()
         }
     }

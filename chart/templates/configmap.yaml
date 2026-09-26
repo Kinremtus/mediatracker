@@ -9,5 +9,7 @@ data:
   RUST_LOG: {{ .Values.configMap.rustLog | quote }}
   APP_BASE_URL: {{ .Values.configMap.appBaseUrl | quote }}
   EMAIL_FROM: {{ .Values.configMap.emailFrom | quote }}
+  # Background loops run only in the dedicated refresh Deployment; the web pods
+  # inherit these disabled values from here.
   REFRESH_LOOP_ENABLED: {{ .Values.configMap.refreshLoopEnabled | quote }}
   REFRESH_INTERVAL_SECS: {{ .Values.configMap.refreshIntervalSecs | quote }}

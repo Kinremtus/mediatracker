@@ -1,0 +1,17 @@
+# SOPS configuration for encrypted secrets.
+#
+# One-time setup:
+#   1. age-keygen -o ~/.config/sops/age/keys.txt
+#      (the command prints the public key, e.g. age1...)
+#   2. replace the placeholder below with that public key
+#   3. chmod 600 the private key and back it up OFF-SITE -- without it the
+#      encrypted files in git are unreadable forever.
+#
+# Only values under data/stringData are encrypted. Everything else (apiVersion,
+# kind, metadata) stays plaintext, so the encrypted file is still a valid
+# Kubernetes Secret that `sops --decrypt | kubectl apply -f -` consumes as-is.
+creation_rules:
+  - path_regex: k8s/secrets/.*\.enc\.yaml$
+    encrypted_regex: '^(data|stringData)$'
+    # [!] REPLACE with your real age public key before encrypting.
+    age: age1REPLACE_WITH_YOUR_AGE_PUBLIC_KEY

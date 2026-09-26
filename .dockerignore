@@ -29,3 +29,9 @@ terraform/
 # Local AI tooling / planning artifacts
 .opencode/
 thoughts/
+
+# Helm chart / IaC / local env files are not needed in the build context
+chart/
+docker-compose*.yml
+*.env
+.env.*
