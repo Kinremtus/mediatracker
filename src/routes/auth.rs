@@ -1,10 +1,7 @@
 use askama::Template;
 use axum::{
     extract::{Form, Query, State},
-    http::{
-        HeaderMap, HeaderValue, StatusCode,
-        header::{SET_COOKIE, USER_AGENT},
-    },
+    http::{HeaderMap, StatusCode, header::USER_AGENT},
     response::{Html, IntoResponse, Redirect, Response},
 };
 use serde::Deserialize;
@@ -107,9 +104,7 @@ pub async fn post_login(
                 token
             );
             let mut response = Redirect::to("/").into_response();
-            response
-                .headers_mut()
-                .insert(SET_COOKIE, HeaderValue::from_str(&cookie).unwrap());
+            crate::utils::set_set_cookie(&mut response, &cookie);
             response
         }
         Err(e) => {

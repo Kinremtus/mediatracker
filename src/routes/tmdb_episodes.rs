@@ -247,8 +247,7 @@ pub async fn post_tmdb_season_watched(
     }
 
     let mut resp = Html(oob_html).into_response();
-    resp.headers_mut()
-        .insert("HX-Trigger", trigger.to_string().parse().unwrap());
+    crate::utils::set_hx_trigger(&mut resp, &trigger.to_string());
     resp
 }
 
@@ -458,7 +457,6 @@ pub async fn set_tmdb_episode_watched(
     }
     let combined = format!("{}{}", episode_html, oob_html);
     let mut resp = Html(combined).into_response();
-    resp.headers_mut()
-        .insert("HX-Trigger", trigger.to_string().parse().unwrap());
+    crate::utils::set_hx_trigger(&mut resp, &trigger.to_string());
     resp
 }
