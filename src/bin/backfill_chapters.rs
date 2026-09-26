@@ -94,11 +94,10 @@ async fn main() -> Result<()> {
                   SELECT 1 FROM series_chapters sc
                   WHERE sc.provider = mi.provider AND sc.external_id = mi.external_id
               )
-              AND NOT EXISTS (
+              AND EXISTS (
                   SELECT 1 FROM series_chapters sc
                   WHERE sc.provider = mi.provider AND sc.external_id = mi.external_id
-                  AND (sc.title_en IS NOT NULL OR sc.title_ru IS NOT NULL)
-                  LIMIT 1
+                  AND sc.title_en IS NULL AND sc.title_ru IS NULL
               )
             ORDER BY mi.created_at ASC LIMIT $2
             "#,
