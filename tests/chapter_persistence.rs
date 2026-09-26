@@ -48,7 +48,7 @@ fn series_str() -> String {
     SERIES_ID.to_string()
 }
 
-async fn insert_chapter(ctx: &common::TestContext, ch_num_10: i32) {
+async fn insert_chapter(ctx: &common::TestContext, chapter_number: i32) {
     sqlx::query(
         r#"
         INSERT INTO series_chapters
@@ -59,7 +59,7 @@ async fn insert_chapter(ctx: &common::TestContext, ch_num_10: i32) {
         "#,
     )
     .bind(series_str())
-    .bind(ch_num_10)
+    .bind(chapter_number)
     .execute(&ctx.pool)
     .await
     .expect("insert chapter");
@@ -114,7 +114,7 @@ async fn read_progress(ctx: &common::TestContext, user_id: Uuid, media_id: Uuid)
 async fn read_progress_read(
     ctx: &common::TestContext,
     user_id: Uuid,
-    ch_num_10: i32,
+    chapter_number: i32,
 ) -> Option<bool> {
     let row: Option<(bool,)> = sqlx::query_as(
         "SELECT read FROM user_chapter_progress \
@@ -122,7 +122,7 @@ async fn read_progress_read(
     )
     .bind(user_id)
     .bind(series_str())
-    .bind(ch_num_10)
+    .bind(chapter_number)
     .fetch_optional(&ctx.pool)
     .await
     .expect("read progress read");
@@ -132,7 +132,7 @@ async fn read_progress_read(
 async fn read_progress_read_at(
     ctx: &common::TestContext,
     user_id: Uuid,
-    ch_num_10: i32,
+    chapter_number: i32,
 ) -> Option<chrono::DateTime<chrono::Utc>> {
     let row: Option<(Option<chrono::DateTime<chrono::Utc>>,)> = sqlx::query_as(
         "SELECT read_at FROM user_chapter_progress \
@@ -140,7 +140,7 @@ async fn read_progress_read_at(
     )
     .bind(user_id)
     .bind(series_str())
-    .bind(ch_num_10)
+    .bind(chapter_number)
     .fetch_optional(&ctx.pool)
     .await
     .expect("read read_at");
@@ -151,28 +151,29 @@ async fn read_progress_read_at(
 
 #[test]
 fn format_chapter_integer() {
-    assert_eq!(format_chapter(10), "1");
-    assert_eq!(format_chapter(20), "2");
-    assert_eq!(format_chapter(100), "10");
+    assert_eq!(format_chapter(100), "1");
+    assert_eq!(format_chapter(200), "2");
+    assert_eq!(format_chapter(1000), "10");
 }
 
 #[test]
 fn format_chapter_fractional() {
-    assert_eq!(format_chapter(105), "10.5");
-    assert_eq!(format_chapter(250), "25");
-    assert_eq!(format_chapter(101), "10.1");
+    assert_eq!(format_chapter(1050), "10.5");
+    assert_eq!(format_chapter(250), "2.5");
+    assert_eq!(format_chapter(1), "0.01");
 }
 
 #[test]
 fn parse_chapter_integer() {
-    assert_eq!(parse_chapter("1"), Some(10));
-    assert_eq!(parse_chapter("10"), Some(100));
+    assert_eq!(parse_chapter("1"), Some(100));
+    assert_eq!(parse_chapter("10"), Some(1000));
 }
 
 #[test]
 fn parse_chapter_fractional() {
-    assert_eq!(parse_chapter("10.5"), Some(105));
-    assert_eq!(parse_chapter("1.1"), Some(11));
+    assert_eq!(parse_chapter("10.5"), Some(1050));
+    assert_eq!(parse_chapter("1.1"), Some(110));
+    assert_eq!(parse_chapter("0.01"), Some(1));
 }
 
 #[test]
@@ -213,33 +214,40 @@ async fn set_read_roundtrip() {
 async fn set_read_bulk_fills_below_and_cascades_above() {
     let (ctx, user_id) = setup().await;
     for n in 1..=5 {
-        insert_chapter(&ctx, n * 10).await;
+        insert_chapter(&ctx, n * 100).await;
     }
 
-    set_read(&ctx.pool, user_id, "mangaupdates", &series_str(), 30, true)
+    set_read(&ctx.pool, user_id, "mangaupdates", &series_str(), 300, true)
         .await
         .expect("mark 3");
     for n in 1..=3 {
         assert_eq!(
-            read_progress_read(&ctx, user_id, n * 10).await,
+            read_progress_read(&ctx, user_id, n * 100).await,
             Some(true),
             "ch {n} must be read after bulk-fill from ch 3"
         );
     }
     for n in 4..=5 {
         assert_eq!(
-            read_progress_read(&ctx, user_id, n * 10).await,
+            read_progress_read(&ctx, user_id, n * 100).await,
             None,
             "ch {n} must remain unread (above the bulk-fill point)"
         );
     }
 
-    set_read(&ctx.pool, user_id, "mangaupdates", &series_str(), 30, false)
-        .await
-        .expect("unread 3");
+    set_read(
+        &ctx.pool,
+        user_id,
+        "mangaupdates",
+        &series_str(),
+        300,
+        false,
+    )
+    .await
+    .expect("unread 3");
     for n in 1..=2 {
         assert_eq!(
-            read_progress_read(&ctx, user_id, n * 10).await,
+            read_progress_read(&ctx, user_id, n * 100).await,
             Some(true),
             "ch {n} must stay read (below the un-check point)"
         );
@@ -248,13 +256,13 @@ async fn set_read_bulk_fills_below_and_cascades_above() {
     // read=false. ch 4-5 never had a row: per-user progress treats an absent
     // row as unread, so they must simply not be read.
     assert_eq!(
-        read_progress_read(&ctx, user_id, 30).await,
+        read_progress_read(&ctx, user_id, 300).await,
         Some(false),
         "ch 3 must cascade-unread to the un-check point"
     );
     for n in 4..=5 {
         assert_ne!(
-            read_progress_read(&ctx, user_id, n * 10).await,
+            read_progress_read(&ctx, user_id, n * 100).await,
             Some(true),
             "ch {n} must not be read (absent progress row)"
         );
@@ -262,20 +270,20 @@ async fn set_read_bulk_fills_below_and_cascades_above() {
 }
 
 #[tokio::test]
-async fn count_read_returns_max_chapter_number_div_10() {
+async fn count_read_returns_max_chapter_number_div_100() {
     let (ctx, user_id) = setup().await;
-    insert_chapter(&ctx, 10).await;
-    insert_chapter(&ctx, 20).await;
-    insert_chapter(&ctx, 30).await;
+    insert_chapter(&ctx, 100).await;
+    insert_chapter(&ctx, 200).await;
+    insert_chapter(&ctx, 300).await;
 
-    set_read(&ctx.pool, user_id, "mangaupdates", &series_str(), 30, true)
+    set_read(&ctx.pool, user_id, "mangaupdates", &series_str(), 300, true)
         .await
         .expect("mark 3");
 
     let n = count_read(&ctx.pool, user_id, "mangaupdates", &series_str())
         .await
         .expect("count");
-    assert_eq!(n, 3, "must return highest read ch / 10");
+    assert_eq!(n, 3, "must return highest read ch / 100");
 }
 
 #[tokio::test]
@@ -310,10 +318,10 @@ async fn store_chapters_mu_creates_skeleton() {
         .await
         .expect("get chapters");
     assert_eq!(chapters.len(), 5);
-    assert_eq!(chapters[0].chapter_number, 10);
-    assert_eq!(chapters[4].chapter_number, 50);
+    assert_eq!(chapters[0].chapter_number, 100);
+    assert_eq!(chapters[4].chapter_number, 500);
 
-    let ch = get_chapter(&ctx.pool, "mangaupdates", &series_str(), 30, user_id)
+    let ch = get_chapter(&ctx.pool, "mangaupdates", &series_str(), 300, user_id)
         .await
         .expect("get ch 3")
         .expect("ch 3 must exist");
@@ -343,19 +351,27 @@ async fn store_chapters_mu_idempotent() {
 #[tokio::test]
 async fn fractional_chapter_roundtrip() {
     let (ctx, user_id) = setup().await;
-    insert_chapter(&ctx, 105).await;
+    insert_chapter(&ctx, 1050).await;
 
-    let ch = get_chapter(&ctx.pool, "mangaupdates", &series_str(), 105, user_id)
+    let ch = get_chapter(&ctx.pool, "mangaupdates", &series_str(), 1050, user_id)
         .await
         .expect("get 10.5")
         .expect("must exist");
-    assert_eq!(ch.chapter_number, 105);
+    assert_eq!(ch.chapter_number, 1050);
+    assert_eq!(ch.formatted(), "10.5");
     assert!(!ch.read);
 
-    set_read(&ctx.pool, user_id, "mangaupdates", &series_str(), 105, true)
-        .await
-        .expect("read 10.5");
-    let ch = get_chapter(&ctx.pool, "mangaupdates", &series_str(), 105, user_id)
+    set_read(
+        &ctx.pool,
+        user_id,
+        "mangaupdates",
+        &series_str(),
+        1050,
+        true,
+    )
+    .await
+    .expect("read 10.5");
+    let ch = get_chapter(&ctx.pool, "mangaupdates", &series_str(), 1050, user_id)
         .await
         .expect("get 10.5 again")
         .expect("must exist");

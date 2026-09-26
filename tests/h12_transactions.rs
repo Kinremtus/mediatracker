@@ -129,7 +129,7 @@ async fn store_chapters_mu_batches_and_syncs_media_items() {
     .fetch_all(&ctx.pool)
     .await
     .expect("read chapters");
-    assert_eq!(numbers, vec![10, 20, 30, 40, 50]);
+    assert_eq!(numbers, vec![100, 200, 300, 400, 500]);
 
     let chapters: Option<i32> = sqlx::query_scalar(
         "SELECT chapters FROM media_items \
@@ -270,9 +270,9 @@ async fn chapter_read_state_is_isolated_between_users() {
         .await
         .expect("skeleton");
 
-    // A reads up to chapter 2 (stored as 20): bulk-fill 10 and 20.
+    // A reads up to chapter 2 (stored as 200): bulk-fill 100 and 200.
     assert!(
-        set_read(&ctx.pool, user_a, "mangaupdates", &external_id, 20, true)
+        set_read(&ctx.pool, user_a, "mangaupdates", &external_id, 200, true)
             .await
             .expect("A marks chapter 2")
     );
@@ -282,7 +282,7 @@ async fn chapter_read_state_is_isolated_between_users() {
             .await
             .expect("A count"),
         2,
-        "A read chapters 1 and 2 (count_read returns MAX/10)"
+        "A read chapters 1 and 2 (count_read returns MAX/100)"
     );
     assert_eq!(
         count_read(&ctx.pool, user_b, "mangaupdates", &external_id)
@@ -296,12 +296,12 @@ async fn chapter_read_state_is_isolated_between_users() {
         get_chapter_states(&ctx.pool, user_a, "mangaupdates", &external_id)
             .await
             .expect("A states"),
-        vec![(10, true), (20, true), (30, false)]
+        vec![(100, true), (200, true), (300, false)]
     );
     assert_eq!(
         get_chapter_states(&ctx.pool, user_b, "mangaupdates", &external_id)
             .await
             .expect("B states"),
-        vec![(10, false), (20, false), (30, false)]
+        vec![(100, false), (200, false), (300, false)]
     );
 }
