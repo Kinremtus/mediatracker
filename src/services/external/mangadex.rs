@@ -131,9 +131,27 @@ pub struct MangaDexSearchResult {
     pub attributes: MangaDexMangaAttributes,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct MangaDexMangaAttributes {
     pub title: HashMap<String, String>,
+    /// One language→title map per alternate title. Some works carry their exact
+    /// English/romaji name only here (the primary `title` map may hold just
+    /// `ko-ro`), so the title matcher must consider these too.
+    #[serde(rename = "altTitles", default)]
+    pub alt_titles: Vec<HashMap<String, String>>,
+}
+
+impl MangaDexMangaAttributes {
+    /// Every title variant MangaDex returns: the values of the primary `title`
+    /// map plus every value of every entry in `altTitles`.
+    pub fn title_candidates(&self) -> impl Iterator<Item = &str> {
+        self.title.values().map(String::as_str).chain(
+            self.alt_titles
+                .iter()
+                .flat_map(|entry| entry.values())
+                .map(String::as_str),
+        )
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -232,5 +250,31 @@ mod tests {
             serde_json::from_str(json).expect("chapter:null must deserialize");
         assert_eq!(response.data.len(), 1);
         assert_eq!(response.data[0].attributes.chapter_number_10(), None);
+    }
+
+    #[test]
+    fn manga_attributes_parse_alt_titles_and_collect_candidates() {
+        let json = r#"{
+            "title": {"ko-ro": "Academy eseo Saranamgi"},
+            "altTitles": [
+                {"en": "The Extra's Academy Survival Guide"},
+                {"ja": "Academy eseo Saranamgi"}
+            ]
+        }"#;
+        let attrs: MangaDexMangaAttributes =
+            serde_json::from_str(json).expect("altTitles must deserialize");
+        assert_eq!(attrs.alt_titles.len(), 2);
+
+        let candidates: Vec<&str> = attrs.title_candidates().collect();
+        assert!(candidates.contains(&"Academy eseo Saranamgi"));
+        assert!(candidates.contains(&"The Extra's Academy Survival Guide"));
+    }
+
+    #[test]
+    fn manga_attributes_alt_titles_default_to_empty() {
+        let attrs: MangaDexMangaAttributes =
+            serde_json::from_str(r#"{"title":{"en":"Berserk"}}"#).expect("altTitles is optional");
+        assert!(attrs.alt_titles.is_empty());
+        assert_eq!(attrs.title_candidates().count(), 1);
     }
 }
