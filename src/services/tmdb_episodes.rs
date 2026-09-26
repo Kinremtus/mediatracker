@@ -404,27 +404,30 @@ pub async fn get_total_watched_episodes(
     Ok(row.0.unwrap_or(0) as i32)
 }
 
+/// Bumps `tracking_entries.progress` to at least `progress` and returns
+/// the resulting value. `None` when the user has no tracking entry.
 pub async fn set_progress_greatest(
     pool: &PgPool,
     user_id: Uuid,
     media_id: Uuid,
     progress: i32,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
+) -> Result<Option<i32>, sqlx::Error> {
+    let row: Option<(i32,)> = sqlx::query_as(
         r#"
         UPDATE tracking_entries
         SET progress = GREATEST(progress, $1),
             updated_at = NOW()
         WHERE user_id = $2
           AND media_id = $3
+        RETURNING progress
         "#,
     )
     .bind(progress)
     .bind(user_id)
     .bind(media_id)
-    .execute(pool)
+    .fetch_optional(pool)
     .await?;
-    Ok(())
+    Ok(row.map(|(progress,)| progress))
 }
 
 pub async fn set_progress_direct(

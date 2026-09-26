@@ -415,16 +415,21 @@ pub async fn set_episode_watched(
             .await
             .unwrap_or(None);
 
-    if let Some(media_id) = media_id
-        && let Err(e) = crate::services::episodes::update_progress_from_watched(
+    let mut progress_from_db: Option<i32> = None;
+    if let Some(media_id) = media_id {
+        match crate::services::episodes::update_progress_from_watched(
             &state.db,
             user.id,
             media_id,
             max_watched,
         )
         .await
-    {
-        tracing::warn!(provider, external_id, error = %e, "update_progress_from_watched failed");
+        {
+            Ok(progress) => progress_from_db = progress,
+            Err(e) => {
+                tracing::warn!(provider, external_id, error = %e, "update_progress_from_watched failed");
+            }
+        }
     }
 
     // Render the new row HTML and attach a progressUpdated event.
@@ -474,6 +479,7 @@ pub async fn set_episode_watched(
     let mut trigger = serde_json::json!({
         "progressUpdated": {
             "maxWatched": max_watched,
+            "progress": progress_from_db,
         },
         "episodesChanged": {
             "states": states_json,

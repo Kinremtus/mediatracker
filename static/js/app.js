@@ -57,9 +57,12 @@ document.addEventListener('DOMContentLoaded', function() {
     // in the drawer to authoritative server state, and patch any tracking
     // card for the same media — all without a refresh.
     document.body.addEventListener('progressUpdated', function(e) {
+        const serverProgress = e.detail && e.detail.progress;
         const maxWatched = e.detail && e.detail.maxWatched;
         const maxRead = e.detail && e.detail.maxRead;
-        const progressValue = maxWatched != null ? maxWatched : maxRead;
+        const progressValue = serverProgress != null
+            ? serverProgress
+            : (maxWatched != null ? maxWatched : maxRead);
         if (progressValue == null) return;
         const text = document.querySelector('.drawer-progress-text');
         if (text) {
@@ -132,8 +135,12 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         items.forEach(function(item) {
             const n = Number(item.getAttribute('data-episode-n'));
-            const season = Number(item.getAttribute('data-season'));
-            if (season !== seasonNumber) return;
+            // Season-scoped lists (TMDB) carry `data-season`; anime rows
+            // don't and must not be filtered out (seasonNumber undefined).
+            if (seasonNumber != null) {
+                const season = Number(item.getAttribute('data-season'));
+                if (season !== seasonNumber) return;
+            }
             if (!stateMap.has(n)) return;
             const watched = stateMap.get(n);
             // Toggle the row's "watched" class.

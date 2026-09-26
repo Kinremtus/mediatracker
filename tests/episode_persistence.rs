@@ -332,22 +332,36 @@ async fn update_progress_from_watched_uses_greatest_semantics() {
     let (ctx, user_id) = setup().await;
 
     let media_id = fixture_tracking(&ctx, user_id, 5).await;
-    update_progress_from_watched(&ctx.pool, user_id, media_id, 10)
+    let progress = update_progress_from_watched(&ctx.pool, user_id, media_id, 10)
         .await
         .expect("update to 10");
+    assert_eq!(progress, Some(10));
     assert_eq!(read_progress(&ctx, user_id, media_id).await, 10);
 
-    update_progress_from_watched(&ctx.pool, user_id, media_id, 3)
+    let progress = update_progress_from_watched(&ctx.pool, user_id, media_id, 3)
         .await
         .expect("update to 3");
+    assert_eq!(progress, Some(10), "GREATEST keeps the higher value");
     assert_eq!(
         read_progress(&ctx, user_id, media_id).await,
         10,
         "progress must never regress below the current value"
     );
 
-    update_progress_from_watched(&ctx.pool, user_id, media_id, 12)
+    let progress = update_progress_from_watched(&ctx.pool, user_id, media_id, 12)
         .await
         .expect("update to 12");
+    assert_eq!(progress, Some(12));
     assert_eq!(read_progress(&ctx, user_id, media_id).await, 12);
+}
+
+#[tokio::test]
+async fn update_progress_from_watched_without_tracking_returns_none() {
+    let (ctx, user_id) = setup().await;
+
+    let missing_media_id = Uuid::new_v4();
+    let progress = update_progress_from_watched(&ctx.pool, user_id, missing_media_id, 5)
+        .await
+        .expect("update without tracking entry");
+    assert_eq!(progress, None);
 }
