@@ -2,7 +2,7 @@ use askama::Template;
 use askama::filters::Safe;
 use axum::{
     extract::State,
-    response::{IntoResponse, Response},
+    response::{Html, IntoResponse, Response},
 };
 
 use std::collections::HashMap;
@@ -126,9 +126,10 @@ pub async fn get_stats(user: CurrentUser, State(state): State<AppState>) -> Resp
         current_status: String::new(),
     }
     .render()
+    .map(Html)
     .unwrap_or_else(|e| {
         tracing::error!(error = %e, "template render failed");
-        String::from("Internal Server Error")
+        Html(String::from("Internal Server Error"))
     })
     .into_response()
 }

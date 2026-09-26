@@ -147,9 +147,10 @@ pub async fn get_tracking_list(
         current_type_label,
     }
     .render()
+    .map(Html)
     .unwrap_or_else(|e| {
         tracing::error!(error = %e, "template render failed");
-        String::from("Internal Server Error")
+        Html(String::from("Internal Server Error"))
     })
     .into_response()
 }
