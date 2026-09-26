@@ -17,6 +17,10 @@
 #   NAMESPACE        k8s namespace                        (default: mediatracker)
 #   AGE_PUBLIC_KEY   age recipient; when set the dump is encrypted (.dump.age)
 #   BACKUP_TZ        timezone used in the filename         (default: Europe/Minsk)
+#   R2_BUCKET        offsite bucket; when set, the dump is also copied with
+#                    rclone using the remote below (offline: warn only)
+#   R2_REMOTE        rclone remote name                    (default: r2)
+#   BACKUP_REQUIRE_OFFSITE  1 = fail when the offsite copy fails (default: 0)
 #
 # Examples:
 #   PGHOST=127.0.0.1 PGUSER=Kin PGDATABASE=tracker ./scripts/backup-db.sh
@@ -120,6 +124,28 @@ if have_cmd sha256sum; then
     log "Backup saved: $BACKUP_FILE ($SIZE, sha256=$CHECKSUM)"
 else
     log "Backup saved: $BACKUP_FILE ($SIZE)"
+fi
+
+# Optional offsite copy (mirrors the k8s CronJob behaviour). The rclone remote
+# must exist in the local rclone.conf, e.g.:
+#   rclone config create r2 s3 provider Cloudflare \
+#     access_key_id <key> secret_access_key <secret> \
+#     endpoint https://<account-id>.r2.cloudflarestorage.com
+if [[ -n "${R2_BUCKET:-}" ]]; then
+    if have_cmd rclone; then
+        log "Uploading to ${R2_REMOTE:-r2}:${R2_BUCKET}"
+        if rclone copy "$BACKUP_FILE" "${R2_REMOTE:-r2}:${R2_BUCKET}"; then
+            log "Offsite copy OK -> ${R2_REMOTE:-r2}:${R2_BUCKET}"
+        elif [[ "${BACKUP_REQUIRE_OFFSITE:-0}" == "1" ]]; then
+            die "offsite upload failed and BACKUP_REQUIRE_OFFSITE=1"
+        else
+            log "WARNING: offsite upload failed; local dump is still valid"
+        fi
+    elif [[ "${BACKUP_REQUIRE_OFFSITE:-0}" == "1" ]]; then
+        die "R2_BUCKET is set but rclone is not installed"
+    else
+        log "WARNING: R2_BUCKET set but rclone is missing - skipping offsite copy"
+    fi
 fi
 
 # Retention: local custom-format dumps, encrypted or not.

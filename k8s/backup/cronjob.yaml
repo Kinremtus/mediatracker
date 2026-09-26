@@ -51,17 +51,21 @@ spec:
                       name: backup-secret
                       key: RCLONE_CONFIG_R2_TYPE
                       optional: true
-                - name: RCLONE_CONFIG_R2_ACCOUNT
+                # rclone's s3 backend authenticates with access_key_id /
+                # secret_access_key (the R2 API token pair). The previous
+                # RCLONE_CONFIG_R2_ACCOUNT/KEY names set unrelated options, so
+                # an enabled offsite upload would have failed authentication.
+                - name: RCLONE_CONFIG_R2_ACCESS_KEY_ID
                   valueFrom:
                     secretKeyRef:
                       name: backup-secret
-                      key: RCLONE_CONFIG_R2_ACCOUNT
+                      key: RCLONE_CONFIG_R2_ACCESS_KEY_ID
                       optional: true
-                - name: RCLONE_CONFIG_R2_KEY
+                - name: RCLONE_CONFIG_R2_SECRET_ACCESS_KEY
                   valueFrom:
                     secretKeyRef:
                       name: backup-secret
-                      key: RCLONE_CONFIG_R2_KEY
+                      key: RCLONE_CONFIG_R2_SECRET_ACCESS_KEY
                       optional: true
                 - name: RCLONE_CONFIG_R2_ENDPOINT
                   valueFrom:
