@@ -172,7 +172,7 @@ impl Default for GoogleBooksService {
 impl GoogleBooksService {
     pub fn new() -> Self {
         Self {
-            client: Client::new(),
+            client: super::http_client(),
         }
     }
 

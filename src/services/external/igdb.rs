@@ -234,7 +234,7 @@ pub struct IgdbService {
 impl IgdbService {
     pub fn new(client_id: String, client_secret: String) -> Self {
         Self {
-            client: Client::new(),
+            client: super::http_client(),
             client_id,
             client_secret,
             token: Arc::new(Mutex::new(String::new())),
