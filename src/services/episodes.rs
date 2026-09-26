@@ -382,9 +382,8 @@ pub async fn count_watched(
 }
 
 /// Bumps `tracking_entries.progress` to at least `watched_count` and
-/// returns the resulting value. Uses `GREATEST(progress, $1)` so it
-/// never regresses — un-checking the highest episode doesn't drop your
-/// progress, you'd have to do that manually with the +1/-1 buttons.
+/// returns the resulting value. Mirrors the watched checkboxes:
+/// un-checking episodes lowers the counter again.
 /// `None` when the user has no tracking entry for this media.
 pub async fn update_progress_from_watched(
     pool: &PgPool,
@@ -395,7 +394,7 @@ pub async fn update_progress_from_watched(
     let row: Option<(i32,)> = sqlx::query_as(
         r#"
         UPDATE tracking_entries
-        SET progress = GREATEST(progress, $1),
+        SET progress = $1,
             updated_at = NOW()
         WHERE user_id = $2
           AND media_id = $3

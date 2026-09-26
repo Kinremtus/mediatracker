@@ -352,7 +352,7 @@ pub async fn set_tmdb_episode_watched(
 
     let mut progress_from_db: Option<i32> = None;
     if let Some(media_id) = media_id {
-        match crate::services::tmdb_episodes::set_progress_greatest(
+        match crate::services::tmdb_episodes::set_progress_direct(
             &state.db,
             user.id,
             media_id,
@@ -362,7 +362,7 @@ pub async fn set_tmdb_episode_watched(
         {
             Ok(progress) => progress_from_db = progress,
             Err(e) => {
-                tracing::warn!(external_id, error = %e, "set_progress_greatest failed");
+                tracing::warn!(external_id, error = %e, "set_progress_direct failed");
             }
         }
     }

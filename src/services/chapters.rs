@@ -351,8 +351,8 @@ pub async fn get_chapter_states(
     Ok(rows)
 }
 
-/// Bumps `tracking_entries.progress` to at least `read_count`.
-/// Uses GREATEST semantics — manual progress never regresses.
+/// Mirrors the read chapters onto `tracking_entries.progress`:
+/// sets it to `read_count`, so un-checking lowers the counter.
 pub async fn update_progress_from_read(
     pool: &PgPool,
     user_id: uuid::Uuid,
@@ -362,7 +362,7 @@ pub async fn update_progress_from_read(
     sqlx::query(
         r#"
         UPDATE tracking_entries
-        SET progress = GREATEST(progress, $1),
+        SET progress = $1,
             updated_at = NOW()
         WHERE user_id = $2
           AND media_id = $3
