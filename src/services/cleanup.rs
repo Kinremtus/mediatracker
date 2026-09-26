@@ -1,6 +1,6 @@
 //! Periodic retention sweeps for tables that would otherwise grow forever:
-//! expired sessions, spent/expired password-reset tokens, and old
-//! notification-log rows.
+//! expired sessions, spent/expired password-reset tokens, old
+//! notification-log rows, and release-schedule entries that already aired.
 //!
 //! The notification log doubles as the idempotency key for episode
 //! notifications, so rows are kept for a generous window before deletion.
@@ -19,12 +19,16 @@ const CLEANUP_INTERVAL: Duration = Duration::from_secs(6 * 3600);
 /// notification_log rows older than this are deleted.
 const NOTIFICATION_RETENTION_DAYS: i32 = 90;
 
+/// release_schedule rows whose air date is older than this are deleted.
+const RELEASE_SCHEDULE_RETENTION_DAYS: i32 = 30;
+
 /// Number of rows removed by one cleanup pass.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CleanupStats {
     pub sessions: u64,
     pub reset_tokens: u64,
     pub notifications: u64,
+    pub release_schedule: u64,
 }
 
 /// Delete expired sessions, spent reset tokens, and old notification rows.
@@ -68,6 +72,19 @@ pub async fn run_cleanup_once(db: &PgPool) -> CleanupStats {
         Err(error) => warn!(error = %error, "cleanup: failed to delete notification rows"),
     }
 
+    // The calendar only renders recent and upcoming entries, so rows that
+    // aired more than a month ago are dead weight.
+    match sqlx::query(
+        "DELETE FROM release_schedule WHERE air_date < NOW() - make_interval(days => $1)",
+    )
+    .bind(RELEASE_SCHEDULE_RETENTION_DAYS)
+    .execute(db)
+    .await
+    {
+        Ok(result) => stats.release_schedule = result.rows_affected(),
+        Err(error) => warn!(error = %error, "cleanup: failed to delete release schedule rows"),
+    }
+
     stats
 }
 
@@ -83,6 +100,7 @@ pub async fn run_cleanup_loop(db: PgPool, cancel: CancellationToken) {
             sessions = stats.sessions,
             reset_tokens = stats.reset_tokens,
             notifications = stats.notifications,
+            release_schedule = stats.release_schedule,
             "cleanup pass finished"
         );
 
