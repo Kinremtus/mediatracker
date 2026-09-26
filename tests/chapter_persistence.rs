@@ -279,7 +279,7 @@ async fn count_read_returns_max_chapter_number_div_10() {
 }
 
 #[tokio::test]
-async fn update_progress_from_read_uses_greatest_semantics() {
+async fn update_progress_from_read_mirrors_read_count() {
     let (ctx, user_id) = setup().await;
 
     let media_id = fixture_tracking(&ctx, user_id, 5).await;
@@ -293,8 +293,8 @@ async fn update_progress_from_read_uses_greatest_semantics() {
         .expect("update to 3");
     assert_eq!(
         read_progress(&ctx, user_id, media_id).await,
-        10,
-        "progress must never regress"
+        3,
+        "progress mirrors the highest read chapter"
     );
 }
 

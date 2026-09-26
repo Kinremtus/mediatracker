@@ -404,9 +404,10 @@ pub async fn get_total_watched_episodes(
     Ok(row.0.unwrap_or(0) as i32)
 }
 
-/// Bumps `tracking_entries.progress` to at least `progress` and returns
-/// the resulting value. `None` when the user has no tracking entry.
-pub async fn set_progress_greatest(
+/// Sets `tracking_entries.progress` to `progress` (the watched counter)
+/// and returns the resulting value. `None` when the user has no tracking
+/// entry for this media.
+pub async fn set_progress_direct(
     pool: &PgPool,
     user_id: Uuid,
     media_id: Uuid,
@@ -415,7 +416,7 @@ pub async fn set_progress_greatest(
     let row: Option<(i32,)> = sqlx::query_as(
         r#"
         UPDATE tracking_entries
-        SET progress = GREATEST(progress, $1),
+        SET progress = $1,
             updated_at = NOW()
         WHERE user_id = $2
           AND media_id = $3
@@ -430,35 +431,12 @@ pub async fn set_progress_greatest(
     Ok(row.map(|(progress,)| progress))
 }
 
-pub async fn set_progress_direct(
-    pool: &PgPool,
-    user_id: Uuid,
-    media_id: Uuid,
-    progress: i32,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r#"
-        UPDATE tracking_entries
-        SET progress = $1,
-            updated_at = NOW()
-        WHERE user_id = $2
-          AND media_id = $3
-        "#,
-    )
-    .bind(progress)
-    .bind(user_id)
-    .bind(media_id)
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
 /// Mirror a user's flat tracking `progress` count onto their own TMDB
 /// episode rows: the first `progress` episodes (ordered by season then
 /// episode, specials skipped) become watched, everything else unwatched.
 ///
 /// This is the tracking-form → drawer direction, the counterpart of
-/// [`set_progress_greatest`] / [`set_progress_direct`] (drawer → form).
+/// [`set_progress_direct`] (drawer → form).
 /// Upserts `user_tmdb_episode_progress` so both representations agree.
 pub async fn sync_tmdb_episodes_from_progress(
     pool: &PgPool,

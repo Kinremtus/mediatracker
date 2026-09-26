@@ -328,7 +328,7 @@ async fn get_episodes_and_states_are_user_scoped() {
 }
 
 #[tokio::test]
-async fn update_progress_from_watched_uses_greatest_semantics() {
+async fn update_progress_from_watched_mirrors_watched_count() {
     let (ctx, user_id) = setup().await;
 
     let media_id = fixture_tracking(&ctx, user_id, 5).await;
@@ -341,11 +341,11 @@ async fn update_progress_from_watched_uses_greatest_semantics() {
     let progress = update_progress_from_watched(&ctx.pool, user_id, media_id, 3)
         .await
         .expect("update to 3");
-    assert_eq!(progress, Some(10), "GREATEST keeps the higher value");
+    assert_eq!(progress, Some(3), "un-watching episodes lowers progress");
     assert_eq!(
         read_progress(&ctx, user_id, media_id).await,
-        10,
-        "progress must never regress below the current value"
+        3,
+        "progress mirrors the highest watched episode"
     );
 
     let progress = update_progress_from_watched(&ctx.pool, user_id, media_id, 12)
