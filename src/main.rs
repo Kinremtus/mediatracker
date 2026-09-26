@@ -1,5 +1,5 @@
 use axum::{
-    Json, Router,
+    Router,
     middleware::from_fn,
     middleware::from_fn_with_state,
     routing::{get, post},
@@ -11,11 +11,10 @@ use mediatracker::middleware::auth_middleware;
 use mediatracker::middleware::rate_limit::{RateLimiter, rate_limit_middleware};
 use mediatracker::middleware::security_headers::security_headers_middleware;
 use mediatracker::routes::{
-    admin, auth, calendar, home, media, search, settings, stats, tmdb_episodes, tmdb_image,
-    tracking,
+    admin, auth, calendar, health_check, home, media, search, settings, stats, tmdb_episodes,
+    tmdb_image, tracking,
 };
 use mediatracker::services::{cleanup, refresh_counts, release_schedule};
-use serde_json::json;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use tower_http::services::ServeDir;
@@ -367,8 +366,4 @@ async fn wait_for_shutdown() {
     }
     #[cfg(not(unix))]
     tokio::signal::ctrl_c().await.ok();
-}
-
-async fn health_check() -> Json<serde_json::Value> {
-    Json(json!({"status": "ok"}))
 }
