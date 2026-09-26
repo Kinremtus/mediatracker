@@ -1,6 +1,8 @@
 pub mod activity_calendar;
 
-use axum::http::HeaderMap;
+use axum::http::header::SET_COOKIE;
+use axum::http::{HeaderMap, HeaderValue};
+use axum::response::Response;
 use regex::Regex;
 use std::net::IpAddr;
 use std::sync::OnceLock;
@@ -173,6 +175,36 @@ pub fn client_ip(headers: &HeaderMap, fallback: Option<IpAddr>) -> Option<String
     }
 
     fallback.map(|ip| ip.to_string())
+}
+
+/// Inserts the `HX-Trigger` response header.
+///
+/// Skips the header (and logs a warning) when the payload cannot be turned into
+/// a header value, so a malformed trigger can never panic the handler.
+pub fn set_hx_trigger(resp: &mut Response, payload: &str) {
+    match HeaderValue::from_str(payload) {
+        Ok(value) => {
+            resp.headers_mut().insert("HX-Trigger", value);
+        }
+        Err(err) => {
+            tracing::warn!(error = %err, "skipping invalid HX-Trigger header");
+        }
+    }
+}
+
+/// Inserts the `Set-Cookie` response header.
+///
+/// Skips the header (and logs an error) when the cookie cannot be turned into a
+/// header value instead of panicking.
+pub fn set_set_cookie(resp: &mut Response, cookie: &str) {
+    match HeaderValue::from_str(cookie) {
+        Ok(value) => {
+            resp.headers_mut().insert(SET_COOKIE, value);
+        }
+        Err(err) => {
+            tracing::error!(error = %err, "skipping invalid Set-Cookie header");
+        }
+    }
 }
 
 #[cfg(test)]

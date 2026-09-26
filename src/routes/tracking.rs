@@ -399,8 +399,7 @@ pub async fn post_add_to_tracking(
 
             if is_htmx {
                 let mut resp = Html(ADDED_BADGE_HTML.to_string()).into_response();
-                resp.headers_mut()
-                    .insert("HX-Trigger", "trackingUpdated".parse().unwrap());
+                crate::utils::set_hx_trigger(&mut resp, "trackingUpdated");
                 resp
             } else {
                 let url = add_flash_param(&redirect_url, "added");
@@ -411,8 +410,7 @@ pub async fn post_add_to_tracking(
             tracing::error!(error = %e, "failed to add to tracking");
             if is_htmx {
                 let mut resp = Html(r#"<span class="btn btn-secondary" style="width:100%;height:32px;font-size:12px;display:flex;align-items:center;justify-content:center;cursor:default;opacity:0.6;color:var(--dropped);">✕ Ошибка</span>"#.to_string()).into_response();
-                resp.headers_mut()
-                    .insert("HX-Trigger", "trackingError".parse().unwrap());
+                crate::utils::set_hx_trigger(&mut resp, "trackingError");
                 resp
             } else {
                 let url = add_flash_param(&redirect_url, "error");

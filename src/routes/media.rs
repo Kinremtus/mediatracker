@@ -485,8 +485,7 @@ pub async fn set_episode_watched(
         trigger["episodesChanged"]["mediaId"] = id_str;
     }
     let mut resp = Html(html).into_response();
-    resp.headers_mut()
-        .insert("HX-Trigger", trigger.to_string().parse().unwrap());
+    crate::utils::set_hx_trigger(&mut resp, &trigger.to_string());
     resp
 }
 
@@ -720,7 +719,6 @@ pub async fn set_chapter_read(
         trigger["chaptersChanged"]["mediaId"] = id_str;
     }
     let mut resp = Html(html).into_response();
-    resp.headers_mut()
-        .insert("HX-Trigger", trigger.to_string().parse().unwrap());
+    crate::utils::set_hx_trigger(&mut resp, &trigger.to_string());
     resp
 }
