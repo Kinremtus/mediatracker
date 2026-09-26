@@ -46,7 +46,7 @@ data:
     log "Local backup written: ${UPLOAD_FILE} ($(du -h "$UPLOAD_FILE" | cut -f1))"
 
     # Offsite upload (rclone -> Cloudflare R2 / any S3-compatible). Optional.
-    if command -v rclone >/dev/null 2>&1 && [ -n "${RCLONE_CONFIG_R2_ACCOUNT:-}" ]; then
+    if command -v rclone >/dev/null 2>&1 && [ -n "${RCLONE_CONFIG_R2_ACCESS_KEY_ID:-}" ]; then
       REMOTE="${BACKUP_RCLONE_REMOTE:-r2:${RCLONE_CONFIG_R2_BUCKET:-mediatracker-backups}}"
       if rclone copy "$UPLOAD_FILE" "$REMOTE/"; then
         log "Offsite upload OK -> ${REMOTE}/"

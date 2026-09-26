@@ -56,8 +56,8 @@ the job. See `secret.example.yaml` for the full example and commands.
 kubectl create secret generic backup-secret -n mediatracker \
   --from-literal=AGE_PUBLIC_KEY='age1...' \
   --from-literal=RCLONE_CONFIG_R2_TYPE='s3' \
-  --from-literal=RCLONE_CONFIG_R2_ACCOUNT='<account-id>' \
-  --from-literal=RCLONE_CONFIG_R2_KEY='<secret-key>' \
+  --from-literal=RCLONE_CONFIG_R2_ACCESS_KEY_ID='<account-id>' \
+  --from-literal=RCLONE_CONFIG_R2_SECRET_ACCESS_KEY='<secret-key>' \
   --from-literal=RCLONE_CONFIG_R2_ENDPOINT='https://<account-id>.r2.cloudflarestorage.com' \
   --from-literal=RCLONE_CONFIG_R2_BUCKET='mediatracker-backups'
 ```
@@ -184,3 +184,38 @@ backup pipeline.
   environment variables, so no rclone config file is needed.
 - Dumps from the CronJob are owned by `root` on the PVC (the container runs
   as root). This is local storage only; R2 objects get normal permissions.
+
+## Включение offsite (R2): чеклист
+
+Offsite выключен осознанно (см. «Open decisions» выше), но всё готово к
+включению -- нужны только бакет и креды:
+
+1. Cloudflare Dashboard -> R2 -> Create bucket (например
+   `mediatracker-backups`).
+2. Настройки бакета -> Object lifecycle -> удалять объекты через 30 дней
+   (это и есть offsite retention из таблицы выше).
+3. R2 -> Manage API tokens -> Create token с правами Object Read & Write
+   (scope: только этот бакет). Получишь Access Key ID и Secret Access Key.
+4. Записать креды в `backup-secret` (namespace `mediatracker`):
+
+   ```bash
+   kubectl -n mediatracker create secret generic backup-secret \
+     --from-literal=AGE_PUBLIC_KEY='age1...' \
+     --from-literal=RCLONE_CONFIG_R2_TYPE='s3' \
+     --from-literal=RCLONE_CONFIG_R2_ACCESS_KEY_ID='<token key>' \
+     --from-literal=RCLONE_CONFIG_R2_SECRET_ACCESS_KEY='<token secret>' \
+     --from-literal=RCLONE_CONFIG_R2_ENDPOINT='https://<account-id>.r2.cloudflarestorage.com' \
+     --from-literal=RCLONE_CONFIG_R2_BUCKET='mediatracker-backups' \
+     --dry-run=client -o yaml | kubectl apply -f -
+   ```
+
+5. Дождаться ближайшего запуска CronJob (03:00) и проверить лог
+   `Offsite upload OK -> r2:mediatracker-backups/`. Если хочешь, чтобы провал
+   offsite валил Job, выставь в CronJob `BACKUP_REQUIRE_OFFSITE=1`
+   (по умолчанию -- только warning).
+
+Алерты уже настроены: `BackupJobFailed` (Job упала) и `BackupStale` (нет
+успешного бэкапа более 26 часов) -- оба приходят в Telegram.
+
+Тот же бакет можно использовать для Terraform state мониторинга --
+см. `terraform/monitoring/backend.r2.example.hcl`.
