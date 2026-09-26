@@ -1,16 +1,14 @@
+// Health endpoint test: exercises the REAL handler that src/main.rs serves.
+
+use axum::Router;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use axum::{Json, Router, routing::get};
-use serde_json::json;
+use axum::routing::get;
 use tower::ServiceExt;
 
-async fn health_check() -> Json<serde_json::Value> {
-    Json(json!({"status": "ok"}))
-}
-
 #[tokio::test]
-async fn health_returns_ok() {
-    let app = Router::new().route("/health", get(health_check));
+async fn health_returns_ok_json() {
+    let app = Router::new().route("/health", get(mediatracker::routes::health_check));
 
     let response = app
         .oneshot(
@@ -23,4 +21,8 @@ async fn health_returns_ok() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), 1024)
+        .await
+        .unwrap();
+    assert_eq!(&body[..], &br#"{"status":"ok"}"#[..]);
 }
