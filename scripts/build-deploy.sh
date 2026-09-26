@@ -27,7 +27,7 @@ ssh "$SSH_HOST" -- "
   for dir in k8s/*/; do
     [ -d \"\$dir\" ] || continue
     case \"\$dir\" in
-      k8s/cloudflared/|k8s/deployments/|k8s/services/) continue ;;
+      k8s/cloudflared/) continue ;;
     esac
     sudo kubectl apply -f \"\$dir\"
   done
