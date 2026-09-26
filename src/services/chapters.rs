@@ -420,9 +420,20 @@ pub async fn enrich_from_mangadex(
         return Ok(0);
     }
 
-    // Use first result
-    let manga_id = &search_results[0].id;
-    let md_chapters = md.get_chapters(manga_id).await?;
+    // MangaDex search is fuzzy and `search_results[0]` can be an unrelated
+    // series: verify title similarity before overwriting chapter titles with
+    // another title's data.
+    let Some(candidate) = search_results
+        .iter()
+        .find(|r| mangadex_title_matches(&title, &r.attributes.title))
+    else {
+        tracing::info!(
+            title = %title,
+            "MangaDex: no close title match, skipping enrichment"
+        );
+        return Ok(0);
+    };
+    let md_chapters = md.get_chapters(&candidate.id).await?;
 
     // Build lookup: chapter_number_10 -> (title_en, title_ru, volume)
     #[allow(clippy::type_complexity)]
@@ -494,6 +505,58 @@ pub async fn enrich_from_mangadex(
     tx.commit().await?;
 
     Ok(result.rows_affected() as usize)
+}
+
+/// Normalize a title for comparison: lowercase, non-alphanumeric -> space,
+/// collapsed whitespace.
+fn normalize_title(raw: &str) -> String {
+    raw.to_lowercase()
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { ' ' })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Jaccard similarity over whitespace tokens.
+fn token_overlap(a: &str, b: &str) -> f32 {
+    let set_a: std::collections::HashSet<&str> = a.split(' ').collect();
+    let set_b: std::collections::HashSet<&str> = b.split(' ').collect();
+    if set_a.is_empty() || set_b.is_empty() {
+        return 0.0;
+    }
+    let intersection = set_a.intersection(&set_b).count() as f32;
+    let union = set_a.union(&set_b).count() as f32;
+    intersection / union
+}
+
+/// True when ANY MangaDex title variant plausibly denotes the local title.
+/// Deliberately conservative: a false negative only skips enrichment, while a
+/// false positive would overwrite chapter titles from an unrelated series.
+fn mangadex_title_matches(local: &str, titles: &HashMap<String, String>) -> bool {
+    let local_norm = normalize_title(local);
+    if local_norm.is_empty() {
+        return false;
+    }
+    titles.values().any(|candidate| {
+        let candidate_norm = normalize_title(candidate);
+        if candidate_norm.is_empty() {
+            return false;
+        }
+        if candidate_norm == local_norm {
+            return true;
+        }
+        let (shorter, longer) = if candidate_norm.len() <= local_norm.len() {
+            (candidate_norm.as_str(), local_norm.as_str())
+        } else {
+            (local_norm.as_str(), candidate_norm.as_str())
+        };
+        if shorter.chars().count() >= 4 && longer.contains(shorter) {
+            return true;
+        }
+        token_overlap(&local_norm, &candidate_norm) >= 0.8
+    })
 }
 
 #[cfg(test)]
@@ -570,5 +633,33 @@ mod tests {
         assert_eq!(parse_chapter(".5"), None);
         // Negative not supported
         assert_eq!(parse_chapter("-1"), None);
+    }
+
+    #[test]
+    fn title_match_accepts_identical_and_containment() {
+        let mut titles = std::collections::HashMap::new();
+        titles.insert("en".to_string(), "Solo Leveling".to_string());
+        assert!(mangadex_title_matches("Solo Leveling", &titles));
+        assert!(mangadex_title_matches("solo leveling!", &titles));
+        assert!(mangadex_title_matches("Solo Leveling: Ragnarok", &titles));
+    }
+
+    #[test]
+    fn title_match_accepts_romaji_variant() {
+        let mut titles = std::collections::HashMap::new();
+        titles.insert("ja".to_string(), "Ore dake Level Up na Ken".to_string());
+        assert!(mangadex_title_matches("Ore dake Level Up na Ken", &titles));
+    }
+
+    #[test]
+    fn title_match_rejects_unrelated_and_empty() {
+        let mut titles = std::collections::HashMap::new();
+        titles.insert("en".to_string(), "Berserk".to_string());
+        assert!(!mangadex_title_matches("Solo Leveling", &titles));
+        assert!(!mangadex_title_matches("", &titles));
+        assert!(!mangadex_title_matches(
+            "Solo Leveling",
+            &std::collections::HashMap::new()
+        ));
     }
 }

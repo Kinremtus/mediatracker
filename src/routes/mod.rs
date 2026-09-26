@@ -13,6 +13,12 @@ pub(crate) fn internal_error(
         .into_response()
 }
 
+/// Log a client error and return a generic 400 response.
+pub(crate) fn bad_request(context: &str) -> axum::response::Response {
+    tracing::warn!(context = context, "bad request");
+    (axum::http::StatusCode::BAD_REQUEST, "Bad Request").into_response()
+}
+
 /// Liveness/readiness endpoint. `src/main.rs` wires this exact function at
 /// `/health`, so tests exercise the same handler the server serves.
 pub async fn health_check() -> axum::Json<serde_json::Value> {
