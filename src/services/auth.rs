@@ -126,7 +126,23 @@ impl AuthService {
         .await?;
 
         match session {
-            Some(s) if s.expires_at > Utc::now() => Ok(s),
+            Some(s) if s.expires_at > Utc::now() => {
+                // Touch last_seen_at at most once per 5 minutes: writing on
+                // every request would be pure overhead. A failure here must
+                // not invalidate an otherwise valid session.
+                if let Err(error) = sqlx::query(
+                    "UPDATE sessions SET last_seen_at = NOW() \
+                     WHERE id = $1 \
+                       AND (last_seen_at IS NULL OR last_seen_at < NOW() - INTERVAL '5 minutes')",
+                )
+                .bind(s.id)
+                .execute(&self.db)
+                .await
+                {
+                    tracing::warn!(error = %error, "failed to update session last_seen_at");
+                }
+                Ok(s)
+            }
             Some(_) => {
                 // Expired session: remove it so it can never authenticate.
                 let _ = sqlx::query("DELETE FROM sessions WHERE token_hash = $1")
