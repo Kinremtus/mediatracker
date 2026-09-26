@@ -2,7 +2,7 @@ use askama::Template;
 use axum::{
     extract::State,
     http::{HeaderMap, HeaderValue, header::SET_COOKIE},
-    response::{Html, IntoResponse, Redirect, Response},
+    response::{IntoResponse, Redirect, Response},
 };
 use chrono::{Datelike, Utc};
 use serde::Serialize;
@@ -33,6 +33,24 @@ pub struct SidebarStats {
     pub planned: i32,
     pub dropped: i32,
     pub role: String,
+}
+
+/// Single source of truth for the sidebar counters used by every
+/// page. Building `SidebarStats` inline in each route used to mean
+/// seven byte-identical copies that could drift apart.
+pub async fn get_sidebar_stats(state: &AppState, user: &CurrentUser) -> SidebarStats {
+    let (ip, cp, pp, dp) = state
+        .tracking
+        .get_status_counts(user.id)
+        .await
+        .unwrap_or_default();
+    SidebarStats {
+        in_progress: ip,
+        completed: cp,
+        planned: pp,
+        dropped: dp,
+        role: user.role.clone(),
+    }
 }
 
 pub struct HomeMediaCard {
@@ -80,26 +98,18 @@ fn today_ru() -> String {
     format!("Сегодня {} {}", now.day(), month)
 }
 
-pub async fn get_home(user: CurrentUser, State(state): State<AppState>) -> Html<String> {
-    let (ip, cp, pp, dp) = state
-        .tracking
-        .get_status_counts(user.id)
-        .await
-        .unwrap_or_default();
-    let stats = SidebarStats {
-        in_progress: ip,
-        completed: cp,
-        planned: pp,
-        dropped: dp,
-        role: user.role.clone(),
-    };
+pub async fn get_home(user: CurrentUser, State(state): State<AppState>) -> Response {
+    let stats = get_sidebar_stats(&state, &user).await;
 
     // In-progress entries with progress
-    let entries = state
+    let entries = match state
         .tracking
         .get_user_entries(user.id, Some("in_progress"), None, None)
         .await
-        .unwrap_or_default();
+    {
+        Ok(entries) => entries,
+        Err(e) => return super::internal_error("home: load in-progress entries", e),
+    };
     let in_progress: Vec<HomeMediaCard> = entries
         .into_iter()
         .take(6)
@@ -160,8 +170,11 @@ pub async fn get_home(user: CurrentUser, State(state): State<AppState>) -> Html<
         upcoming_releases: upcoming,
     }
     .render()
-    .unwrap()
-    .into()
+    .unwrap_or_else(|e| {
+        tracing::error!(error = %e, "template render failed");
+        String::from("Internal Server Error")
+    })
+    .into_response()
 }
 
 fn logout_redirect() -> Response {

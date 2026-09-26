@@ -147,7 +147,7 @@ impl PasswordResetService {
     async fn deliver_reset_link(&self, user_email: &str, user_id: &Uuid, reset_url: &str) {
         if self.email.is_configured() && !self.base_url.is_empty() {
             if let Err(e) = self.email.send_password_reset(user_email, reset_url).await {
-                eprintln!("Password reset email failed for user {}: {}", user_id, e);
+                tracing::error!(user_id = %user_id, error = %e, "password reset email failed");
             }
             return;
         }
@@ -155,9 +155,9 @@ impl PasswordResetService {
         let chat_id = match self.fetch_telegram_chat_id(user_id).await {
             Some(id) => id,
             None => {
-                eprintln!(
-                    "Password reset requested for user {} but no delivery channel available",
-                    user_id
+                tracing::warn!(
+                    user_id = %user_id,
+                    "password reset requested but no delivery channel available"
                 );
                 return;
             }
@@ -165,7 +165,7 @@ impl PasswordResetService {
 
         let text = format!("Восстановление пароля: {}", reset_url);
         if let Err(e) = self.telegram.send_message(&chat_id, &text).await {
-            eprintln!("Password reset telegram failed for user {}: {}", user_id, e);
+            tracing::error!(user_id = %user_id, error = %e, "password reset telegram failed");
         }
     }
 

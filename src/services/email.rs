@@ -67,7 +67,7 @@ impl ResendEmailSender {
 
         if !response.status().is_success() {
             let body = response.text().await.unwrap_or_default();
-            eprintln!("Resend API error: {}", body);
+            tracing::error!(body = %body, "Resend API error");
         }
 
         Ok(())

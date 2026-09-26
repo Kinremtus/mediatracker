@@ -1,12 +1,15 @@
 use askama::Template;
 use askama::filters::Safe;
-use axum::{extract::State, response::Html};
+use axum::{
+    extract::State,
+    response::{IntoResponse, Response},
+};
 
 use std::collections::HashMap;
 
 use chrono::NaiveDate;
 
-use super::home::SidebarStats;
+use super::home::{SidebarStats, get_sidebar_stats};
 use crate::app_state::AppState;
 use crate::middleware::CurrentUser;
 use crate::models::stats::{StatsOverview, TitleProgress};
@@ -60,18 +63,20 @@ struct StatsTemplate {
     current_status: String,
 }
 
-pub async fn get_stats(user: CurrentUser, State(state): State<AppState>) -> Html<String> {
-    let mut overview = state.stats.get_overview(user.id).await.unwrap_or_default();
-    let activity_by_day: HashMap<NaiveDate, i32> = state
-        .stats
-        .get_activity_by_day(user.id)
-        .await
-        .unwrap_or_default();
-    let progress = state
-        .stats
-        .get_title_progress(user.id)
-        .await
-        .unwrap_or_default();
+pub async fn get_stats(user: CurrentUser, State(state): State<AppState>) -> Response {
+    let mut overview = match state.stats.get_overview(user.id).await {
+        Ok(o) => o,
+        Err(e) => return super::internal_error("stats: overview", e),
+    };
+    let activity_by_day: HashMap<NaiveDate, i32> =
+        match state.stats.get_activity_by_day(user.id).await {
+            Ok(a) => a,
+            Err(e) => return super::internal_error("stats: activity by day", e),
+        };
+    let progress = match state.stats.get_title_progress(user.id).await {
+        Ok(p) => p,
+        Err(e) => return super::internal_error("stats: title progress", e),
+    };
     let sidebar_stats = get_sidebar_stats(&state, &user).await;
 
     let calendar = build_activity_calendar(&activity_by_day);
@@ -121,21 +126,9 @@ pub async fn get_stats(user: CurrentUser, State(state): State<AppState>) -> Html
         current_status: String::new(),
     }
     .render()
-    .unwrap()
-    .into()
-}
-
-async fn get_sidebar_stats(state: &AppState, user: &CurrentUser) -> SidebarStats {
-    let (ip, cp, pp, dp) = state
-        .tracking
-        .get_status_counts(user.id)
-        .await
-        .unwrap_or_default();
-    SidebarStats {
-        in_progress: ip,
-        completed: cp,
-        planned: pp,
-        dropped: dp,
-        role: user.role.clone(),
-    }
+    .unwrap_or_else(|e| {
+        tracing::error!(error = %e, "template render failed");
+        String::from("Internal Server Error")
+    })
+    .into_response()
 }

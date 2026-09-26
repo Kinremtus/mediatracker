@@ -7,7 +7,7 @@ use serde::Deserialize;
 
 use uuid::Uuid;
 
-use super::home::SidebarStats;
+use super::home::{SidebarStats, get_sidebar_stats};
 use crate::app_state::AppState;
 use crate::middleware::CurrentUser;
 use crate::models::media_item::CreateMediaItem;
@@ -124,7 +124,10 @@ pub async fn get_media_detail(
                     flash_message,
                 }
                 .render()
-                .unwrap(),
+                .unwrap_or_else(|e| {
+                    tracing::error!(error = %e, "template render failed");
+                    String::from("Internal Server Error")
+                }),
             )
             .into_response()
         }
@@ -213,26 +216,14 @@ pub async fn get_media_drawer_content(
                     status_display,
                 }
                 .render()
-                .unwrap(),
+                .unwrap_or_else(|e| {
+                    tracing::error!(error = %e, "template render failed");
+                    String::from("Internal Server Error")
+                }),
             )
             .into_response()
         }
         Err(_) => Html("Not found".to_string()).into_response(),
-    }
-}
-
-async fn get_sidebar_stats(state: &AppState, user: &CurrentUser) -> SidebarStats {
-    let (ip, cp, pp, dp) = state
-        .tracking
-        .get_status_counts(user.id)
-        .await
-        .unwrap_or_default();
-    SidebarStats {
-        in_progress: ip,
-        completed: cp,
-        planned: pp,
-        dropped: dp,
-        role: user.role.clone(),
     }
 }
 

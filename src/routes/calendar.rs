@@ -6,7 +6,7 @@ use axum::{
 use chrono::{Datelike, Duration, NaiveDate, Utc};
 use serde::Deserialize;
 
-use super::home::SidebarStats;
+use super::home::{SidebarStats, get_sidebar_stats};
 use crate::app_state::AppState;
 use crate::middleware::CurrentUser;
 use crate::models::schedule::{CalendarDay, ReleaseEntry};
@@ -58,18 +58,7 @@ pub async fn get_calendar(
     let year = params.year.unwrap_or_else(|| now.year());
     let month = params.month.unwrap_or_else(|| now.month());
 
-    let (ip, cp, pp, dp) = state
-        .tracking
-        .get_status_counts(user.id)
-        .await
-        .unwrap_or_default();
-    let stats = SidebarStats {
-        in_progress: ip,
-        completed: cp,
-        planned: pp,
-        dropped: dp,
-        role: user.role.clone(),
-    };
+    let stats = get_sidebar_stats(&state, &user).await;
 
     let _ = state.release_schedule.ensure_fresh(&state.shikimori).await;
 
@@ -175,6 +164,9 @@ pub async fn get_calendar(
         next_month_url,
     }
     .render()
-    .unwrap()
+    .unwrap_or_else(|e| {
+        tracing::error!(error = %e, "template render failed");
+        String::from("Internal Server Error")
+    })
     .into()
 }

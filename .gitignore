@@ -16,6 +16,12 @@ terraform/monitoring/telegram-secret.tf
 # Local postgres data (docker volume mount)
 postgres_data/
 
+# Decrypted/plaintext secret material. The SOPS-encrypted k8s/secrets/*.enc.yaml
+# files ARE committed on purpose; only decrypted artifacts and age keys are ignored.
+k8s/secrets/*.plain.yaml
+k8s/secrets/*.dec.yaml
+k8s/secrets/age-key*.txt
+
 # Local AI tooling config
 .opencode/
 

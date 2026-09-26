@@ -310,6 +310,56 @@ impl TrackingService {
         Ok(row)
     }
 
+    /// Return the `(provider, external_id)` pairs the user is tracking.
+    ///
+    /// Batched alternative to calling [`Self::find_entry_by_media`] per search
+    /// result (N+1). One round-trip covers any number of pairs.
+    pub async fn find_tracked_media(
+        &self,
+        user_id: Uuid,
+        pairs: &[(String, String)],
+    ) -> Result<std::collections::HashSet<(String, String)>, anyhow::Error> {
+        if pairs.is_empty() {
+            return Ok(std::collections::HashSet::new());
+        }
+
+        let providers: Vec<String> = pairs.iter().map(|(p, _)| p.clone()).collect();
+        let external_ids: Vec<String> = pairs.iter().map(|(_, e)| e.clone()).collect();
+
+        let rows: Vec<(String, String)> = sqlx::query_as(
+            "SELECT mi.provider, mi.external_id \
+             FROM tracking_entries te \
+             JOIN media_items mi ON mi.id = te.media_id \
+             WHERE te.user_id = $1 \
+               AND (mi.provider, mi.external_id) IN (\
+                   SELECT * FROM unnest($2::text[], $3::text[])\
+               )",
+        )
+        .bind(user_id)
+        .bind(&providers)
+        .bind(&external_ids)
+        .fetch_all(&self.db)
+        .await?;
+
+        Ok(rows.into_iter().collect())
+    }
+
+    /// Shared SELECT column list for tracking entries joined with media items.
+    const ENTRY_SELECT: &'static str = "SELECT tracking_entries.id, tracking_entries.user_id, tracking_entries.media_id, \
+         tracking_entries.status, tracking_entries.rating::double precision AS rating, \
+         tracking_entries.progress, tracking_entries.created_at, tracking_entries.updated_at, \
+         media_items.provider, media_items.external_id, media_items.media_type, \
+         media_items.title, media_items.title_english, media_items.title_native, \
+         media_items.title_russian, media_items.poster_url, media_items.episodes, \
+         media_items.description, media_items.status AS media_status, \
+         media_items.score::double precision AS score, \
+         media_items.format_type, media_items.chapters, media_items.volumes, media_items.pages, \
+         media_items.runtime_minutes, media_items.playtime_hours, \
+         media_items.authors, media_items.artists, media_items.studios, media_items.publishers, \
+         media_items.genres, media_items.themes, media_items.year \
+         FROM tracking_entries \
+         JOIN media_items ON tracking_entries.media_id = media_items.id";
+
     pub async fn get_user_entries(
         &self,
         user_id: Uuid,
@@ -317,58 +367,50 @@ impl TrackingService {
         media_type: Option<&str>,
         search_query: Option<&str>,
     ) -> Result<Vec<TrackingEntryWithMedia>, anyhow::Error> {
-        let mut query = String::from(
-            "SELECT tracking_entries.id, tracking_entries.user_id, tracking_entries.media_id, \
-             tracking_entries.status, tracking_entries.rating::double precision AS rating, \
-             tracking_entries.progress, tracking_entries.created_at, tracking_entries.updated_at, \
-             media_items.provider, media_items.external_id, media_items.media_type, \
-             media_items.title, media_items.title_english, media_items.title_native, \
-             media_items.title_russian, media_items.poster_url, media_items.episodes, \
-             media_items.description, media_items.status AS media_status, \
-             media_items.score::double precision AS score, \
-             media_items.format_type, media_items.chapters, media_items.volumes, media_items.pages, \
-             media_items.runtime_minutes, media_items.playtime_hours, \
-             media_items.authors, media_items.artists, media_items.studios, media_items.publishers, \
-             media_items.genres, media_items.themes, media_items.year \
-             FROM tracking_entries \
-             JOIN media_items ON tracking_entries.media_id = media_items.id \
-             WHERE tracking_entries.user_id = $1",
-        );
-        let mut param_idx = 2;
+        let mut qb = sqlx::QueryBuilder::new(Self::ENTRY_SELECT);
+        qb.push(" WHERE tracking_entries.user_id = ")
+            .push_bind(user_id);
 
-        if let Some(_s) = status {
-            query.push_str(&format!(" AND tracking_entries.status = ${}", param_idx));
-            param_idx += 1;
-        }
-        if let Some(_mt) = media_type {
-            query.push_str(&format!(" AND media_items.media_type = ${}", param_idx));
-            param_idx += 1;
-        }
-        if let Some(sq) = search_query
-            && !sq.is_empty()
-        {
-            query.push_str(&format!(
-                " AND media_items.title ILIKE '%' || ${} || '%'",
-                param_idx
-            ));
-        }
-
-        query.push_str(" ORDER BY tracking_entries.updated_at DESC");
-
-        let mut q = sqlx::query_as::<_, TrackingEntryWithMedia>(&query).bind(user_id);
         if let Some(s) = status {
-            q = q.bind(s);
+            qb.push(" AND tracking_entries.status = ").push_bind(s);
         }
         if let Some(mt) = media_type {
-            q = q.bind(mt);
+            qb.push(" AND media_items.media_type = ").push_bind(mt);
         }
         if let Some(sq) = search_query
             && !sq.is_empty()
         {
-            q = q.bind(sq);
+            qb.push(" AND media_items.title ILIKE '%' || ")
+                .push_bind(sq)
+                .push(" || '%'");
         }
 
-        let entries = q.fetch_all(&self.db).await?;
+        qb.push(" ORDER BY tracking_entries.updated_at DESC");
+
+        let entries = qb
+            .build_query_as::<TrackingEntryWithMedia>()
+            .fetch_all(&self.db)
+            .await?;
         Ok(entries)
+    }
+
+    /// Fetch a single tracked entry (with its media) scoped to its owner.
+    /// Returns `Ok(None)` when the entry does not exist or belongs to another user.
+    pub async fn get_entry_with_media(
+        &self,
+        user_id: Uuid,
+        entry_id: Uuid,
+    ) -> Result<Option<TrackingEntryWithMedia>, anyhow::Error> {
+        let mut qb = sqlx::QueryBuilder::new(Self::ENTRY_SELECT);
+        qb.push(" WHERE tracking_entries.user_id = ")
+            .push_bind(user_id)
+            .push(" AND tracking_entries.id = ")
+            .push_bind(entry_id);
+
+        let entry = qb
+            .build_query_as::<TrackingEntryWithMedia>()
+            .fetch_optional(&self.db)
+            .await?;
+        Ok(entry)
     }
 }

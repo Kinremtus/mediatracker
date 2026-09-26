@@ -1,5 +1,9 @@
 name: CI
 
+# Least privilege by default; the build job raises it to push the image.
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main]
@@ -18,13 +22,15 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           components: clippy
       - name: cargo clippy
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --all-targets --locked -- -D warnings
       - name: cargo test
-        run: cargo test
+        run: cargo test --locked
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-audit
@@ -32,6 +38,10 @@ jobs:
         run: cargo audit --ignore RUSTSEC-2023-0071
       - name: Validate K8s YAML
         run: python3 scripts/validate-k8s-yaml.py
+      - name: Lint Helm chart
+        run: |
+          helm lint chart/
+          helm template app chart/ --namespace mediatracker >/dev/null
 
   build:
     needs: [check]
@@ -64,6 +74,18 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ env.REPO_LOWER }}:${{ github.sha }}
             ${{ env.REGISTRY }}/${{ env.REPO_LOWER }}:latest
+
+      # Advisory image scan: reports HIGH/CRITICAL CVEs but does not block the
+      # pipeline (base-image CVEs would otherwise freeze every deploy).
+      - name: Scan image with Trivy
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.REPO_LOWER }}:${{ github.sha }}
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "0"
 
   deploy:
     needs: [build]
@@ -105,4 +127,6 @@ jobs:
             # Templated manifests last: substitute $APP_HOST into the configmap.
             envsubst < k8s/cloudflared/configmap.yaml | sudo kubectl apply -f -
 
-            sudo helm --kubeconfig /etc/rancher/k3s/k3s.yaml upgrade --install app chart/ --namespace mediatracker --create-namespace --set image.tag=${{ github.sha }} --set configMap.appBaseUrl=https://$APP_HOST --set configMap.emailFrom="MediaTracker <no-reply@$APP_HOST>"
+            # --atomic: roll back automatically if the rollout does not become
+            # ready within the timeout, instead of leaving a broken release.
+            sudo helm --kubeconfig /etc/rancher/k3s/k3s.yaml upgrade --install app chart/ --namespace mediatracker --create-namespace --atomic --timeout 10m --set image.tag=${{ github.sha }} --set configMap.appBaseUrl=https://$APP_HOST --set configMap.emailFrom="MediaTracker <no-reply@$APP_HOST>"

@@ -2,13 +2,14 @@ use askama::Template;
 use axum::{
     Form,
     extract::State,
-    response::{Html, IntoResponse, Redirect},
+    http::StatusCode,
+    response::{Html, IntoResponse, Redirect, Response},
 };
 use serde::Deserialize;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
-use super::home::SidebarStats;
+use super::home::{SidebarStats, get_sidebar_stats};
 use crate::app_state::AppState;
 use crate::middleware::CurrentUser;
 use crate::models::media_item::CreateMediaItem;
@@ -28,18 +29,15 @@ struct AdminTemplate {
     total: Option<usize>,
 }
 
-async fn get_sidebar_stats(state: &AppState, user: &CurrentUser) -> SidebarStats {
-    let (ip, cp, pp, dp) = state
-        .tracking
-        .get_status_counts(user.id)
-        .await
-        .unwrap_or_default();
-    SidebarStats {
-        in_progress: ip,
-        completed: cp,
-        planned: pp,
-        dropped: dp,
-        role: user.role.clone(),
+/// Renders a page template, degrading to a 500 instead of panicking the
+/// request task if a template ever fails to render.
+fn render_page<T: Template>(template: &T) -> Response {
+    match template.render() {
+        Ok(html) => Html(html).into_response(),
+        Err(e) => {
+            tracing::error!(error = %e, "template render failed");
+            (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response()
+        }
     }
 }
 
@@ -65,7 +63,7 @@ pub async fn get_admin_panel(
         refreshed: None,
         total: None,
     };
-    Html(template.render().unwrap()).into_response()
+    render_page(&template)
 }
 
 #[derive(Deserialize)]
@@ -97,6 +95,24 @@ async fn fetch_details_for_provider(
     }
 }
 
+/// Single-flight guard for the long-running "refresh details" admin job.
+static REFRESH_DETAILS_RUNNING: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Single-flight guard for the long-running "enrich chapters" admin job.
+static ENRICH_CHAPTERS_RUNNING: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Clears a single-flight flag when the background job finishes (or panics),
+/// so a crashed run cannot wedge the button forever.
+struct RunGuard(&'static std::sync::atomic::AtomicBool);
+
+impl Drop for RunGuard {
+    fn drop(&mut self) {
+        self.0.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
 pub async fn post_refresh_details(
     user: CurrentUser,
     State(state): State<AppState>,
@@ -109,55 +125,57 @@ pub async fn post_refresh_details(
     let db: &PgPool = &state.db;
     let limit = form.limit.unwrap_or(50).clamp(1, 500);
 
-    let mut query =
-        String::from("SELECT id, provider, external_id, media_type FROM media_items WHERE 1=1");
-    let mut param_idx = 1;
-    let mut bind_count = 0;
+    // Static SQL with optional filters. `$1`/`$2` are NULL when the filter is
+    // absent, so there is no dynamic placeholder construction that could drift
+    // out of sync with the bind order.
+    let media_type = form.media_type.as_deref().filter(|s| !s.is_empty());
+    let provider = form.provider.as_deref().filter(|s| !s.is_empty());
 
-    if let Some(mt) = &form.media_type
-        && !mt.is_empty()
-    {
-        query.push_str(&format!(" AND media_type = ${}", param_idx));
-        param_idx += 1;
-        bind_count += 1;
-    }
-    if let Some(p) = &form.provider
-        && !p.is_empty()
-    {
-        query.push_str(&format!(" AND provider = ${}", param_idx));
-        bind_count += 1;
-    }
-    query.push_str(&format!(" ORDER BY created_at ASC LIMIT {}", limit));
-    let _ = (param_idx, bind_count);
-
-    let mut q = sqlx::query_as::<_, (Uuid, String, String, String)>(&query);
-    if let Some(mt) = &form.media_type
-        && !mt.is_empty()
-    {
-        q = q.bind(mt);
-    }
-    if let Some(p) = &form.provider
-        && !p.is_empty()
-    {
-        q = q.bind(p);
-    }
-
-    let rows: Vec<(Uuid, String, String, String)> = match q.fetch_all(db).await {
-        Ok(r) => r,
-        Err(e) => {
-            return render_with_error(&state, &user, format!("DB error: {}", e)).await;
-        }
-    };
+    let rows: Vec<(Uuid, String, String, String)> =
+        match sqlx::query_as::<_, (Uuid, String, String, String)>(
+            r#"
+            SELECT id, provider, external_id, media_type
+            FROM media_items
+            WHERE ($1::text IS NULL OR media_type = $1)
+              AND ($2::text IS NULL OR provider = $2)
+            ORDER BY created_at ASC
+            LIMIT $3
+            "#,
+        )
+        .bind(media_type)
+        .bind(provider)
+        .bind(limit)
+        .fetch_all(db)
+        .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                return render_with_error(&state, &user, format!("DB error: {}", e)).await;
+            }
+        };
 
     let total = rows.len();
-    let mut refreshed = 0usize;
-    let mut failed = 0usize;
+    if REFRESH_DETAILS_RUNNING.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return render_with_error(
+            &state,
+            &user,
+            "Обновление деталей уже выполняется".to_string(),
+        )
+        .await;
+    }
 
-    for (id, provider, external_id, media_type) in rows {
-        match fetch_details_for_provider(&state, &provider, &external_id, &media_type).await {
-            Ok(item) => {
-                let res = sqlx::query(
-                    r#"
+    let bg_state = state.clone();
+    tokio::spawn(async move {
+        let _guard = RunGuard(&REFRESH_DETAILS_RUNNING);
+        let db: &PgPool = &bg_state.db;
+        let mut refreshed = 0usize;
+        let mut failed = 0usize;
+        for (id, provider, external_id, media_type) in rows {
+            match fetch_details_for_provider(&bg_state, &provider, &external_id, &media_type).await
+            {
+                Ok(item) => {
+                    let res = sqlx::query(
+                        r#"
                     UPDATE media_items SET
                         title_english = $2, title_native = $3, title_russian = $4,
                         description = $5, status = $6, score = $7,
@@ -176,81 +194,82 @@ pub async fn post_refresh_details(
                         updated_at = NOW()
                     WHERE id = $1
                     "#,
-                )
-                .bind(id)
-                .bind(&item.title_english)
-                .bind(&item.title_native)
-                .bind(&item.title_russian)
-                .bind(&item.description)
-                .bind(&item.status)
-                .bind(item.score)
-                .bind(&item.format_type)
-                .bind(
-                    item.details
-                        .unwrap_or(serde_json::Value::Object(Default::default())),
-                )
-                .bind(item.chapters)
-                .bind(item.volumes)
-                .bind(item.pages)
-                .bind(item.runtime_minutes)
-                .bind(item.playtime_hours)
-                .bind(item.year)
-                .bind(item.aired_from)
-                .bind(item.aired_to)
-                .bind(&item.premiered_season)
-                .bind(item.premiered_year)
-                .bind(&item.broadcast)
-                .bind(item.completed)
-                .bind(item.licensed)
-                .bind(&item.source)
-                .bind(&item.duration)
-                .bind(&item.rating)
-                .bind(item.rating_votes)
-                .bind(&item.authors)
-                .bind(&item.artists)
-                .bind(&item.studios)
-                .bind(&item.producers)
-                .bind(&item.licensors)
-                .bind(&item.publishers)
-                .bind(&item.serialized_in)
-                .bind(&item.networks)
-                .bind(&item.platforms)
-                .bind(&item.genres)
-                .bind(&item.themes)
-                .bind(&item.demographics)
-                .bind(&item.categories)
-                .bind(item.episodes)
-                .execute(db)
-                .await;
-                match res {
-                    Ok(_) => refreshed += 1,
-                    Err(e) => {
-                        tracing::error!("Failed to update media_items row {}: {}", id, e);
-                        failed += 1;
+                    )
+                    .bind(id)
+                    .bind(&item.title_english)
+                    .bind(&item.title_native)
+                    .bind(&item.title_russian)
+                    .bind(&item.description)
+                    .bind(&item.status)
+                    .bind(item.score)
+                    .bind(&item.format_type)
+                    .bind(
+                        item.details
+                            .unwrap_or(serde_json::Value::Object(Default::default())),
+                    )
+                    .bind(item.chapters)
+                    .bind(item.volumes)
+                    .bind(item.pages)
+                    .bind(item.runtime_minutes)
+                    .bind(item.playtime_hours)
+                    .bind(item.year)
+                    .bind(item.aired_from)
+                    .bind(item.aired_to)
+                    .bind(&item.premiered_season)
+                    .bind(item.premiered_year)
+                    .bind(&item.broadcast)
+                    .bind(item.completed)
+                    .bind(item.licensed)
+                    .bind(&item.source)
+                    .bind(&item.duration)
+                    .bind(&item.rating)
+                    .bind(item.rating_votes)
+                    .bind(&item.authors)
+                    .bind(&item.artists)
+                    .bind(&item.studios)
+                    .bind(&item.producers)
+                    .bind(&item.licensors)
+                    .bind(&item.publishers)
+                    .bind(&item.serialized_in)
+                    .bind(&item.networks)
+                    .bind(&item.platforms)
+                    .bind(&item.genres)
+                    .bind(&item.themes)
+                    .bind(&item.demographics)
+                    .bind(&item.categories)
+                    .bind(item.episodes)
+                    .execute(db)
+                    .await;
+                    match res {
+                        Ok(_) => refreshed += 1,
+                        Err(e) => {
+                            tracing::error!("Failed to update media_items row {}: {}", id, e);
+                            failed += 1;
+                        }
                     }
                 }
+                Err(e) => {
+                    tracing::warn!("get_details failed for {}/{}: {}", provider, external_id, e);
+                    failed += 1;
+                }
             }
-            Err(e) => {
-                tracing::warn!("get_details failed for {}/{}: {}", provider, external_id, e);
-                failed += 1;
-            }
+            tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
         }
-        tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
-    }
+        tracing::info!(refreshed, failed, total, "refresh-details job finished");
+    });
 
     let stats = get_sidebar_stats(&state, &user).await;
-    let message = format!("Обновлено: {} из {} (ошибок: {})", refreshed, total, failed);
     let template = AdminTemplate {
         username: user.username,
         role: user.role,
         stats,
         active_page: "admin".to_string(),
-        message,
+        message: format!("Обновление деталей запущено в фоне ({total} элементов)"),
         error: String::new(),
-        refreshed: Some(refreshed),
+        refreshed: None,
         total: Some(total),
     };
-    Html(template.render().unwrap()).into_response()
+    render_page(&template)
 }
 
 async fn render_with_error(
@@ -269,7 +288,7 @@ async fn render_with_error(
         refreshed: None,
         total: None,
     };
-    Html(template.render().unwrap()).into_response()
+    render_page(&template)
 }
 
 #[derive(Deserialize)]
@@ -324,40 +343,46 @@ pub async fn post_enrich_chapters(
     };
 
     let total = rows.len();
-    let mut enriched = 0usize;
-    let mut failed = 0usize;
-
-    for row in rows {
-        let (provider, external_id): (String, String) = (row.get(0), row.get(1));
-        match enrich_from_mangadex(db, &provider, &external_id).await {
-            Ok(count) => enriched += count,
-            Err(e) => {
-                tracing::warn!(
-                    "enrich_from_mangadex failed for {}/{}: {}",
-                    provider,
-                    external_id,
-                    e
-                );
-                failed += 1;
-            }
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    if ENRICH_CHAPTERS_RUNNING.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return render_with_error(&state, &user, "Обогащение глав уже выполняется".to_string())
+            .await;
     }
 
+    let bg_state = state.clone();
+    tokio::spawn(async move {
+        let _guard = RunGuard(&ENRICH_CHAPTERS_RUNNING);
+        let db: &PgPool = &bg_state.db;
+        let mut enriched = 0usize;
+        let mut failed = 0usize;
+        for row in rows {
+            let (provider, external_id): (String, String) = (row.get(0), row.get(1));
+            match enrich_from_mangadex(db, &provider, &external_id).await {
+                Ok(count) => enriched += count,
+                Err(e) => {
+                    tracing::warn!(
+                        "enrich_from_mangadex failed for {}/{}: {}",
+                        provider,
+                        external_id,
+                        e
+                    );
+                    failed += 1;
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
+        tracing::info!(enriched, failed, total, "enrich-chapters job finished");
+    });
+
     let stats = get_sidebar_stats(&state, &user).await;
-    let message = format!(
-        "Обогащено глав: {} (объектов: {}, ошибок: {})",
-        enriched, total, failed
-    );
     let template = AdminTemplate {
         username: user.username,
         role: user.role,
         stats,
         active_page: "admin".to_string(),
-        message,
+        message: format!("Обогащение глав запущено в фоне ({total} объектов)"),
         error: String::new(),
-        refreshed: Some(enriched),
+        refreshed: None,
         total: Some(total),
     };
-    Html(template.render().unwrap()).into_response()
+    render_page(&template)
 }
