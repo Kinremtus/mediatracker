@@ -16,23 +16,23 @@ resource "kubernetes_persistent_volume_claim_v1" "uptime-kuma" {
 }
 
 resource "kubernetes_service_v1" "uptime-kuma" {
-    metadata {
-      name      = "uptime-kuma"
-      namespace = "monitoring"
+  metadata {
+    name      = "uptime-kuma"
+    namespace = "monitoring"
+  }
+  spec {
+    type = "NodePort"
+
+    selector = {
+      app = "uptime-kuma-server"
     }
-    spec {
-      type = "NodePort"
-      
-      selector = {
-        app = "uptime-kuma-server"
-      }
-      port {
-        port = 3001
-        target_port = 3001
-        node_port   = 30011
-      }
+    port {
+      port        = 3001
+      target_port = 3001
+      node_port   = 30011
     }
-  
+  }
+
 }
 
 resource "kubernetes_deployment_v1" "uptime-kuma" {
@@ -45,7 +45,7 @@ resource "kubernetes_deployment_v1" "uptime-kuma" {
   }
   spec {
     replicas = 1
-    
+
     selector {
       match_labels = {
         app = "uptime-kuma-server"
@@ -73,7 +73,7 @@ resource "kubernetes_deployment_v1" "uptime-kuma" {
           resources {
             requests = {
               memory = "128Mi"
-              cpu = "100m"
+              cpu    = "50m"
             }
             limits = {
               memory = "128Mi"
@@ -81,7 +81,7 @@ resource "kubernetes_deployment_v1" "uptime-kuma" {
             }
           }
         }
-        enable_service_links            = false
+        enable_service_links = false
 
         volume {
           name = "data"

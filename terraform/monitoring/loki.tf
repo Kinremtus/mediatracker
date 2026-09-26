@@ -1,25 +1,25 @@
 resource "kubernetes_service_v1" "loki" {
-    metadata {
-      name      = "loki"
-      namespace = "monitoring"
-    }
-    spec {
-      type = "NodePort"
+  metadata {
+    name      = "loki"
+    namespace = "monitoring"
+  }
+  spec {
+    type = "NodePort"
 
-      selector = {
-        app = "loki-server"
-      }
-      port {
-        port = 3100
-        target_port = 3100
-        node_port   = 32310
-      }
-    } 
+    selector = {
+      app = "loki-server"
+    }
+    port {
+      port        = 3100
+      target_port = 3100
+      node_port   = 32310
+    }
+  }
 }
 
 resource "kubernetes_config_map_v1" "loki" {
   metadata {
-    name = "loki-config"
+    name      = "loki-config"
     namespace = "monitoring"
   }
   data = {
@@ -57,69 +57,73 @@ EOF
 
 resource "kubernetes_stateful_set_v1" "loki" {
   metadata {
-    name = "loki"
+    name      = "loki"
     namespace = "monitoring"
     labels = {
       app = "loki-server"
+    }
   }
- }
- spec {
-   service_name = "loki"
-   replicas = 1
-   selector {
-     match_labels = {
-       app = "loki-server"
-     }
-   }
-   template {
-     metadata {
-       labels = {
-         app = "loki-server"
-       }
-     }
-     spec {
-       container {
-         name = "loki"
-         image = "grafana/loki:3.7.3"
-         args = ["-config.file=/etc/loki/loki-config.yaml"]
-         port {
-           container_port = 3100
-         }
-         volume_mount {
-           name = "config"
-           mount_path = "/etc/loki/"
-         }
-         volume_mount {
-           name = "data"
-           mount_path = "/loki"
-         }
-         resources {
-           limits = {
-             memory = "100Mi"
-             cpu = "100m"
-           }
-         }
-       }
-       volume {
-         name = "config"
-         config_map {
-           name = "loki-config"
-         }
-       }
-     }
-   }
-   volume_claim_template {
-     metadata {
-       name = "data"
-     }
-     spec {
-       access_modes = ["ReadWriteOnce"]
-       resources {
-         requests = {
-           storage = "5Gi"
-         }
-       }
-     }
-   }
- }
+  spec {
+    service_name = "loki"
+    replicas     = 1
+    selector {
+      match_labels = {
+        app = "loki-server"
+      }
+    }
+    template {
+      metadata {
+        labels = {
+          app = "loki-server"
+        }
+      }
+      spec {
+        container {
+          name  = "loki"
+          image = "grafana/loki:3.7.3"
+          args  = ["-config.file=/etc/loki/loki-config.yaml"]
+          port {
+            container_port = 3100
+          }
+          volume_mount {
+            name       = "config"
+            mount_path = "/etc/loki/"
+          }
+          volume_mount {
+            name       = "data"
+            mount_path = "/loki"
+          }
+          resources {
+            requests = {
+              memory = "100Mi"
+              cpu    = "50m"
+            }
+            limits = {
+              memory = "100Mi"
+              cpu    = "100m"
+            }
+          }
+        }
+        volume {
+          name = "config"
+          config_map {
+            name = "loki-config"
+          }
+        }
+      }
+    }
+    volume_claim_template {
+      metadata {
+        name = "data"
+      }
+      spec {
+        access_modes = ["ReadWriteOnce"]
+        resources {
+          requests = {
+            storage = "5Gi"
+          }
+        }
+      }
+    }
+  }
 }

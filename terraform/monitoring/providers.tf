@@ -11,5 +11,5 @@ terraform {
 
 provider "kubernetes" {
   config_path = "~/.kube/config-vps"
-  insecure = true
+  insecure    = true
 }
