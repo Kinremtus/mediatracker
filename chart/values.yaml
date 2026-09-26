@@ -131,6 +131,10 @@ postgres:
   image:
     repository: postgres
     tag: 17-alpine
+    # Digest pins the exact image bytes (linux/amd64+arm64 manifest list),
+    # so a re-pushed/compromised 17-alpine tag cannot silently change our DB image.
+    # Refresh with: skopeo inspect docker://docker.io/library/postgres:17-alpine | jq -r .Digest
+    digest: sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
     pullPolicy: IfNotPresent
   port: 5432
   secretName: db-secret

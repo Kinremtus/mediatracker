@@ -14,6 +14,7 @@ use crate::app_state::AppState;
 use crate::middleware::CurrentUser;
 use crate::models::media_item::CreateMediaItem;
 use crate::services::chapters::enrich_from_mangadex;
+use crate::services::external::dispatch::{Provider, ProviderClients};
 
 #[derive(Template)]
 #[template(path = "admin.html")]
@@ -82,16 +83,10 @@ async fn fetch_details_for_provider(
     external_id: &str,
     media_type: &str,
 ) -> Result<CreateMediaItem, anyhow::Error> {
-    match provider {
-        "shikimori" => state.shikimori.get_details(external_id).await,
-        "mal" => state.mal.get_details(external_id).await,
-        "mangaupdates" => state.mangaupdates.get_details(external_id).await,
-        "tmdb" => state.tmdb.get_details(external_id, media_type).await,
-        "rawg" => state.rawg.get_details(external_id).await,
-        "igdb" => state.igdb.get_details(external_id).await,
-        "google_books" => state.google_books.get_details(external_id).await,
-        "openlibrary" => state.openlibrary.get_details(external_id).await,
-        other => Err(anyhow::anyhow!("Unknown provider: {}", other)),
+    let clients = ProviderClients::from_state(state);
+    match Provider::from_name(&clients, provider) {
+        Some(provider) => provider.fetch(external_id, media_type).await,
+        None => Err(anyhow::anyhow!("Unknown provider: {}", provider)),
     }
 }
 

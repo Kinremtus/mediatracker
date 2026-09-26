@@ -9,6 +9,7 @@ use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::models::media_item::CreateMediaItem;
+use crate::services::external::dispatch::{Provider, ProviderClients};
 use crate::services::external::google_books::GoogleBooksService;
 use crate::services::external::igdb::IgdbService;
 use crate::services::external::mal::MalService;
@@ -48,70 +49,6 @@ pub struct RefreshCtx {
     pub igdb: IgdbService,
     pub google_books: GoogleBooksService,
     pub openlibrary: OpenLibraryService,
-}
-
-#[derive(Clone)]
-enum Provider {
-    Shikimori(ShikimoriService),
-    Mal(MalService),
-    MangaUpdates(MangaUpdatesService),
-    Tmdb(TmdbService),
-    Rawg(RawgService),
-    Igdb(IgdbService),
-    GoogleBooks(GoogleBooksService),
-    OpenLibrary(OpenLibraryService),
-}
-
-impl Provider {
-    async fn fetch(
-        &self,
-        external_id: &str,
-        media_type: &str,
-    ) -> Result<CreateMediaItem, anyhow::Error> {
-        match self {
-            Self::Shikimori(s) => s.get_details(external_id).await,
-            Self::Mal(s) => s.get_details(external_id).await,
-            Self::MangaUpdates(s) => s.get_details(external_id).await,
-            Self::Tmdb(s) => {
-                let mt = match media_type {
-                    "movie" | "dramas" => "movie",
-                    _ => "tv",
-                };
-                s.get_details(external_id, mt).await
-            }
-            Self::Rawg(s) => s.get_details(external_id).await,
-            Self::Igdb(s) => s.get_details(external_id).await,
-            Self::GoogleBooks(s) => s.get_details(external_id).await,
-            Self::OpenLibrary(s) => s.get_details(external_id).await,
-        }
-    }
-
-    fn delay(&self) -> Duration {
-        match self {
-            Self::Mal(_) => Duration::from_millis(350),
-            _ => Duration::from_millis(200),
-        }
-    }
-
-    fn concurrency(&self) -> usize {
-        match self {
-            Self::Mal(_) => 2,
-            _ => 3,
-        }
-    }
-
-    fn name(&self) -> &'static str {
-        match self {
-            Self::Shikimori(_) => "shikimori",
-            Self::Mal(_) => "mal",
-            Self::MangaUpdates(_) => "mangaupdates",
-            Self::Tmdb(_) => "tmdb",
-            Self::Rawg(_) => "rawg",
-            Self::Igdb(_) => "igdb",
-            Self::GoogleBooks(_) => "google_books",
-            Self::OpenLibrary(_) => "openlibrary",
-        }
-    }
 }
 
 pub async fn run_refresh_loop(ctx: RefreshCtx, cancel: CancellationToken) {
@@ -192,18 +129,21 @@ async fn do_refresh(ctx: &RefreshCtx) -> Result<(), anyhow::Error> {
     let by_provider = group_by_provider(&rows);
 
     for (provider_name, items) in &by_provider {
-        let provider = match *provider_name {
-            "shikimori" => Some(Provider::Shikimori(ctx.shikimori.clone())),
-            "mal" => Some(Provider::Mal(ctx.mal.clone())),
-            "mangaupdates" => Some(Provider::MangaUpdates(ctx.mangaupdates.clone())),
-            "tmdb" => Some(Provider::Tmdb(ctx.tmdb.clone())),
-            "rawg" => Some(Provider::Rawg(ctx.rawg.clone())),
-            "igdb" => Some(Provider::Igdb(ctx.igdb.clone())),
-            "google_books" => Some(Provider::GoogleBooks(ctx.google_books.clone())),
-            "openlibrary" => Some(Provider::OpenLibrary(ctx.openlibrary.clone())),
-            other => {
+        let clients = ProviderClients {
+            shikimori: &ctx.shikimori,
+            mal: &ctx.mal,
+            mangaupdates: &ctx.mangaupdates,
+            tmdb: &ctx.tmdb,
+            rawg: &ctx.rawg,
+            igdb: &ctx.igdb,
+            google_books: &ctx.google_books,
+            openlibrary: &ctx.openlibrary,
+        };
+        let provider = match Provider::from_name(&clients, provider_name) {
+            Some(provider) => Some(provider),
+            None => {
                 debug!(
-                    provider = other,
+                    provider = provider_name,
                     n = items.len(),
                     "refresh_counts: unknown provider, skipping"
                 );
@@ -254,7 +194,12 @@ async fn refresh_group(db: &PgPool, items: Vec<MediaItemRow>, provider: Provider
         handles.push(tokio::spawn(async move {
             let _permit = permit;
             tokio::time::sleep(delay).await;
-            match provider.fetch(&ext_id, &media_type).await {
+            // TMDB expects "movie" or "tv"; the other providers ignore it.
+            let fetch_media_type = match media_type.as_str() {
+                "movie" | "dramas" => "movie",
+                _ => "tv",
+            };
+            match provider.fetch(&ext_id, fetch_media_type).await {
                 Ok(details) => match update_item(&db, &item, &details).await {
                     Ok(true) => {
                         updated.fetch_add(1, Ordering::Relaxed);

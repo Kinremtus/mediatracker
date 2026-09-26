@@ -8,6 +8,7 @@ pub mod rawg;
 pub mod shikimori;
 pub mod tmdb;
 
+pub mod dispatch;
 use std::time::Duration;
 
 /// Shared outbound HTTP client used by every external provider.
