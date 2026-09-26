@@ -35,6 +35,13 @@ resource "kubernetes_cluster_role_v1" "kube-state-metrics" {
     resources = ["deployments", "daemonsets", "statefulsets"]
     verbs = ["list", "watch"]
   }
+  # Required for the backup alerts: kube-state-metrics can only emit
+  # kube_job_* / kube_cronjob_* metrics for resources it may list.
+  rule {
+    api_groups = ["batch"]
+    resources  = ["jobs", "cronjobs"]
+    verbs      = ["list", "watch"]
+  }
 }
 
 resource "kubernetes_cluster_role_binding_v1" "kube-state-metrics" {
