@@ -5,6 +5,15 @@
 # Data safety: the PVC is created by the StatefulSet's volumeClaimTemplates, so
 # Helm does NOT track it and will NOT delete it on `helm uninstall`. Deleting a
 # StatefulSet never deletes its PVCs. The volume therefore outlives the release.
+#
+# The volumeClaimTemplate name below must stay `data`: it produces the PVC
+# `data-postgres-0`, which holds the live database. Renaming it makes Postgres
+# start on a fresh, empty volume while the old 5Gi PVC sits orphaned.
+#
+# Rollback hazard seen on 2026-09-26: `helm rollback` to a release that did not
+# contain this StatefulSet (revisions <= 41 - postgres was still a raw manifest
+# back then) deleted both the StatefulSet and its Service. The PVC survived, the
+# pod did not, so the database stayed down until the next successful upgrade.
 apiVersion: v1
 kind: Service
 metadata:
