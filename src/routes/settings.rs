@@ -412,10 +412,6 @@ pub async fn post_delete_account(user: CurrentUser, State(state): State<AppState
             .bind(uid)
             .execute(&mut *tx)
             .await?;
-        sqlx::query("DELETE FROM external_mappings WHERE user_id = $1")
-            .bind(uid)
-            .execute(&mut *tx)
-            .await?;
         sqlx::query("DELETE FROM tracking_entries WHERE user_id = $1")
             .bind(uid)
             .execute(&mut *tx)
