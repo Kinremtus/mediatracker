@@ -85,7 +85,10 @@ async fn build_season_rows_from_tmdb(
         crate::services::tmdb_episodes::get_season_watched_counts(&state.db, external_id, user_id)
             .await
             .map(|v| v.into_iter().collect())
-            .unwrap_or_default();
+            .unwrap_or_else(|e| {
+                tracing::error!(error = %e, "tmdb: failed to load season watched counts");
+                std::collections::HashMap::new()
+            });
 
     let mut rows: Vec<TmdbSeasonRowData> = seasons
         .into_iter()
@@ -115,7 +118,10 @@ async fn build_season_rows_from_db(
     let groups =
         crate::services::tmdb_episodes::get_season_group_counts(&state.db, external_id, user_id)
             .await
-            .unwrap_or_default();
+            .unwrap_or_else(|e| {
+                tracing::error!(error = %e, "tmdb: failed to load season group counts");
+                Vec::new()
+            });
 
     let mut rows: Vec<TmdbSeasonRowData> = groups
         .into_iter()
@@ -177,7 +183,10 @@ pub async fn post_tmdb_season_watched(
         &external_id,
     )
     .await
-    .unwrap_or(0);
+    .unwrap_or_else(|e| {
+        tracing::error!(error = %e, "tmdb: failed to load total watched episodes");
+        0
+    });
 
     if let Some(media_id) = get_media_id_by_external(&state.db, &external_id).await
         && let Err(e) = crate::services::tmdb_episodes::set_progress_direct(
@@ -198,7 +207,10 @@ pub async fn post_tmdb_season_watched(
         user.id,
     )
     .await
-    .unwrap_or((0, 0));
+    .unwrap_or_else(|e| {
+        tracing::error!(error = %e, "tmdb: failed to load season counts");
+        (0, 0)
+    });
 
     let row = TmdbSeasonRowData {
         season_number,
@@ -213,7 +225,10 @@ pub async fn post_tmdb_season_watched(
         external_id: external_id.clone(),
     }
     .render()
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "tmdb: season header render failed");
+        String::new()
+    });
 
     let oob_html = format!(
         r#"<div id="season-header-{}-{}" hx-swap-oob="true">{}</div>"#,
@@ -250,7 +265,10 @@ async fn render_episodes(
         user.id,
     )
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!(error = %e, "tmdb: failed to load season episodes");
+        Vec::new()
+    });
 
     if episodes.is_empty()
         && let Ok(detail) = state
@@ -275,7 +293,10 @@ async fn render_episodes(
         user.id,
     )
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!(error = %e, "tmdb: failed to reload season episodes");
+        Vec::new()
+    });
 
     TmdbEpisodeListTemplate {
         episodes,
@@ -323,7 +344,10 @@ pub async fn set_tmdb_episode_watched(
         &external_id,
     )
     .await
-    .unwrap_or(0);
+    .unwrap_or_else(|e| {
+        tracing::error!(error = %e, "tmdb: failed to load total watched episodes");
+        0
+    });
 
     let media_id = get_media_id_by_external(&state.db, &external_id).await;
 
@@ -347,7 +371,10 @@ pub async fn set_tmdb_episode_watched(
             user.id,
         )
         .await
-        .unwrap_or_default();
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "tmdb: failed to load season episodes");
+            Vec::new()
+        });
         if let Some(ep) = episodes
             .iter_mut()
             .find(|e| e.episode_number == episode_number)
@@ -357,7 +384,10 @@ pub async fn set_tmdb_episode_watched(
                 external_id: external_id.clone(),
             }
             .render()
-            .unwrap_or_default()
+            .unwrap_or_else(|e| {
+                tracing::warn!(error = %e, "tmdb: episode item render failed");
+                String::new()
+            })
         } else {
             String::new()
         }
@@ -370,7 +400,10 @@ pub async fn set_tmdb_episode_watched(
         user.id,
     )
     .await
-    .unwrap_or((0, 0));
+    .unwrap_or_else(|e| {
+        tracing::error!(error = %e, "tmdb: failed to load season counts");
+        (0, 0)
+    });
 
     let row = TmdbSeasonRowData {
         season_number,
@@ -384,7 +417,10 @@ pub async fn set_tmdb_episode_watched(
         external_id: external_id.clone(),
     }
     .render()
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "tmdb: season header render failed");
+        String::new()
+    });
     let oob_html = format!(
         r#"<div id="season-header-{}-{}" hx-swap-oob="true">{}</div>"#,
         external_id, season_number, header_html
@@ -397,7 +433,10 @@ pub async fn set_tmdb_episode_watched(
         season_number,
     )
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!(error = %e, "tmdb: failed to load episode states");
+        Vec::new()
+    });
     let states_json: Vec<[serde_json::Value; 2]> = states
         .into_iter()
         .map(|(n, w)| [serde_json::Value::from(n), serde_json::Value::from(w)])

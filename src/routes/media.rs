@@ -293,7 +293,10 @@ pub async fn get_episodes(
             &external_id,
         )
         .await
-        .unwrap_or_default();
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "media: failed to load existing episodes");
+            Vec::new()
+        });
     }
 
     // If empty, fetch on-demand via Jikan.
@@ -324,7 +327,10 @@ pub async fn get_episodes(
             &external_id,
         )
         .await
-        .unwrap_or_default(),
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "media: failed to load episodes");
+            Vec::new()
+        }),
         None => Vec::new(),
     };
 
@@ -410,7 +416,10 @@ pub async fn set_episode_watched(
         mal_id,
     )
     .await
-    .unwrap_or(0);
+    .unwrap_or_else(|e| {
+        tracing::error!(error = %e, "media: failed to count watched episodes");
+        0
+    });
 
     // Resolve media_id once (for both progress sync and HX-Trigger broadcast).
     let media_id: Option<Uuid> =
@@ -450,7 +459,10 @@ pub async fn set_episode_watched(
             external_id: external_id.clone(),
         }
         .render()
-        .unwrap_or_default(),
+        .unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "media: episode item render failed");
+            String::new()
+        }),
         _ => String::new(),
     };
 
@@ -465,7 +477,10 @@ pub async fn set_episode_watched(
         mal_id,
     )
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!(error = %e, "media: failed to load episode states");
+        Vec::new()
+    });
     let states_json: Vec<[serde_json::Value; 2]> = states
         .into_iter()
         .map(|(n, w)| [serde_json::Value::from(n), serde_json::Value::from(w)])
@@ -558,7 +573,10 @@ pub async fn get_chapters(
     let existing =
         crate::services::chapters::get_chapters(&state.db, &mu_provider, &mu_id, user.id)
             .await
-            .unwrap_or_default();
+            .unwrap_or_else(|e| {
+                tracing::error!(error = %e, "media: failed to load chapters");
+                Vec::new()
+            });
 
     // If empty, try to fetch the latest_chapter from MangaUpdates and build skeleton.
     if existing.is_empty()
@@ -582,7 +600,10 @@ pub async fn get_chapters(
     let chapters =
         crate::services::chapters::get_chapters(&state.db, &mu_provider, &mu_id, user.id)
             .await
-            .unwrap_or_default();
+            .unwrap_or_else(|e| {
+                tracing::error!(error = %e, "media: failed to load chapters after enrich");
+                Vec::new()
+            });
 
     // Auto-enrich from MangaDex if chapters lack titles (async, non-blocking)
     let needs_enrich = chapters
@@ -648,7 +669,10 @@ pub async fn set_chapter_read(
     let max_read =
         crate::services::chapters::count_read(&state.db, user.id, &provider, &external_id)
             .await
-            .unwrap_or(0);
+            .unwrap_or_else(|e| {
+                tracing::error!(error = %e, "media: failed to count read chapters");
+                0
+            });
 
     if let Some(media_id) = media_id
         && let Err(e) = crate::services::chapters::update_progress_from_read(
@@ -677,7 +701,10 @@ pub async fn set_chapter_read(
             external_id: external_id.clone(),
         }
         .render()
-        .unwrap_or_default(),
+        .unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "media: chapter item render failed");
+            String::new()
+        }),
         None => String::new(),
     };
 
@@ -685,7 +712,10 @@ pub async fn set_chapter_read(
     let states =
         crate::services::chapters::get_chapter_states(&state.db, user.id, &provider, &external_id)
             .await
-            .unwrap_or_default();
+            .unwrap_or_else(|e| {
+                tracing::error!(error = %e, "media: failed to load chapter states");
+                Vec::new()
+            });
     let states_json: Vec<[serde_json::Value; 2]> = states
         .into_iter()
         .map(|(n, r)| [serde_json::Value::from(n), serde_json::Value::from(r)])
