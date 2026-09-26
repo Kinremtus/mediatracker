@@ -46,7 +46,7 @@ spec:
         fsGroup: 70
       containers:
         - name: postgres
-          image: "{{ .Values.postgres.image.repository }}:{{ .Values.postgres.image.tag }}"
+          image: "{{ .Values.postgres.image.repository }}:{{ .Values.postgres.image.tag }}{{ if .Values.postgres.image.digest }}@{{ .Values.postgres.image.digest }}{{ end }}"
           imagePullPolicy: {{ .Values.postgres.image.pullPolicy }}
           ports:
             - containerPort: {{ .Values.postgres.port }}

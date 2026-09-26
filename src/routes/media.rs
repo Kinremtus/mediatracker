@@ -11,6 +11,7 @@ use super::home::{SidebarStats, get_sidebar_stats};
 use crate::app_state::AppState;
 use crate::middleware::CurrentUser;
 use crate::models::media_item::CreateMediaItem;
+use crate::services::external::dispatch::{Provider, ProviderClients};
 
 #[derive(Template)]
 #[template(path = "media_drawer_content.html")]
@@ -77,19 +78,11 @@ pub async fn get_media_detail(
     Path((provider, external_id)): Path<(String, String)>,
     Query(params): Query<MediaDetailQuery>,
 ) -> impl IntoResponse {
-    let item = match provider.as_str() {
-        "shikimori" => state.shikimori.get_details(&external_id).await,
-        "mal" => state.mal.get_details(&external_id).await,
-        "mangaupdates" => state.mangaupdates.get_details(&external_id).await,
-        "tmdb" => {
-            let media_type = params.media_type.as_deref().unwrap_or("movie");
-            state.tmdb.get_details(&external_id, media_type).await
-        }
-        "rawg" => state.rawg.get_details(&external_id).await,
-        "igdb" => state.igdb.get_details(&external_id).await,
-        "google_books" => state.google_books.get_details(&external_id).await,
-        "openlibrary" => state.openlibrary.get_details(&external_id).await,
-        _ => Err(anyhow::anyhow!("Unknown provider")),
+    let clients = ProviderClients::from_state(&state);
+    let media_type = params.media_type.as_deref().unwrap_or("movie");
+    let item = match Provider::from_name(&clients, &provider) {
+        Some(provider) => provider.fetch(&external_id, media_type).await,
+        None => Err(anyhow::anyhow!("Unknown provider")),
     };
 
     let stats = get_sidebar_stats(&state, &user).await;
@@ -141,19 +134,11 @@ pub async fn get_media_drawer_content(
     Path((provider, external_id)): Path<(String, String)>,
     Query(params): Query<MediaDetailQuery>,
 ) -> impl IntoResponse {
-    let item = match provider.as_str() {
-        "shikimori" => state.shikimori.get_details(&external_id).await,
-        "mal" => state.mal.get_details(&external_id).await,
-        "mangaupdates" => state.mangaupdates.get_details(&external_id).await,
-        "tmdb" => {
-            let media_type = params.media_type.as_deref().unwrap_or("movie");
-            state.tmdb.get_details(&external_id, media_type).await
-        }
-        "rawg" => state.rawg.get_details(&external_id).await,
-        "igdb" => state.igdb.get_details(&external_id).await,
-        "google_books" => state.google_books.get_details(&external_id).await,
-        "openlibrary" => state.openlibrary.get_details(&external_id).await,
-        _ => Err(anyhow::anyhow!("Unknown provider")),
+    let clients = ProviderClients::from_state(&state);
+    let media_type = params.media_type.as_deref().unwrap_or("movie");
+    let item = match Provider::from_name(&clients, &provider) {
+        Some(provider) => provider.fetch(&external_id, media_type).await,
+        None => Err(anyhow::anyhow!("Unknown provider")),
     };
 
     match item {
