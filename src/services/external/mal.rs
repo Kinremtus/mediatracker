@@ -7,7 +7,6 @@ use crate::utils::clean_description;
 
 /// MyAnimeList data via Jikan v4 (https://jikan.moe) — no API key required.
 const BASE_URL: &str = "https://api.jikan.moe/v4";
-const USER_AGENT: &str = "MediaTracker/0.1 (+https://github.com/Kinremtus/mediatracker)";
 const SEARCH_LIMIT: u32 = 25;
 
 #[derive(Debug, Deserialize)]
@@ -355,10 +354,7 @@ impl Default for MalService {
 impl MalService {
     pub fn new() -> Self {
         Self {
-            client: Client::builder()
-                .user_agent(USER_AGENT)
-                .build()
-                .expect("reqwest client"),
+            client: super::http_client(),
         }
     }
 

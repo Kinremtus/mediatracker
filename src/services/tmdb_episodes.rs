@@ -253,29 +253,6 @@ pub async fn get_episode_states(
     Ok(rows)
 }
 
-pub async fn update_progress_from_watched(
-    pool: &PgPool,
-    user_id: Uuid,
-    media_id: Uuid,
-    watched_count: i32,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r#"
-        UPDATE tracking_entries
-        SET progress = GREATEST(progress, $1),
-            updated_at = NOW()
-        WHERE user_id = $2
-          AND media_id = $3
-        "#,
-    )
-    .bind(watched_count)
-    .bind(user_id)
-    .bind(media_id)
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
 pub async fn get_season_counts(
     pool: &PgPool,
     external_id: &str,

@@ -1,4 +1,3 @@
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
@@ -10,14 +9,6 @@ pub struct StatusCount {
     pub percentage: i32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StatusCountDisplay {
-    pub status: String,
-    pub label: String,
-    pub count: i32,
-    pub percentage: i32,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct StatsOverview {
     pub total_titles: i32,
@@ -25,12 +16,6 @@ pub struct StatsOverview {
     pub completion_rate: f64,
     pub top_category: Option<String>,
     pub status_counts: Vec<StatusCount>,
-}
-
-#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
-pub struct ActivityEntry {
-    pub action: String,
-    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
