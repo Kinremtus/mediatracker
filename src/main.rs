@@ -14,7 +14,7 @@ use mediatracker::routes::{
     admin, auth, calendar, home, media, search, settings, stats, tmdb_episodes, tmdb_image,
     tracking,
 };
-use mediatracker::services::{refresh_counts, release_schedule};
+use mediatracker::services::{cleanup, refresh_counts, release_schedule};
 use serde_json::json;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
@@ -228,6 +228,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 openlibrary: bg_state.openlibrary,
             };
             refresh_counts::run_refresh_loop(ctx, refresh_cancel).await;
+        });
+
+        // Retention sweeps for unbounded tables (sessions, reset tokens,
+        // notification log). Kept on the single background process so web
+        // replicas never write on a timer.
+        let cleanup_cancel = cancel.clone();
+        let cleanup_db = state.db.clone();
+        tokio::spawn(async move {
+            cleanup::run_cleanup_loop(cleanup_db, cleanup_cancel).await;
         });
     } else {
         info!("REFRESH_LOOP_ENABLED=false: background refresh disabled in this process");
