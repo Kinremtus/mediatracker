@@ -13,6 +13,7 @@ use crate::services::external::anilist::AniListService;
 use crate::services::external::comicvine::ComicVineService;
 use crate::services::external::dispatch::{Provider, ProviderClients};
 use crate::services::external::google_books::GoogleBooksService;
+use crate::services::external::hardcover::HardcoverService;
 use crate::services::external::igdb::IgdbService;
 use crate::services::external::mal::MalService;
 use crate::services::external::mangadex::MangaDexService;
@@ -55,6 +56,7 @@ pub struct RefreshCtx {
     pub mangadex: MangaDexService,
     pub anilist: AniListService,
     pub comicvine: ComicVineService,
+    pub hardcover: HardcoverService,
 }
 
 pub async fn run_refresh_loop(ctx: RefreshCtx, cancel: CancellationToken) {
@@ -147,6 +149,7 @@ async fn do_refresh(ctx: &RefreshCtx) -> Result<(), anyhow::Error> {
             mangadex: &ctx.mangadex,
             anilist: &ctx.anilist,
             comicvine: &ctx.comicvine,
+            hardcover: &ctx.hardcover,
         };
         let provider = match Provider::from_name(&clients, provider_name) {
             Some(provider) => Some(provider),

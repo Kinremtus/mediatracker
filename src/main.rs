@@ -38,6 +38,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Get API keys from environment
     let tmdb_api_key = std::env::var("TMDB_API_KEY").unwrap_or_default();
     let comic_vine_api_key = std::env::var("COMIC_VINE_API_KEY").unwrap_or_default();
+    let hardcover_api_key = std::env::var("HARDCOVER_API_KEY").unwrap_or_default();
     let rawg_api_key = std::env::var("RAWG_API_KEY").unwrap_or_default();
     let igdb_client_id = std::env::var("IGDB_CLIENT_ID").unwrap_or_default();
     let igdb_client_secret = std::env::var("IGDB_CLIENT_SECRET").unwrap_or_default();
@@ -60,6 +61,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &email_from,
         &app_base_url,
         &comic_vine_api_key,
+        &hardcover_api_key,
     )
     .await?;
     info!("Database connected and migrations applied");
@@ -238,6 +240,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 mangadex: bg_state.mangadex,
                 anilist: bg_state.anilist,
                 comicvine: bg_state.comicvine,
+                hardcover: bg_state.hardcover,
             };
             refresh_counts::run_refresh_loop(ctx, refresh_cancel).await;
         });

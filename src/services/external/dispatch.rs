@@ -15,6 +15,7 @@ use crate::models::media_item::CreateMediaItem;
 use crate::services::external::anilist::AniListService;
 use crate::services::external::comicvine::ComicVineService;
 use crate::services::external::google_books::GoogleBooksService;
+use crate::services::external::hardcover::HardcoverService;
 use crate::services::external::igdb::IgdbService;
 use crate::services::external::mal::MalService;
 use crate::services::external::mangadex::MangaDexService;
@@ -38,6 +39,7 @@ pub struct ProviderClients<'a> {
     pub mangadex: &'a MangaDexService,
     pub anilist: &'a AniListService,
     pub comicvine: &'a ComicVineService,
+    pub hardcover: &'a HardcoverService,
 }
 
 impl<'a> ProviderClients<'a> {
@@ -55,6 +57,7 @@ impl<'a> ProviderClients<'a> {
             mangadex: &state.mangadex,
             anilist: &state.anilist,
             comicvine: &state.comicvine,
+            hardcover: &state.hardcover,
         }
     }
 }
@@ -82,6 +85,7 @@ pub enum Provider {
     MangaDex(MangaDexService),
     AniList(AniListService),
     ComicVine(ComicVineService),
+    Hardcover(HardcoverService),
 }
 
 impl Provider {
@@ -100,6 +104,7 @@ impl Provider {
             "mangadex" => Some(Self::MangaDex(clients.mangadex.clone())),
             "anilist" => Some(Self::AniList(clients.anilist.clone())),
             "comicvine" => Some(Self::ComicVine(clients.comicvine.clone())),
+            "hardcover" => Some(Self::Hardcover(clients.hardcover.clone())),
             _ => None,
         }
     }
@@ -118,6 +123,7 @@ impl Provider {
             Self::MangaDex(_) => "mangadex",
             Self::AniList(_) => "anilist",
             Self::ComicVine(_) => "comicvine",
+            Self::Hardcover(_) => "hardcover",
         }
     }
 
@@ -145,6 +151,7 @@ impl Provider {
             Self::MangaDex(s) => s.get_details(external_id).await,
             Self::AniList(s) => s.get_details(external_id).await,
             Self::ComicVine(s) => s.get_details(external_id).await,
+            Self::Hardcover(s) => s.get_details(external_id).await,
         }
     }
 
@@ -153,6 +160,7 @@ impl Provider {
         match self {
             Self::Mal(_) => Duration::from_millis(350),
             Self::ComicVine(_) => Duration::from_millis(1000),
+            Self::Hardcover(_) => Duration::from_millis(1000),
             Self::AniList(_) => Duration::from_millis(350),
             _ => Duration::from_millis(200),
         }
@@ -162,7 +170,7 @@ impl Provider {
     pub fn concurrency(&self) -> usize {
         match self {
             Self::Mal(_) => 2,
-            Self::ComicVine(_) | Self::AniList(_) => 1,
+            Self::ComicVine(_) | Self::AniList(_) | Self::Hardcover(_) => 1,
             _ => 3,
         }
     }

@@ -40,7 +40,7 @@ impl TestContext {
             .await
             .expect("Failed to run migrations");
 
-        let state = AppState::new(&database_url, "", "", "", "", "", "", "", "", "")
+        let state = AppState::new(&database_url, "", "", "", "", "", "", "", "", "", "")
             .await
             .expect("Failed to create AppState");
 
@@ -69,6 +69,7 @@ impl TestContext {
             "re_dummy_test_key",
             "tracker@example.com",
             "https://tracker.example.com",
+            "",
             "",
         )
         .await
