@@ -67,6 +67,80 @@ struct MalAnimeFull {
 }
 
 #[derive(Debug, Deserialize)]
+struct MalMangaSearchResponse {
+    data: Vec<MalManga>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MalMangaResponse {
+    data: MalMangaFull,
+}
+
+#[derive(Debug, Deserialize)]
+struct MalManga {
+    mal_id: i64,
+    title: String,
+    #[serde(default)]
+    title_english: Option<String>,
+    #[serde(default)]
+    title_japanese: Option<String>,
+    #[serde(default)]
+    images: Option<MalImages>,
+    #[serde(default)]
+    chapters: Option<i32>,
+    #[serde(default)]
+    volumes: Option<i32>,
+    #[serde(default)]
+    synopsis: Option<String>,
+    #[serde(default)]
+    score: Option<f64>,
+    #[serde(default)]
+    status: Option<String>,
+    #[serde(rename = "type", default)]
+    manga_type: Option<String>,
+    #[serde(default)]
+    genres: Option<Vec<MalNamed>>,
+    #[serde(default)]
+    themes: Option<Vec<MalNamed>>,
+    #[serde(default)]
+    demographics: Option<Vec<MalNamed>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MalMangaFull {
+    mal_id: i64,
+    title: String,
+    #[serde(default)]
+    title_english: Option<String>,
+    #[serde(default)]
+    title_japanese: Option<String>,
+    #[serde(default)]
+    images: Option<MalImages>,
+    #[serde(default)]
+    chapters: Option<i32>,
+    #[serde(default)]
+    volumes: Option<i32>,
+    #[serde(default)]
+    synopsis: Option<String>,
+    #[serde(default)]
+    score: Option<f64>,
+    #[serde(default)]
+    status: Option<String>,
+    #[serde(rename = "type", default)]
+    manga_type: Option<String>,
+    #[serde(default)]
+    genres: Option<Vec<MalNamed>>,
+    #[serde(default)]
+    themes: Option<Vec<MalNamed>>,
+    #[serde(default)]
+    demographics: Option<Vec<MalNamed>>,
+    #[serde(default)]
+    published: Option<MalAired>,
+    #[serde(default)]
+    authors: Option<Vec<MalNamed>>,
+}
+
+#[derive(Debug, Deserialize)]
 struct MalNamed {
     name: String,
 }
@@ -340,6 +414,137 @@ fn map_search(item: MalAnimeSearchItem) -> CreateMediaItem {
     }
 }
 
+fn map_manga_search(manga: MalManga) -> CreateMediaItem {
+    let comparison_key = manga
+        .title_english
+        .clone()
+        .unwrap_or_else(|| manga.title.clone());
+
+    CreateMediaItem {
+        provider: "mal".to_string(),
+        external_id: manga.mal_id.to_string(),
+        media_type: "manga".to_string(),
+        title: manga.title,
+        title_english: manga.title_english,
+        title_native: manga.title_japanese,
+        title_russian: None,
+        poster_url: poster_url(&manga.images),
+        episodes: None,
+        description: clean_description(manga.synopsis),
+        status: manga.status,
+        score: manga.score,
+        is_tracked: false,
+        mal_id: Some(manga.mal_id),
+        shikimori_id: None,
+        comparison_key: Some(comparison_key),
+        format_type: manga.manga_type,
+        details: None,
+        chapters: manga.chapters,
+        volumes: manga.volumes,
+        pages: None,
+        runtime_minutes: None,
+        playtime_hours: None,
+        year: None,
+        aired_from: None,
+        aired_to: None,
+        premiered_season: None,
+        premiered_year: None,
+        broadcast: None,
+        completed: None,
+        licensed: None,
+        source: None,
+        duration: None,
+        rating: None,
+        rating_votes: None,
+        authors: Vec::new(),
+        artists: Vec::new(),
+        studios: Vec::new(),
+        producers: Vec::new(),
+        licensors: Vec::new(),
+        publishers: Vec::new(),
+        serialized_in: Vec::new(),
+        networks: Vec::new(),
+        platforms: Vec::new(),
+        genres: extract_names(&manga.genres),
+        themes: extract_names(&manga.themes),
+        demographics: extract_names(&manga.demographics),
+        categories: Vec::new(),
+    }
+}
+
+fn map_manga_full(manga: MalMangaFull) -> CreateMediaItem {
+    let comparison_key = manga
+        .title_english
+        .clone()
+        .unwrap_or_else(|| manga.title.clone());
+
+    let aired_from = manga
+        .published
+        .as_ref()
+        .and_then(|p| p.from.as_deref())
+        .and_then(parse_date);
+    let aired_to = manga
+        .published
+        .as_ref()
+        .and_then(|p| p.to.as_deref())
+        .and_then(parse_date);
+
+    let year_i16: Option<i16> =
+        aired_from.and_then(|d| d.format("%Y").to_string().parse::<i16>().ok());
+    let premiered_year_i16 = year_i16;
+
+    CreateMediaItem {
+        provider: "mal".to_string(),
+        external_id: manga.mal_id.to_string(),
+        media_type: "manga".to_string(),
+        title: manga.title,
+        title_english: manga.title_english,
+        title_native: manga.title_japanese,
+        title_russian: None,
+        poster_url: poster_url(&manga.images),
+        episodes: None,
+        description: clean_description(manga.synopsis),
+        status: manga.status,
+        score: manga.score,
+        is_tracked: false,
+        mal_id: Some(manga.mal_id),
+        shikimori_id: None,
+        comparison_key: Some(comparison_key),
+        format_type: manga.manga_type,
+        details: None,
+        chapters: manga.chapters,
+        volumes: manga.volumes,
+        pages: None,
+        runtime_minutes: None,
+        playtime_hours: None,
+        year: year_i16,
+        aired_from,
+        aired_to,
+        premiered_season: None,
+        premiered_year: premiered_year_i16,
+        broadcast: None,
+        completed: None,
+        licensed: None,
+        source: None,
+        duration: None,
+        rating: None,
+        rating_votes: None,
+        authors: extract_names(&manga.authors),
+        artists: Vec::new(),
+        studios: Vec::new(),
+        producers: Vec::new(),
+        licensors: Vec::new(),
+        publishers: Vec::new(),
+        serialized_in: Vec::new(),
+        networks: Vec::new(),
+        platforms: Vec::new(),
+        genres: extract_names(&manga.genres),
+        themes: extract_names(&manga.themes),
+        demographics: extract_names(&manga.demographics),
+        categories: Vec::new(),
+    }
+}
+
 #[derive(Clone)]
 pub struct MalService {
     client: Client,
@@ -384,6 +589,36 @@ impl MalService {
 
         let body: MalAnimeResponse = response.json().await?;
         Ok(map_full(body.data))
+    }
+
+    /// Search manga via Jikan v4 `GET /manga?q=...&limit=N`.
+    pub async fn search_manga(&self, query: &str) -> Result<Vec<CreateMediaItem>, anyhow::Error> {
+        let mut url = Url::parse(&format!("{}/manga", BASE_URL))?;
+        {
+            let mut pairs = url.query_pairs_mut();
+            pairs.append_pair("q", query);
+            pairs.append_pair("limit", &SEARCH_LIMIT.to_string());
+        }
+
+        let response = self.client.get(url).send().await?;
+        if !response.status().is_success() {
+            anyhow::bail!("MAL/Jikan manga search failed: {}", response.status());
+        }
+
+        let body: MalMangaSearchResponse = response.json().await?;
+        Ok(body.data.into_iter().map(map_manga_search).collect())
+    }
+
+    /// Fetch full manga details via Jikan v4 `GET /manga/{id}/full`.
+    pub async fn get_manga_details(&self, id: &str) -> Result<CreateMediaItem, anyhow::Error> {
+        let url = format!("{}/manga/{id}/full", BASE_URL);
+        let response = self.client.get(&url).send().await?;
+        if !response.status().is_success() {
+            anyhow::bail!("MAL/Jikan manga details failed: {}", response.status());
+        }
+
+        let body: MalMangaResponse = response.json().await?;
+        Ok(map_manga_full(body.data))
     }
 
     /// Fetch the full episode list for an anime from Jikan v4.
@@ -576,6 +811,61 @@ mod tests {
             details.get("aired_string").and_then(|v| v.as_str()),
             Some("Oct 3, 2002 to Feb 8, 2007")
         );
+    }
+
+    #[test]
+    fn parses_manga_search_response() {
+        let json = r#"{"data":[{"mal_id":13,"title":"One Piece","title_english":"One Piece","title_japanese":"ワンピース","chapters":1100,"volumes":105,"score":9.22,"status":"Publishing","type":"Manga","genres":[{"name":"Action"},{"name":"Adventure"}],"themes":[{"name":"Pirates"}]}]}"#;
+        let body: MalMangaSearchResponse = serde_json::from_str(json).unwrap();
+        let item = map_manga_search(body.data.into_iter().next().unwrap());
+        assert_eq!(item.title, "One Piece");
+        assert_eq!(item.external_id, "13");
+        assert_eq!(item.media_type, "manga");
+        assert_eq!(item.chapters, Some(1100));
+        assert_eq!(item.volumes, Some(105));
+        assert_eq!(item.format_type.as_deref(), Some("Manga"));
+        assert!(item.genres.contains(&"Action".to_string()));
+        assert!(item.themes.contains(&"Pirates".to_string()));
+    }
+
+    #[test]
+    fn parses_full_manga_response() {
+        let json = r#"{
+            "data": {
+                "mal_id": 13,
+                "title": "One Piece",
+                "title_english": "One Piece",
+                "title_japanese": "ワンピース",
+                "chapters": 1100,
+                "volumes": 105,
+                "synopsis": "...",
+                "score": 9.22,
+                "status": "Publishing",
+                "type": "Manga",
+                "published": {"from": "1997-07-22T00:00:00+00:00", "to": null, "string": "Jul 22, 1997 to ?"},
+                "authors": [{"name": "Oda Eiichiro"}],
+                "genres": [{"name": "Action"}, {"name": "Adventure"}],
+                "themes": [{"name": "Pirates"}],
+                "demographics": [{"name": "Shounen"}]
+            }
+        }"#;
+        let body: MalMangaResponse = serde_json::from_str(json).unwrap();
+        let item = map_manga_full(body.data);
+        assert_eq!(item.title, "One Piece");
+        assert_eq!(item.external_id, "13");
+        assert_eq!(item.media_type, "manga");
+        assert_eq!(item.chapters, Some(1100));
+        assert_eq!(item.volumes, Some(105));
+        assert_eq!(item.format_type.as_deref(), Some("Manga"));
+        assert_eq!(item.year, Some(1997));
+        assert_eq!(item.premiered_year, Some(1997));
+        assert_eq!(
+            item.aired_from,
+            Some(chrono::NaiveDate::from_ymd_opt(1997, 7, 22).unwrap())
+        );
+        assert_eq!(item.aired_to, None);
+        assert!(item.authors.contains(&"Oda Eiichiro".to_string()));
+        assert!(item.demographics.contains(&"Shounen".to_string()));
     }
 
     #[test]

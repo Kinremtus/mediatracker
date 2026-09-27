@@ -270,6 +270,7 @@ impl MediaItem {
             "game" => "Game",
             "book" => "Book",
             "other-comics" => "Other Comics",
+            "comic" => "Comic",
             _ => "Other",
         }
     }
@@ -311,7 +312,7 @@ impl MediaItemSlim {
     /// Используется в UI для подписи "X / Y (эпизодов/глав/страниц/часов)".
     pub fn total_count(&self) -> Option<i32> {
         match self.media_type.as_str() {
-            "manga" | "manhwa" | "manhua" | "novel" | "other-comics" => self.chapters,
+            "manga" | "manhwa" | "manhua" | "novel" | "other-comics" | "comic" => self.chapters,
             "anime" | "series" | "cartoons" | "animated-movies" => self.episodes,
             "book" => self.pages,
             "game" => self.playtime_hours,
@@ -324,6 +325,7 @@ impl MediaItemSlim {
     pub fn progress_unit_ru(&self) -> &'static str {
         match self.media_type.as_str() {
             "manga" | "manhwa" | "manhua" | "novel" | "other-comics" => "гл.",
+            "comic" => "вып.",
             "anime" | "series" | "cartoons" | "animated-movies" => "эп.",
             "book" => "стр.",
             "game" => "ч.",
@@ -367,6 +369,7 @@ impl MediaItemSlim {
             "game" => "Game",
             "book" => "Book",
             "other-comics" => "Other Comics",
+            "comic" => "Comic",
             _ => "Other",
         }
     }
@@ -407,6 +410,7 @@ impl CreateMediaItem {
             "game" => "Game",
             "book" => "Book",
             "other-comics" => "Other Comics",
+            "comic" => "Comic",
             _ => "Other",
         }
     }
@@ -441,7 +445,7 @@ impl CreateMediaItem {
     /// Возвращает "total count" — см. MediaItemSlim.
     pub fn total_count(&self) -> Option<i32> {
         match self.media_type.as_str() {
-            "manga" | "manhwa" | "manhua" | "novel" | "other-comics" => self.chapters,
+            "manga" | "manhwa" | "manhua" | "novel" | "other-comics" | "comic" => self.chapters,
             "anime" | "series" | "cartoons" | "animated-movies" => self.episodes,
             "book" => self.pages,
             "game" => self.playtime_hours,
@@ -459,6 +463,7 @@ impl CreateMediaItem {
     pub fn progress_unit_ru(&self) -> &'static str {
         match self.media_type.as_str() {
             "manga" | "manhwa" | "manhua" | "novel" | "other-comics" => "гл.",
+            "comic" => "вып.",
             "anime" | "series" | "cartoons" | "animated-movies" => "эп.",
             "book" => "стр.",
             "game" => "ч.",

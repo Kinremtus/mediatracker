@@ -1,3 +1,5 @@
+pub mod anilist;
+pub mod comicvine;
 pub mod google_books;
 pub mod igdb;
 pub mod mal;

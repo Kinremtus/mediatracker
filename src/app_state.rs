@@ -6,9 +6,12 @@ use sqlx::postgres::PgPoolOptions;
 use crate::metrics::MetricsHandle;
 use crate::services::auth::AuthService;
 use crate::services::email::EmailService;
+use crate::services::external::anilist::AniListService;
+use crate::services::external::comicvine::ComicVineService;
 use crate::services::external::google_books::GoogleBooksService;
 use crate::services::external::igdb::IgdbService;
 use crate::services::external::mal::MalService;
+use crate::services::external::mangadex::MangaDexService;
 use crate::services::external::mangaupdates::MangaUpdatesService;
 use crate::services::external::openlibrary::OpenLibraryService;
 use crate::services::external::rawg::RawgService;
@@ -63,6 +66,9 @@ pub struct AppState {
     pub igdb: IgdbService,
     pub google_books: GoogleBooksService,
     pub openlibrary: OpenLibraryService,
+    pub mangadex: MangaDexService,
+    pub anilist: AniListService,
+    pub comicvine: ComicVineService,
     pub tracking: TrackingService,
     pub release_schedule: ReleaseScheduleService,
     pub stats: StatsService,
@@ -84,6 +90,7 @@ impl AppState {
         resend_api_key: &str,
         email_from: &str,
         app_base_url: &str,
+        comic_vine_api_key: &str,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let db = build_pool(database_url).await?;
         Self::from_pool(
@@ -96,6 +103,7 @@ impl AppState {
             resend_api_key,
             email_from,
             app_base_url,
+            comic_vine_api_key,
         )
         .await
     }
@@ -115,6 +123,7 @@ impl AppState {
         resend_api_key: &str,
         email_from: &str,
         app_base_url: &str,
+        comic_vine_api_key: &str,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         sqlx::migrate!("./migrations").run(&db).await?;
         let http_client = crate::services::external::http_client();
@@ -127,6 +136,9 @@ impl AppState {
         let igdb = IgdbService::new(igdb_client_id.to_string(), igdb_client_secret.to_string());
         let google_books = GoogleBooksService::new();
         let openlibrary = OpenLibraryService::new();
+        let mangadex = MangaDexService::new();
+        let anilist = AniListService::new();
+        let comicvine = ComicVineService::new(comic_vine_api_key.to_string());
         let tracking = TrackingService::new(db.clone());
         let release_schedule = ReleaseScheduleService::new(db.clone());
         let stats = StatsService::new(db.clone());
@@ -152,6 +164,9 @@ impl AppState {
             igdb,
             google_books,
             openlibrary,
+            mangadex,
+            anilist,
+            comicvine,
             tracking,
             release_schedule,
             stats,

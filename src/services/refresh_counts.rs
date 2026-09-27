@@ -9,10 +9,13 @@ use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::models::media_item::CreateMediaItem;
+use crate::services::external::anilist::AniListService;
+use crate::services::external::comicvine::ComicVineService;
 use crate::services::external::dispatch::{Provider, ProviderClients};
 use crate::services::external::google_books::GoogleBooksService;
 use crate::services::external::igdb::IgdbService;
 use crate::services::external::mal::MalService;
+use crate::services::external::mangadex::MangaDexService;
 use crate::services::external::mangaupdates::MangaUpdatesService;
 use crate::services::external::openlibrary::OpenLibraryService;
 use crate::services::external::rawg::RawgService;
@@ -49,6 +52,9 @@ pub struct RefreshCtx {
     pub igdb: IgdbService,
     pub google_books: GoogleBooksService,
     pub openlibrary: OpenLibraryService,
+    pub mangadex: MangaDexService,
+    pub anilist: AniListService,
+    pub comicvine: ComicVineService,
 }
 
 pub async fn run_refresh_loop(ctx: RefreshCtx, cancel: CancellationToken) {
@@ -138,6 +144,9 @@ async fn do_refresh(ctx: &RefreshCtx) -> Result<(), anyhow::Error> {
             igdb: &ctx.igdb,
             google_books: &ctx.google_books,
             openlibrary: &ctx.openlibrary,
+            mangadex: &ctx.mangadex,
+            anilist: &ctx.anilist,
+            comicvine: &ctx.comicvine,
         };
         let provider = match Provider::from_name(&clients, provider_name) {
             Some(provider) => Some(provider),

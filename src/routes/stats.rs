@@ -32,6 +32,7 @@ fn translate_media_type(media_type: &str) -> String {
         "manhwa" => "Манхва".to_string(),
         "manhua" => "Маньхуа".to_string(),
         "novel" => "Новеллы".to_string(),
+        "comic" => "Комиксы".to_string(),
         "other-comics" => "Другие комиксы".to_string(),
         "movie" => "Фильмы".to_string(),
         "series" => "Сериалы".to_string(),

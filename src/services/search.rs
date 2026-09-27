@@ -1,7 +1,14 @@
 use std::collections::HashSet;
+use std::future::Future;
+use std::pin::Pin;
 
 use crate::app_state::AppState;
 use crate::models::media_item::CreateMediaItem;
+
+/// Ленивое будущее поиска у одного провайдера. Создание future дешёвое —
+/// сетевой запрос уходит только при первом `.await`.
+type SearchFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<Vec<CreateMediaItem>, anyhow::Error>> + Send + 'a>>;
 
 fn extend(
     acc: &mut Vec<CreateMediaItem>,
@@ -28,6 +35,14 @@ fn provider_priority(media_type: &str, provider: &str) -> u8 {
         },
         "manga" | "manhwa" | "manhua" | "novel" | "other-comics" => match provider {
             "mangaupdates" => 0,
+            "mangadex" => 1,
+            "mal" => 2,
+            "shikimori" => 3,
+            "anilist" => 4,
+            _ => 10,
+        },
+        "comic" => match provider {
+            "comicvine" => 0,
             _ => 10,
         },
         "game" => match provider {
@@ -63,6 +78,52 @@ fn deduplicate_by_title(items: Vec<CreateMediaItem>) -> Vec<CreateMediaItem> {
             seen.insert((normalized, item.media_type.clone()))
         })
         .collect()
+}
+
+/// Ленивая цепочка: futures опрашиваются по одному, поэтому следующий
+/// провайдер не запрашивается, пока предыдущий не вернул Err или пусто.
+/// Первый непустой `Ok` побеждает; пусто, если все провалились/пусты.
+async fn first_non_empty(attempts: Vec<(&'static str, SearchFuture<'_>)>) -> Vec<CreateMediaItem> {
+    for (provider, fut) in attempts {
+        match fut.await {
+            Ok(items) if !items.is_empty() => return items,
+            Ok(_) => tracing::debug!(provider, "search empty, trying next provider"),
+            Err(e) => tracing::warn!(provider, error = %e, "search failed, trying next provider"),
+        }
+    }
+    Vec::new()
+}
+
+/// Переписать media_type на запрошенный, сохранив provider/external_id.
+fn normalize_media_type(items: Vec<CreateMediaItem>, requested: &str) -> Vec<CreateMediaItem> {
+    let mut items = items;
+    for item in &mut items {
+        item.media_type = requested.to_string();
+    }
+    items
+}
+
+/// Manga-family: MangaUpdates -> MangaDex -> Jikan(MAL) -> Shikimori -> AniList.
+/// Ленивая цепочка: первый провайдер с непустым результатом побеждает,
+/// остальные не запрашиваются.
+async fn manga_family_search(
+    state: &AppState,
+    query: &str,
+    mu_types: &[&str],
+    requested: &str,
+) -> Vec<CreateMediaItem> {
+    let attempts: Vec<(&'static str, SearchFuture<'_>)> = vec![
+        (
+            "mangaupdates",
+            Box::pin(state.mangaupdates.search_by_type(query, mu_types)),
+        ),
+        ("mangadex", Box::pin(state.mangadex.search(query))),
+        ("mal", Box::pin(state.mal.search_manga(query))),
+        ("shikimori", Box::pin(state.shikimori.search_manga(query))),
+        ("anilist", Box::pin(state.anilist.search(query))),
+    ];
+    let winner = first_non_empty(attempts).await;
+    deduplicate_by_title(normalize_media_type(winner, requested))
 }
 
 /// Аниме: Shikimori + MyAnimeList (Jikan).
@@ -111,67 +172,48 @@ pub async fn anime(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
 }
 
 pub async fn manga(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
-    let mut out = Vec::new();
-    extend(
-        &mut out,
-        state.mangaupdates.search_by_type(query, &["Manga"]).await,
-        "mangaupdates",
-    );
-    out
+    manga_family_search(state, query, &["Manga"], "manga").await
 }
 
 pub async fn manhwa(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
-    let mut out = Vec::new();
-    extend(
-        &mut out,
-        state.mangaupdates.search_by_type(query, &["Manhwa"]).await,
-        "mangaupdates",
-    );
-    out
+    manga_family_search(state, query, &["Manhwa"], "manhwa").await
 }
 
 pub async fn manhua(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
-    let mut out = Vec::new();
-    extend(
-        &mut out,
-        state.mangaupdates.search_by_type(query, &["Manhua"]).await,
-        "mangaupdates",
-    );
-    out
+    manga_family_search(state, query, &["Manhua"], "manhua").await
 }
 
 pub async fn novel(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
-    let mut out = Vec::new();
-    extend(
-        &mut out,
-        state.mangaupdates.search_by_type(query, &["Novel"]).await,
-        "mangaupdates",
-    );
-    out
+    manga_family_search(state, query, &["Novel"], "novel").await
 }
 
 pub async fn other_comics(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
+    manga_family_search(
+        state,
+        query,
+        &[
+            "OEL",
+            "Doujinshi",
+            "Filipino",
+            "Indonesian",
+            "Thai",
+            "Vietnamese",
+            "Malaysian",
+        ],
+        "other-comics",
+    )
+    .await
+}
+
+/// Комиксы (западные) → ComicVine. Без ключа warn + пусто.
+pub async fn comic(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
+    if !state.comicvine.is_configured() {
+        tracing::warn!("COMIC_VINE_API_KEY not set, comic search skipped");
+        return Vec::new();
+    }
     let mut out = Vec::new();
-    extend(
-        &mut out,
-        state
-            .mangaupdates
-            .search_by_type(
-                query,
-                &[
-                    "OEL",
-                    "Doujinshi",
-                    "Filipino",
-                    "Indonesian",
-                    "Thai",
-                    "Vietnamese",
-                    "Malaysian",
-                ],
-            )
-            .await,
-        "mangaupdates",
-    );
-    out
+    extend(&mut out, state.comicvine.search(query).await, "comicvine");
+    deduplicate_by_title(normalize_media_type(out, "comic"))
 }
 
 /// Фильмы / сериалы / дорамы / мультики → TMDB. IMDb — позже.
@@ -296,13 +338,14 @@ pub async fn book(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
 
 /// Без выбранного типа — срез по всем категориям (по одному запросу на группу провайдеров).
 pub async fn all_types(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
-    let (anime_r, manga_r, movie_r, series_r, game_r, book_r) = tokio::join!(
+    let (anime_r, manga_r, movie_r, series_r, game_r, book_r, comic_r) = tokio::join!(
         anime(state, query),
         state.mangaupdates.search(query),
         movie(state, query),
         series(state, query),
         game(state, query),
         book(state, query),
+        comic(state, query),
     );
 
     let mut out = anime_r;
@@ -311,6 +354,7 @@ pub async fn all_types(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
     out.extend(series_r);
     out.extend(game_r);
     out.extend(book_r);
+    out.extend(comic_r);
     deduplicate_by_title(out)
 }
 
@@ -326,6 +370,7 @@ pub async fn by_media_type(
         "manhua" => manhua(state, query).await,
         "novel" => novel(state, query).await,
         "other-comics" => other_comics(state, query).await,
+        "comic" => comic(state, query).await,
         "movie" => movie(state, query).await,
         "series" => series(state, query).await,
         "dramas" => dramas(state, query).await,
@@ -334,5 +379,104 @@ pub async fn by_media_type(
         "game" => game(state, query).await,
         "book" => book(state, query).await,
         _ => all_types(state, query).await,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn item(provider: &str, media_type: &str, key: &str) -> CreateMediaItem {
+        CreateMediaItem {
+            title: key.to_string(),
+            provider: provider.to_string(),
+            comparison_key: Some(key.to_string()),
+            media_type: media_type.to_string(),
+            ..Default::default()
+        }
+    }
+
+    fn boxed<'a>(
+        fut: impl std::future::Future<Output = Result<Vec<CreateMediaItem>, anyhow::Error>> + Send + 'a,
+    ) -> SearchFuture<'a> {
+        Box::pin(fut)
+    }
+
+    #[tokio::test]
+    async fn first_non_empty_returns_first_non_empty() {
+        let attempts = vec![
+            ("a", boxed(async { Ok(vec![item("a", "manga", "one")]) })),
+            ("b", boxed(async { Ok(vec![item("b", "manga", "two")]) })),
+        ];
+        let out = first_non_empty(attempts).await;
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].title, "one");
+    }
+
+    #[tokio::test]
+    async fn first_non_empty_skips_empty_then_returns() {
+        let attempts = vec![
+            ("a", boxed(async { Ok(Vec::new()) })),
+            ("b", boxed(async { Err(anyhow::anyhow!("boom")) })),
+            ("c", boxed(async { Ok(vec![item("c", "manga", "three")]) })),
+        ];
+        let out = first_non_empty(attempts).await;
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].title, "three");
+    }
+
+    #[tokio::test]
+    async fn first_non_empty_all_empty_or_err() {
+        let attempts = vec![
+            ("a", boxed(async { Ok(Vec::new()) })),
+            ("b", boxed(async { Err(anyhow::anyhow!("boom")) })),
+        ];
+        assert!(first_non_empty(attempts).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn first_non_empty_does_not_poll_providers_after_winner() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let polled = Arc::new(AtomicUsize::new(0));
+        let polled_later = Arc::clone(&polled);
+        let attempts = vec![
+            ("a", boxed(async { Ok(vec![item("a", "manga", "one")]) })),
+            (
+                "b",
+                boxed(async move {
+                    polled_later.fetch_add(1, Ordering::SeqCst);
+                    Ok(vec![item("b", "manga", "two")])
+                }),
+            ),
+        ];
+        let out = first_non_empty(attempts).await;
+        assert_eq!(out[0].title, "one");
+        assert_eq!(
+            polled.load(Ordering::SeqCst),
+            0,
+            "later providers must stay unpolled once a winner is found"
+        );
+    }
+
+    #[test]
+    fn normalize_media_type_overrides() {
+        let items = vec![item("mangadex", "manga", "one")];
+        let out = normalize_media_type(items, "manhwa");
+        assert_eq!(out[0].media_type, "manhwa");
+        assert_eq!(out[0].provider, "mangadex");
+        assert_eq!(out[0].external_id, "");
+    }
+
+    #[test]
+    fn deduplicate_keeps_higher_priority() {
+        let items = vec![
+            item("mangadex", "manga", "same"),
+            item("mangaupdates", "manga", "same"),
+        ];
+        let out = deduplicate_by_title(items);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].provider, "mangaupdates");
     }
 }
