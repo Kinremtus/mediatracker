@@ -137,6 +137,21 @@ jobs:
             # Templated manifests last: substitute $APP_HOST into the configmap.
             envsubst < k8s/cloudflared/configmap.yaml | sudo kubectl apply -f -
 
+            # Apply SOPS/age-encrypted secrets BEFORE helm: on a clean cluster
+            # envFrom.secretRef would otherwise reference a non-existent Secret.
+            # Existence-guarded so deploys keep working before bootstrap.
+            if [ -d k8s/secrets ] && ls k8s/secrets/*.enc.yaml >/dev/null 2>&1; then
+              command -v sops >/dev/null || { echo "sops missing on host; cannot apply encrypted secrets" >&2; exit 1; }
+              export SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-$HOME/.config/sops/age/keys.txt}"
+              sudo kubectl get namespace mediatracker >/dev/null 2>&1 || sudo kubectl create namespace mediatracker
+              for f in k8s/secrets/*.enc.yaml; do
+                echo "applying $f"
+                sops --decrypt "$f" | sudo kubectl apply -n mediatracker -f -
+              done
+            else
+              echo "no encrypted secrets to apply (k8s/secrets/*.enc.yaml absent)"
+            fi
+
             # --atomic: roll back automatically if the rollout does not become
             # ready within the timeout, instead of leaving a broken release.
             sudo helm --kubeconfig /etc/rancher/k3s/k3s.yaml upgrade --install app chart/ --namespace mediatracker --create-namespace --atomic --timeout 10m --set image.tag=${{ github.sha }} --set configMap.appBaseUrl=https://$APP_HOST --set configMap.emailFrom="MediaTracker <no-reply@$APP_HOST>"
