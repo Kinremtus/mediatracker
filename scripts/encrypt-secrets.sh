@@ -15,8 +15,13 @@ NAMESPACE="mediatracker"
 
 # Explicit allowlist: only these keys ever reach the cluster Secret. Anything
 # else in .env (editor vars, unrelated tokens) is intentionally ignored.
+#
+# Config-only keys (host, port, log level, app base URL, mail sender) are
+# DELIBERATELY excluded: they belong to the ConfigMap `app-config`, which is
+# authoritative for configuration. Duplicating them in a Secret would create
+# two sources of truth.
 APP_KEYS=(
-  APP_BASE_URL EMAIL_FROM HOST PORT RUST_LOG SECRET_KEY DATABASE_URL
+  SECRET_KEY DATABASE_URL
   TMDB_API_KEY RAWG_API_KEY COMIC_VINE_API_KEY HARDCOVER_API_KEY
   IGDB_CLIENT_ID IGDB_CLIENT_SECRET
   MAL_CLIENT_ID MAL_CLIENT_SECRET
