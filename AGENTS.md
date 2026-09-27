@@ -122,3 +122,4 @@ sudo helm --kubeconfig /etc/rancher/k3s/k3s.yaml upgrade --install app chart/ -n
 | `restore-drill.sh` | [x] | Local Docker only: restores latest dump into an ephemeral pg17 and checks row counts |
 | `backfill-details.sh` | [x] | Auto-detects k3s (kubectl port-forward), falls back to direct URL |
 | `backfill-tmdb-metadata.sh` | [x] | Direct DB via kubectl exec + TMDB API (no auth/cookies) |
+| `refresh-posters.sh` | [x] | Refreshes MangaUpdates `poster_url` when the CDN cover changed; k8s or direct (`PGHOST`); `DRY_RUN=1` = report only; on VPS1: `KUBECTL="sudo -n k3s kubectl"` |
