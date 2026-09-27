@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 
 use crate::models::media_item::CreateMediaItem;
+use crate::services::external::AdditionRow;
 
 const BASE_URL: &str = "https://api.igdb.com/v4";
 const TOKEN_URL: &str = "https://id.twitch.tv/oauth2/token";
@@ -60,6 +61,21 @@ struct IgdbGame {
     age_ratings: Option<Vec<IgdbAgeRating>>,
     game_modes: Option<Vec<IgdbName>>,
     themes: Option<Vec<IgdbName>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct IgdbAdditionParent {
+    #[serde(default)]
+    dlcs: Vec<i64>,
+    #[serde(default)]
+    expansions: Vec<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct IgdbAddition {
+    id: i64,
+    name: Option<String>,
+    first_release_date: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -222,6 +238,29 @@ fn map_game(g: IgdbGame) -> CreateMediaItem {
     }
 }
 
+fn map_igdb_additions(dlcs: Vec<IgdbAddition>, expansions: Vec<IgdbAddition>) -> Vec<AdditionRow> {
+    let map_one = |a: IgdbAddition, kind: &str| -> Option<AdditionRow> {
+        let name = a.name?;
+        if name.trim().is_empty() {
+            return None;
+        }
+        Some(AdditionRow {
+            addition_external_id: a.id.to_string(),
+            name,
+            kind: kind.to_string(),
+            released: first_release_date(a.first_release_date),
+        })
+    };
+    dlcs.into_iter()
+        .filter_map(|a| map_one(a, "dlc"))
+        .chain(
+            expansions
+                .into_iter()
+                .filter_map(|a| map_one(a, "expansion")),
+        )
+        .collect()
+}
+
 #[derive(Clone)]
 pub struct IgdbService {
     client: Client,
@@ -324,6 +363,63 @@ impl IgdbService {
             .ok_or_else(|| anyhow::anyhow!("Game not found"))?;
         Ok(map_game(g))
     }
+
+    /// DLC + expansion list for a game. Two-step: fetch the parent's id
+    /// arrays, then resolve names/release dates for the combined id set.
+    pub async fn get_additions(&self, game_id: &str) -> Result<Vec<AdditionRow>, anyhow::Error> {
+        if !self.is_configured() {
+            return Ok(Vec::new());
+        }
+        let token = self.ensure_token().await?;
+
+        let body = format!("fields dlcs,expansions; where id = {game_id};");
+        let resp = self
+            .client
+            .post(format!("{}/games", BASE_URL))
+            .header("Client-ID", &self.client_id)
+            .header("Authorization", format!("Bearer {}", token))
+            .body(body)
+            .send()
+            .await?;
+        let parents: Vec<IgdbAdditionParent> = resp.json().await?;
+        let Some(parent) = parents.into_iter().next() else {
+            return Ok(Vec::new());
+        };
+
+        let dlcs = self
+            .fetch_additions_entities("dlcs", &parent.dlcs, &token)
+            .await?;
+        let expansions = self
+            .fetch_additions_entities("expansions", &parent.expansions, &token)
+            .await?;
+        Ok(map_igdb_additions(dlcs, expansions))
+    }
+
+    async fn fetch_additions_entities(
+        &self,
+        endpoint: &str,
+        ids: &[i64],
+        token: &str,
+    ) -> Result<Vec<IgdbAddition>, anyhow::Error> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let id_list = ids
+            .iter()
+            .map(|i| i.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        let body = format!("fields name,first_release_date; where id = ({id_list}); limit 500;");
+        let resp = self
+            .client
+            .post(format!("{}/{}", BASE_URL, endpoint))
+            .header("Client-ID", &self.client_id)
+            .header("Authorization", format!("Bearer {}", token))
+            .body(body)
+            .send()
+            .await?;
+        Ok(resp.json().await?)
+    }
 }
 
 #[cfg(test)]
@@ -358,5 +454,36 @@ mod tests {
         assert!(item.publishers.contains(&"CD Projekt".to_string()));
         assert_eq!(item.rating.as_deref(), Some("M"));
         assert!(item.score.is_some());
+    }
+
+    #[test]
+    fn parses_igdb_additions_two_step() {
+        let dlcs: Vec<IgdbAddition> = serde_json::from_str(
+            r#"[
+                {"id": 10, "name": "Hearts of Stone", "first_release_date": 1445212800},
+                {"id": 11, "name": null, "first_release_date": null}
+            ]"#,
+        )
+        .unwrap();
+        let expansions: Vec<IgdbAddition> = serde_json::from_str(
+            r#"[{"id": 20, "name": "Blood and Wine", "first_release_date": 1464652800}]"#,
+        )
+        .unwrap();
+
+        let rows = map_igdb_additions(dlcs, expansions);
+        assert_eq!(rows.len(), 2, "null-name row must be skipped");
+        let kinds: Vec<&str> = rows.iter().map(|r| r.kind.as_str()).collect();
+        assert!(kinds.contains(&"dlc"));
+        assert!(kinds.contains(&"expansion"));
+        assert!(
+            rows.iter()
+                .any(|r| r.name == "Blood and Wine" && r.released.is_some())
+        );
+    }
+
+    #[test]
+    fn parses_igdb_additions_empty() {
+        let rows = map_igdb_additions(Vec::new(), Vec::new());
+        assert!(rows.is_empty());
     }
 }

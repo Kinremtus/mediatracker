@@ -116,6 +116,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             axum::routing::post(media::set_chapter_read),
         )
         .route(
+            "/api/games/{provider}/{external_id}/additions",
+            get(media::get_game_additions),
+        )
+        .route(
             "/api/search/suggestions",
             get(search::get_search_suggestions),
         )

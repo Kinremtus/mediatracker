@@ -513,6 +513,17 @@ struct ChapterItemPartial {
     external_id: String,
 }
 
+#[derive(Template)]
+#[template(path = "partials/_game_additions.html")]
+// provider/external_id are passed for the drawer's data-* wiring; the current
+// template does not read them yet, so silence the dead_code lint here.
+#[allow(dead_code)]
+struct GameAdditionsPartial {
+    additions: Vec<crate::services::external::AdditionRow>,
+    provider: String,
+    external_id: String,
+}
+
 #[derive(Deserialize)]
 pub struct SetReadForm {
     #[serde(default)]
@@ -620,6 +631,57 @@ pub async fn get_chapters(
     .render()
     .unwrap_or_else(|e| {
         tracing::warn!(error = %e, "chapter list render failed");
+        String::new()
+    });
+    Html(html)
+}
+
+/// Lazy-loaded DLC / expansions list for a game drawer section.
+/// DB-first: only calls the provider when the cache is empty.
+pub async fn get_game_additions(
+    State(state): State<AppState>,
+    Path((provider, external_id)): Path<(String, String)>,
+) -> impl IntoResponse {
+    let existing = crate::services::additions::get_additions(&state.db, &provider, &external_id)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "media: failed to load game additions");
+            Vec::new()
+        });
+
+    if existing.is_empty()
+        && let Err(e) = crate::services::additions::fetch_and_store(
+            &state.db,
+            &provider,
+            &external_id,
+            &state.rawg,
+            &state.igdb,
+        )
+        .await
+    {
+        tracing::warn!(
+            provider = %provider,
+            external_id = %external_id,
+            error = %e,
+            "media: game additions fetch failed"
+        );
+    }
+
+    let additions = crate::services::additions::get_additions(&state.db, &provider, &external_id)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "media: failed to reload game additions");
+            Vec::new()
+        });
+
+    let html = GameAdditionsPartial {
+        additions,
+        provider,
+        external_id,
+    }
+    .render()
+    .unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "media: game additions render failed");
         String::new()
     });
     Html(html)

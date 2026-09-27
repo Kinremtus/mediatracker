@@ -1,3 +1,4 @@
+pub mod additions;
 pub mod auth;
 pub mod backfill;
 pub mod chapters;
