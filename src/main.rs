@@ -157,6 +157,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             axum::routing::post(tracking::htmx_update_tracking),
         )
         .route(
+            "/tracking/{id}/progress-row",
+            get(tracking::get_progress_row),
+        )
+        .route(
             "/tracking/{id}/htmx/delete",
             axum::routing::post(tracking::htmx_delete_tracking),
         )

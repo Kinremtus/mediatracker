@@ -26,6 +26,7 @@ use std::path::{Path, PathBuf};
 const APP_JS: &str = "static/js/app.js";
 const SEARCH_HTML: &str = "templates/search.html";
 const DRAWER_CONTENT_HTML: &str = "templates/media_drawer_content.html";
+const PROGRESS_ROW_HTML: &str = "templates/partials/_progress_row.html";
 
 /// Walk the source tracking brace/paren/bracket depth and string/
 /// comment state. Returns `(open_braces, close_braces,
@@ -356,5 +357,74 @@ fn drawer_content_has_delete_action() {
         src.contains("drawer-action-btn") && (src.contains("delete") || src.contains("Удалить")),
         "{DRAWER_CONTENT_HTML}: drawer must expose a delete action button. \
          `drawer-action-btn` with class `delete` is what app.js's afterDelete fallback listens for."
+    );
+}
+
+/// The drawer must render the progress row through `{% include %}` of the
+/// shared partial. If it inlines its own copy again, that copy and the row
+/// returned by the HTMX endpoints can drift — which is what produced the
+/// asymmetric `−`/`+1` bug.
+#[test]
+fn drawer_content_includes_shared_progress_row() {
+    let src = read_root(DRAWER_CONTENT_HTML);
+    assert!(
+        src.contains("{% include \"partials/_progress_row.html\" %}"),
+        "{DRAWER_CONTENT_HTML}: expected `{{% include \"partials/_progress_row.html\" %}}`. \
+         The row is the single source of truth shared with GET /tracking/{{id}}/progress-row."
+    );
+}
+
+/// The shared partial must carry the tracking id (so the client can re-fetch
+/// the row) and swap the *whole row* (so `+1`/`−` can be added back, not just
+/// removed).
+#[test]
+fn progress_row_partial_swaps_whole_row() {
+    let src = read_root(PROGRESS_ROW_HTML);
+    assert!(
+        src.contains("data-tracking-id="),
+        "{PROGRESS_ROW_HTML}: missing `data-tracking-id` — app.js's `progressUpdated` \
+         handler reads it to call GET /tracking/<id>/progress-row."
+    );
+    assert!(
+        src.contains("hx-target=\"closest .drawer-progress-row\""),
+        "{PROGRESS_ROW_HTML}: buttons must target `closest .drawer-progress-row`."
+    );
+    assert!(
+        src.contains("hx-swap=\"outerHTML\""),
+        "{PROGRESS_ROW_HTML}: buttons must swap the row with `outerHTML` so the \
+         server-rendered buttons replace the old ones both ways."
+    );
+}
+
+/// After an episode/chapter toggle `app.js` must ask the server for the
+/// authoritative row instead of hand-patching buttons. The old one-way
+/// `.remove()` of the `+1` button is the regression we are guarding against.
+#[test]
+fn app_js_refetches_progress_row() {
+    let src = read_root(APP_JS);
+    assert!(
+        src.contains("/progress-row"),
+        "app.js: expected `htmx.ajax('GET', '/tracking/<id>/progress-row', ...)` \
+         after `progressUpdated`. Without it the +1/− buttons never come back \
+         after a checkbox toggle."
+    );
+    assert!(
+        !src.contains("plusBtn"),
+        "app.js: `plusBtn` hand-patching was replaced by a server re-render. \
+         If it is back, the one-way button-removal bug is back too."
+    );
+}
+
+/// Progress clicks target `closest .drawer-progress-row`, so `e.detail.target`
+/// is the row and only `e.detail.elt` still identifies the button. The global
+/// listener must therefore read `elt`.
+#[test]
+fn app_js_detects_progress_click_via_elt() {
+    let src = read_root(APP_JS);
+    assert!(
+        src.contains("e.detail.elt || e.detail.target"),
+        "app.js: progress-button detection must use `e.detail.elt` (with a \
+         `e.detail.target` fallback); `e.detail.target` is the freshly-swapped \
+         row, not the button that fired the request."
     );
 }

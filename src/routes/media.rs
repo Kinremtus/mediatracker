@@ -13,6 +13,8 @@ use crate::middleware::CurrentUser;
 use crate::models::media_item::CreateMediaItem;
 use crate::services::external::dispatch::{Provider, ProviderClients};
 
+use super::progress::ProgressRow;
+
 #[derive(Template)]
 #[template(path = "media_drawer_content.html")]
 #[expect(dead_code)]
@@ -31,6 +33,7 @@ struct MediaDrawerTemplate {
     total_display: String,
     rating_display: String,
     can_increment: bool,
+    can_decrement: bool,
     status_display: String,
 }
 
@@ -154,34 +157,30 @@ pub async fn get_media_drawer_content(
             };
             let total_count = item.total_count();
             let progress_unit = item.progress_unit_ru().to_string();
-            let has_progress = matches!(
-                item.media_type.as_str(),
-                "anime"
-                    | "series"
-                    | "cartoons"
-                    | "animated-movies"
-                    | "manga"
-                    | "manhwa"
-                    | "manhua"
-                    | "novel"
-                    | "other-comics"
-                    | "book"
-                    | "game"
-            );
             let star_classes = MediaDrawerTemplate::compute_star_classes(rating);
-            let progress_display = progress.unwrap_or(0);
-            let total_display = match total_count {
-                Some(tc) => format!(" / {tc}"),
-                None => String::new(),
-            };
             let rating_display = match rating {
                 Some(r) => format!("{:.1}", r),
                 None => "—".to_string(),
             };
-            let can_increment = has_progress && progress_display < total_count.unwrap_or(i32::MAX);
             let status_display = current_status
                 .clone()
                 .unwrap_or_else(|| "in_progress".to_string());
+            // Single source of truth for the "− N / M unit +1" row. The HTMX
+            // progress endpoints build the same view model, so the buttons
+            // can never drift out of sync with the value.
+            let progress_row = ProgressRow::compute(
+                tracking_id.unwrap_or_else(Uuid::nil),
+                &item.media_type,
+                total_count,
+                item.progress_unit_ru(),
+                progress,
+                status_display.clone(),
+            );
+            let has_progress = progress_row.has_progress;
+            let progress_display = progress_row.progress_display;
+            let total_display = progress_row.total_display.clone();
+            let can_increment = progress_row.can_increment;
+            let can_decrement = progress_row.can_decrement;
             Html(
                 MediaDrawerTemplate {
                     item,
@@ -198,6 +197,7 @@ pub async fn get_media_drawer_content(
                     total_display,
                     rating_display,
                     can_increment,
+                    can_decrement,
                     status_display,
                 }
                 .render()
