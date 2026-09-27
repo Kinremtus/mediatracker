@@ -51,8 +51,9 @@ fn provider_priority(media_type: &str, provider: &str) -> u8 {
             _ => 10,
         },
         "book" => match provider {
-            "google_books" => 0,
-            "openlibrary" => 1,
+            "hardcover" => 0,
+            "google_books" => 1,
+            "openlibrary" => 2,
             _ => 10,
         },
         "movie" | "series" | "dramas" | "cartoons" | "animated-movies" => match provider {
@@ -323,14 +324,16 @@ pub async fn game(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
     deduplicate_by_title(items)
 }
 
-/// Книги → Google Books + Open Library.
+/// Книги → Hardcover + Google Books + Open Library.
 pub async fn book(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
-    let (gb_res, ol_res) = tokio::join!(
+    let (hc_res, gb_res, ol_res) = tokio::join!(
+        state.hardcover.search(query),
         state.google_books.search(query),
         state.openlibrary.search(query),
     );
 
     let mut items = Vec::new();
+    extend(&mut items, hc_res, "hardcover");
     extend(&mut items, gb_res, "google_books");
     extend(&mut items, ol_res, "openlibrary");
     deduplicate_by_title(items)
@@ -478,5 +481,16 @@ mod tests {
         let out = deduplicate_by_title(items);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].provider, "mangaupdates");
+    }
+
+    #[test]
+    fn deduplicate_prefers_hardcover() {
+        let items = vec![
+            item("google_books", "book", "same"),
+            item("hardcover", "book", "same"),
+        ];
+        let out = deduplicate_by_title(items);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].provider, "hardcover");
     }
 }

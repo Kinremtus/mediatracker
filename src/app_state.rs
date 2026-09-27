@@ -9,6 +9,7 @@ use crate::services::email::EmailService;
 use crate::services::external::anilist::AniListService;
 use crate::services::external::comicvine::ComicVineService;
 use crate::services::external::google_books::GoogleBooksService;
+use crate::services::external::hardcover::HardcoverService;
 use crate::services::external::igdb::IgdbService;
 use crate::services::external::mal::MalService;
 use crate::services::external::mangadex::MangaDexService;
@@ -69,6 +70,7 @@ pub struct AppState {
     pub mangadex: MangaDexService,
     pub anilist: AniListService,
     pub comicvine: ComicVineService,
+    pub hardcover: HardcoverService,
     pub tracking: TrackingService,
     pub release_schedule: ReleaseScheduleService,
     pub stats: StatsService,
@@ -91,6 +93,7 @@ impl AppState {
         email_from: &str,
         app_base_url: &str,
         comic_vine_api_key: &str,
+        hardcover_api_key: &str,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let db = build_pool(database_url).await?;
         Self::from_pool(
@@ -104,6 +107,7 @@ impl AppState {
             email_from,
             app_base_url,
             comic_vine_api_key,
+            hardcover_api_key,
         )
         .await
     }
@@ -124,6 +128,7 @@ impl AppState {
         email_from: &str,
         app_base_url: &str,
         comic_vine_api_key: &str,
+        hardcover_api_key: &str,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         sqlx::migrate!("./migrations").run(&db).await?;
         let http_client = crate::services::external::http_client();
@@ -139,6 +144,7 @@ impl AppState {
         let mangadex = MangaDexService::new();
         let anilist = AniListService::new();
         let comicvine = ComicVineService::new(comic_vine_api_key.to_string());
+        let hardcover = HardcoverService::new(hardcover_api_key.to_string());
         let tracking = TrackingService::new(db.clone());
         let release_schedule = ReleaseScheduleService::new(db.clone());
         let stats = StatsService::new(db.clone());
@@ -167,6 +173,7 @@ impl AppState {
             mangadex,
             anilist,
             comicvine,
+            hardcover,
             tracking,
             release_schedule,
             stats,

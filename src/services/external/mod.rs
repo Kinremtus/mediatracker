@@ -1,6 +1,7 @@
 pub mod anilist;
 pub mod comicvine;
 pub mod google_books;
+pub mod hardcover;
 pub mod igdb;
 pub mod mal;
 pub mod mangadex;
