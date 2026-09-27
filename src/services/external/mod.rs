@@ -31,6 +31,29 @@ pub fn http_client() -> reqwest::Client {
     }
 }
 
+/// One DLC / expansion ("addition") for a game, normalized across providers.
+///
+/// `kind` is one of `"dlc"`, `"expansion"` or `"addition"` (RAWG has a single
+/// undifferentiated additions list; IGDB distinguishes dlcs vs expansions).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdditionRow {
+    pub addition_external_id: String,
+    pub name: String,
+    pub kind: String,
+    pub released: Option<chrono::NaiveDate>,
+}
+
+impl AdditionRow {
+    /// Human-readable label for the UI badge.
+    pub fn kind_label(&self) -> &'static str {
+        match self.kind.as_str() {
+            "dlc" => "DLC",
+            "expansion" => "Расширение",
+            _ => "Дополнение",
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -40,5 +63,19 @@ mod tests {
         // The builder must succeed so every provider gets bounded timeouts.
         let client = http_client();
         drop(client);
+    }
+
+    #[test]
+    fn addition_row_kind_labels() {
+        let make = |kind: &str| AdditionRow {
+            addition_external_id: "1".to_string(),
+            name: "X".to_string(),
+            kind: kind.to_string(),
+            released: None,
+        };
+        assert_eq!(make("dlc").kind_label(), "DLC");
+        assert_eq!(make("expansion").kind_label(), "Расширение");
+        assert_eq!(make("addition").kind_label(), "Дополнение");
+        assert_eq!(make("weird").kind_label(), "Дополнение");
     }
 }

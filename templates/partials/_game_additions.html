@@ -1,0 +1,17 @@
+{% if additions.is_empty() %}
+<div class="chapter-list-empty">Дополнения не найдены</div>
+{% else %}
+<div class="game-additions-list">
+    {% for addition in additions %}
+    <div class="game-addition-item">
+        <div class="game-addition-name">{{ addition.name }}</div>
+        <div class="game-addition-meta">
+            <span class="game-addition-kind">{{ addition.kind_label() }}</span>
+            {% if let Some(d) = addition.released %}
+            <span class="game-addition-year">{{ d.format("%Y") }}</span>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}

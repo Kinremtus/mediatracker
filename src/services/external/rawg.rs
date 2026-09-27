@@ -3,6 +3,7 @@ use serde::Deserialize;
 use url::Url;
 
 use crate::models::media_item::CreateMediaItem;
+use crate::services::external::AdditionRow;
 
 const BASE_URL: &str = "https://api.rawg.io/api";
 
@@ -29,6 +30,13 @@ struct RawgSearchResult {
     background_image: Option<String>,
     rating: Option<f64>,
     description: Option<String>,
+    released: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawgAddition {
+    id: i64,
+    name: String,
     released: Option<String>,
 }
 
@@ -189,6 +197,18 @@ fn map_search(r: &RawgSearchResult) -> CreateMediaItem {
     }
 }
 
+fn map_additions(items: Vec<RawgAddition>) -> Vec<AdditionRow> {
+    items
+        .into_iter()
+        .map(|a| AdditionRow {
+            addition_external_id: a.id.to_string(),
+            name: a.name,
+            kind: "addition".to_string(),
+            released: parse_date(a.released.as_deref()),
+        })
+        .collect()
+}
+
 #[derive(Clone)]
 pub struct RawgService {
     client: Client,
@@ -242,6 +262,21 @@ impl RawgService {
         let r: RawgDetails = response.json().await?;
         Ok(map_details(r))
     }
+
+    /// DLC / additions list for a game. RAWG exposes a single flat list at
+    /// `/games/{id}/additions` (max page_size 40; pagination is out of scope).
+    pub async fn get_additions(&self, game_id: &str) -> Result<Vec<AdditionRow>, anyhow::Error> {
+        let mut url = Url::parse(&format!("{}/games/{}/additions", BASE_URL, game_id))?;
+        url.query_pairs_mut()
+            .append_pair("key", &self.api_key)
+            .append_pair("page_size", "40");
+
+        let response = self.client.get(url.as_str()).send().await?;
+        let results: serde_json::Value = response.json().await?;
+        let items: Vec<RawgAddition> =
+            serde_json::from_value(results["results"].clone()).unwrap_or_default();
+        Ok(map_additions(items))
+    }
 }
 
 #[cfg(test)]
@@ -277,5 +312,24 @@ mod tests {
         assert!(item.authors.contains(&"Rockstar North".to_string()));
         assert!(item.publishers.contains(&"Rockstar Games".to_string()));
         assert!(item.platforms.contains(&"PC".to_string()));
+    }
+
+    #[test]
+    fn parses_additions_including_null_released() {
+        let json = r#"[
+            {"id": 1, "name": "Blood and Wine", "released": "2016-05-31"},
+            {"id": 2, "name": "Hearts of Stone", "released": null}
+        ]"#;
+        let items: Vec<RawgAddition> = serde_json::from_str(json).unwrap();
+        let rows = map_additions(items);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].addition_external_id, "1");
+        assert_eq!(rows[0].name, "Blood and Wine");
+        assert_eq!(rows[0].kind, "addition");
+        assert_eq!(
+            rows[0].released,
+            chrono::NaiveDate::from_ymd_opt(2016, 5, 31)
+        );
+        assert_eq!(rows[1].released, None);
     }
 }

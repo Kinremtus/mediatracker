@@ -126,6 +126,23 @@
 </div>
 {% endif %}
 
+{# === GAME ADDITIONS (games only) === #}
+{% if item.media_type == "game" %}
+<div class="drawer-divider"></div>
+<div class="drawer-section drawer-section--collapsible" x-data="{ open: true }">
+    <button class="drawer-section-toggle" @click="open = !open" type="button">
+        Дополнения
+        <span class="drawer-section-arrow" :class="{ 'rotated': open }">▾</span>
+    </button>
+    <div class="drawer-chapters" x-show="open" x-cloak
+         hx-get="/api/games/{{ item.provider }}/{{ item.external_id }}/additions"
+         hx-trigger="revealed once"
+         hx-swap="innerHTML">
+        <div class="drawer-episodes-loading">Загрузка дополнений…</div>
+    </div>
+</div>
+{% endif %}
+
 {# === ADD TO TRACKING (only if NOT tracked) === #}
 {% if tracking_id.is_none() %}
 <div class="drawer-divider"></div>
