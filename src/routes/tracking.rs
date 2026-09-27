@@ -8,6 +8,7 @@ use serde::{Deserialize, Deserializer};
 use uuid::Uuid;
 
 use super::home::{SidebarStats, get_sidebar_stats};
+use super::progress::ProgressRow;
 use crate::app_state::AppState;
 use crate::middleware::CurrentUser;
 use crate::models::tracking_entry::{TrackingEntryWithMedia, UpdateTracking};
@@ -529,10 +530,20 @@ pub async fn htmx_update_tracking(
     match state.tracking.update_entry(id, user.id, &update).await {
         Ok(_entry) => match state.tracking.get_entry_with_media(user.id, id).await {
             Ok(Some(ewm)) => {
-                let html = TrackingCardPartial {
-                    entry_with_media: ewm,
+                // An increment/decrement comes from the drawer's progress row
+                // and must return the refreshed row so the +/− buttons can be
+                // added *and* removed symmetrically. Every other caller (the
+                // tracking card and the drawer status chips) still wants the
+                // full card partial; the drawer chips discard it (hx-swap
+                // none), the card swaps it in.
+                let html = if form.increment.is_some() {
+                    ProgressRow::from_entry(&ewm).render()
+                } else {
+                    TrackingCardPartial {
+                        entry_with_media: ewm,
+                    }
+                    .render()
                 }
-                .render()
                 .unwrap_or_else(|e| {
                     tracing::error!(error = %e, "template render failed");
                     String::from("Internal Server Error")
@@ -549,6 +560,26 @@ pub async fn htmx_update_tracking(
             tracing::error!(error = %e, "failed to update tracking");
             Redirect::to("/tracking").into_response()
         }
+    }
+}
+
+/// `GET /tracking/{id}/progress-row` — re-render just the drawer's progress
+/// row. Used after an episode/chapter checkbox toggle, where the server
+/// pushes `progressUpdated` and the client asks for the authoritative row
+/// (so `+1`/`−` reappear or disappear accordingly). Scoped to the owner.
+pub async fn get_progress_row(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Response {
+    match state.tracking.get_entry_with_media(user.id, id).await {
+        Ok(Some(ewm)) => Html(ProgressRow::from_entry(&ewm).render().unwrap_or_else(|e| {
+            tracing::error!(error = %e, "template render failed");
+            String::from("Internal Server Error")
+        }))
+        .into_response(),
+        Ok(None) => (axum::http::StatusCode::NOT_FOUND, "Not found").into_response(),
+        Err(e) => super::internal_error("tracking: progress row", e),
     }
 }
 

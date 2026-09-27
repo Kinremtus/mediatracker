@@ -1,0 +1,25 @@
+{# === "Мой прогресс" row ===
+   Shared by the media drawer (via include, context = MediaDrawerTemplate)
+   and by the HTMX increment endpoint plus the GET /tracking/{id}/progress-row
+   route (context = ProgressRow).
+
+   Each button swaps the *whole row* (outerHTML) with the server-rendered
+   version, so +1/- always reflect the authoritative progress value: they can
+   disappear and reappear symmetrically instead of only ever disappearing. #}
+<div class="drawer-progress-row" data-tracking-id="{{ tid }}">
+    {% if can_decrement %}
+    <button class="drawer-btn-increment" data-increment="decrement"
+            hx-post="/tracking/{{ tid }}/htmx"
+            hx-vals='{"increment":-1, "status":"{{ status_display }}"}'
+            hx-target="closest .drawer-progress-row"
+            hx-swap="outerHTML">−</button>
+    {% endif %}
+    <span class="drawer-progress-text">{{ progress_display }}{{ total_display }} {{ progress_unit }}</span>
+    {% if can_increment %}
+    <button class="drawer-btn-increment" data-increment="increment"
+            hx-post="/tracking/{{ tid }}/htmx"
+            hx-vals='{"increment":1, "status":"{{ status_display }}"}'
+            hx-target="closest .drawer-progress-row"
+            hx-swap="outerHTML">+1</button>
+    {% endif %}
+</div>

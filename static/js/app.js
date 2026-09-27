@@ -36,26 +36,34 @@ document.addEventListener('DOMContentLoaded', function() {
     // Глобальный fallback для status-chips в drawer: на случай если inline
     // hx-on:htmx:after-request упадёт (e.g. event vs e), переключаем active-класс здесь
     document.body.addEventListener('htmx:afterRequest', function(e) {
-        const target = e.detail.target;
-        if (!target || !target.classList || !e.detail.successful) return;
-        if (target.classList.contains('drawer-status-chip')) {
-            const newStatus = target.classList.contains('planned') ? 'planned'
-                : target.classList.contains('in_progress') ? 'in_progress'
-                : target.classList.contains('completed') ? 'completed'
-                : target.classList.contains('dropped') ? 'dropped' : null;
-            if (newStatus) afterStatusChange(target, newStatus);
-        } else if (target.classList.contains('drawer-btn-increment')) {
-            const delta = target.getAttribute('data-increment') === 'decrement' ? -1 : 1;
-            afterProgressChange(target, delta);
+        // `e.detail.elt` is the element that carried the hx-* attributes and it
+        // outlives an outerHTML swap, whereas `e.detail.target` may now point
+        // at the freshly-swapped row — the progress buttons target
+        // `closest .drawer-progress-row`, so the button itself is no longer
+        // the target. Prefer `elt`, fall back to `target` for older markup.
+        const elt = e.detail.elt || e.detail.target;
+        if (!elt || !elt.classList || !e.detail.successful) return;
+        if (elt.classList.contains('drawer-status-chip')) {
+            const newStatus = elt.classList.contains('planned') ? 'planned'
+                : elt.classList.contains('in_progress') ? 'in_progress'
+                : elt.classList.contains('completed') ? 'completed'
+                : elt.classList.contains('dropped') ? 'dropped' : null;
+            if (newStatus) afterStatusChange(elt, newStatus);
+        } else if (elt.classList.contains('drawer-btn-increment')) {
+            // The server re-rendered the whole progress row (hx-swap
+            // outerHTML), so +1/− are already authoritative; there is nothing
+            // to patch client-side. Just refresh the tracking grid so the
+            // card's progress value matches.
+            refreshTrackingList();
         }
     });
 
     // Episode checkbox toggle → server pushes HX-Trigger:
-    //   {"progressUpdated": {"maxWatched": N, "mediaId": "<uuid>"},
+    //   {"progressUpdated": {"maxWatched": N, "progress": N, "mediaId": "<uuid>"},
     //    "episodesChanged": {"states": [[n, watched], ...]}}
-    // Update the drawer's "X / Y эп." text, sync every visible checkbox
-    // in the drawer to authoritative server state, and patch any tracking
-    // card for the same media — all without a refresh.
+    // Re-render the drawer's progress row from the server (so +1/− stay in
+    // sync), patch any matching tracking card for the same media, and refresh
+    // the toggled season's episodes — all without a full reload.
     document.body.addEventListener('progressUpdated', function(e) {
         const serverProgress = e.detail && e.detail.progress;
         const maxWatched = e.detail && e.detail.maxWatched;
@@ -64,22 +72,19 @@ document.addEventListener('DOMContentLoaded', function() {
             ? serverProgress
             : (maxWatched != null ? maxWatched : maxRead);
         if (progressValue == null) return;
-        const text = document.querySelector('.drawer-progress-text');
-        if (text) {
-            text.textContent = text.textContent.replace(/^\s*\d+/, String(progressValue));
-        }
-        const plusBtn = document.querySelector('.drawer-btn-increment');
-        if (plusBtn) {
-            const newCurrent = progressValue;
-            const totalMatch = text && text.textContent.match(/\/\s*(\d+)/);
-            const total = totalMatch ? parseInt(totalMatch[1]) : null;
-            if (total != null && newCurrent >= total) {
-                plusBtn.remove();
-            } else {
-                plusBtn.setAttribute('hx-vals', JSON.stringify({ progress: newCurrent + 1 }));
-                // Keep the rendered +N label in sync by re-rendering? Alpine won't see hx-vals changes
-                // automatically, but the label is rendered server-side on drawer load. Live with the
-                // small drift (next click will re-sync via htmx:afterRequest).
+        // Re-render the whole progress row from the server. A checkbox toggle
+        // can cross the 0 / total boundaries in either direction, so +1 and −
+        // must be able to both disappear *and* reappear. Patching the DOM here
+        // could only ever remove a button — that asymmetry is exactly the bug
+        // this replaces.
+        const row = document.querySelector('.drawer-progress-row');
+        if (row) {
+            const tid = row.getAttribute('data-tracking-id');
+            if (tid) {
+                htmx.ajax('GET', '/tracking/' + tid + '/progress-row', {
+                    target: row,
+                    swap: 'outerHTML'
+                });
             }
         }
         // Also patch any matching tracking card on the /tracking list.
@@ -362,33 +367,6 @@ function afterStatusChange(btn, newStatus) {
         btn.classList.add('active');
     }
     // Refresh tracking grid on the page (if it exists)
-    refreshTrackingList();
-}
-
-function afterProgressChange(btn, delta) {
-    const row = btn.closest('.drawer-progress-row');
-    if (row) {
-        const text = row.querySelector('.drawer-progress-text');
-        if (text) {
-            const match = text.textContent.match(/(\d+)/);
-            if (match) {
-                const current = parseInt(match[1]);
-                const newProgress = Math.max(0, current + delta);
-                text.textContent = text.textContent.replace(/\d+/, newProgress);
-                // Hide decrement button at 0
-                if (newProgress <= 0) {
-                    const decBtn = row.querySelector('[data-increment="decrement"]');
-                    if (decBtn) decBtn.remove();
-                }
-                // Hide increment button at total
-                const tcMatch = text.textContent.match(/\/\s*(\d+)/);
-                if (tcMatch && newProgress >= parseInt(tcMatch[1])) {
-                    const incBtn = row.querySelector('[data-increment="increment"]');
-                    if (incBtn) incBtn.remove();
-                }
-            }
-        }
-    }
     refreshTrackingList();
 }
 
