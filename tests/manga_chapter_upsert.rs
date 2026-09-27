@@ -133,3 +133,88 @@ async fn upsert_adds_fractional_chapters_and_is_idempotent() {
         "existing title preserved (COALESCE, not overwrite)"
     );
 }
+
+/// One chapter row, metadata-free: used to drive the media_items sync so the
+/// assertion is about the counter, not about titles.
+fn single_row(chapter_number: i32) -> Vec<MdChapterRow> {
+    vec![MdChapterRow {
+        chapter_number,
+        title_en: None,
+        title_ru: None,
+        volume: None,
+        release_date: None,
+    }]
+}
+
+async fn set_media_chapters(ctx: &common::TestContext, value: i32) {
+    sqlx::query(
+        "UPDATE media_items SET chapters = $1 \
+         WHERE provider = 'mangaupdates' AND external_id = $2",
+    )
+    .bind(value)
+    .bind(series_str())
+    .execute(&ctx.pool)
+    .await
+    .expect("set media chapters");
+}
+
+async fn read_media_chapters(ctx: &common::TestContext) -> Option<i32> {
+    let row: (Option<i32>,) = sqlx::query_as(
+        "SELECT chapters FROM media_items \
+         WHERE provider = 'mangaupdates' AND external_id = $1",
+    )
+    .bind(series_str())
+    .fetch_one(&ctx.pool)
+    .await
+    .expect("read media chapters");
+    row.0
+}
+
+#[tokio::test]
+async fn upsert_raises_stale_media_items_chapters() {
+    let ctx = setup().await;
+    let ext = series_str();
+    set_media_chapters(&ctx, 100).await;
+
+    upsert_series_chapters(&ctx.pool, "mangaupdates", &ext, &single_row(12500))
+        .await
+        .expect("upsert ch 125");
+
+    assert_eq!(
+        read_media_chapters(&ctx).await,
+        Some(125),
+        "stale 100 must be raised to ceil(12500/100)=125"
+    );
+}
+
+#[tokio::test]
+async fn upsert_never_downgrades_media_items_chapters() {
+    let ctx = setup().await;
+    let ext = series_str();
+    set_media_chapters(&ctx, 200).await;
+
+    upsert_series_chapters(&ctx.pool, "mangaupdates", &ext, &single_row(12500))
+        .await
+        .expect("upsert ch 125");
+
+    assert_eq!(
+        read_media_chapters(&ctx).await,
+        Some(200),
+        "an existing higher count must never be lowered"
+    );
+}
+
+#[tokio::test]
+async fn upsert_without_media_items_row_does_not_fail() {
+    let ctx = common::TestContext::new().await;
+    let ext = "999999993";
+
+    let affected = upsert_series_chapters(&ctx.pool, "mangaupdates", ext, &single_row(12500))
+        .await
+        .expect("upsert must not fail when media_items row is missing");
+
+    assert_eq!(
+        affected, 1,
+        "chapter row still inserted for the orphan series"
+    );
+}
