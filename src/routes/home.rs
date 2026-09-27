@@ -10,6 +10,7 @@ use serde::Serialize;
 use crate::app_state::AppState;
 use crate::middleware::CurrentUser;
 use crate::models::schedule::ReleaseEntry;
+use crate::models::tracking_entry::TrackingEntryWithMedia;
 
 #[derive(Template)]
 #[template(path = "home.html")]
@@ -22,7 +23,7 @@ struct HomeTemplate {
     active_page: String,
     current_status: String,
     stats: SidebarStats,
-    in_progress: Vec<HomeMediaCard>,
+    in_progress: Vec<TrackingEntryWithMedia>,
     upcoming_releases: Vec<ReleaseEntry>,
 }
 
@@ -51,17 +52,6 @@ pub async fn get_sidebar_stats(state: &AppState, user: &CurrentUser) -> SidebarS
         dropped: dp,
         role: user.role.clone(),
     }
-}
-
-pub struct HomeMediaCard {
-    pub provider: String,
-    pub external_id: String,
-    pub media_type: String,
-    pub title: String,
-    pub poster_url: String,
-    pub progress_current: i32,
-    pub progress_total: Option<i32>,
-    pub progress_percent: u8,
 }
 
 fn greeting() -> String {
@@ -110,38 +100,7 @@ pub async fn get_home(user: CurrentUser, State(state): State<AppState>) -> Respo
         Ok(entries) => entries,
         Err(e) => return super::internal_error("home: load in-progress entries", e),
     };
-    let in_progress: Vec<HomeMediaCard> = entries
-        .into_iter()
-        .take(6)
-        .map(|e| {
-            let total = e.media.episodes;
-            let current = e.entry.progress;
-            let percent = total
-                .map(|t| {
-                    if t > 0 {
-                        (current * 100 / t).min(100) as u8
-                    } else {
-                        0
-                    }
-                })
-                .unwrap_or(0);
-            HomeMediaCard {
-                provider: e.media.provider,
-                external_id: e.media.external_id,
-                media_type: e.media.media_type,
-                title: e
-                    .media
-                    .title_russian
-                    .as_deref()
-                    .unwrap_or(&e.media.title)
-                    .to_string(),
-                poster_url: e.media.poster_url.unwrap_or_default(),
-                progress_current: current,
-                progress_total: total,
-                progress_percent: percent,
-            }
-        })
-        .collect();
+    let in_progress: Vec<TrackingEntryWithMedia> = entries.into_iter().take(6).collect();
 
     // Ensure fresh schedule data
     let _ = state.release_schedule.ensure_fresh(&state.shikimori).await;

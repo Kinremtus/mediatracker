@@ -22,25 +22,8 @@
       </p>
     {% else %}
       <div class="cards-grid">
-        {% for item in in_progress %}
-          <a @click.prevent="openMediaDrawer('{{ item.provider }}', '{{ item.external_id }}', '{{ item.media_type }}')" href="#"
-             class="media-card">
-            <div class="media-card-poster">
-              <img src="{{ item.poster_url }}" alt="{{ item.title }}" loading="lazy">
-            </div>
-            <div class="media-card-body">
-              <div class="media-card-title">{{ item.title }}</div>
-              {% if item.progress_total.is_some() %}
-                <div class="progress-info">
-                  {{ item.progress_current }} / {{ item.progress_total.unwrap() }}
-                </div>
-                <div class="progress-bar">
-                  <div class="progress-fill"
-                       style="width: {{ item.progress_percent }}%"></div>
-                </div>
-              {% endif %}
-            </div>
-          </a>
+        {% for entry_with_media in in_progress %}
+          {% include "partials/tracking_card.html" %}
         {% endfor %}
       </div>
     {% endif %}
