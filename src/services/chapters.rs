@@ -74,6 +74,37 @@ pub fn parse_chapter(s: &str) -> Option<i32> {
     }
 }
 
+/// Sync `media_items.chapters` from the stored chapter rows: the value is
+/// `ceil(MAX(chapter_number) / 100)` (chapter numbers are stored at x100
+/// scale) and an existing value is never lowered. Runs inside the caller's
+/// transaction via the passed connection so the card denominator can never
+/// disagree with the rows.
+async fn sync_media_items_chapters(
+    conn: &mut sqlx::PgConnection,
+    provider: &str,
+    external_id: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        UPDATE media_items
+        SET chapters = GREATEST(COALESCE(media_items.chapters, 0), sub.max_ch)
+        FROM (
+            SELECT ((MAX(chapter_number) + 99) / 100) AS max_ch
+            FROM series_chapters
+            WHERE provider = $1 AND external_id = $2
+        ) AS sub
+        WHERE media_items.provider = $1
+          AND media_items.external_id = $2
+          AND sub.max_ch > COALESCE(media_items.chapters, 0)
+        "#,
+    )
+    .bind(provider)
+    .bind(external_id)
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
 /// Insert or update chapter skeleton in the DB. UNIQUE (provider,
 /// external_id, chapter_number) makes the operation idempotent.
 ///
@@ -118,26 +149,10 @@ pub async fn store_chapters_mu(
 
     let count = result.rows_affected();
 
-    // Sync media_items.chapters = ceil(MAX(chapter_number) / 100) so the
-    // tracking card denominator matches. Never lower an existing value.
+    // Sync media_items.chapters so the tracking card denominator matches the
+    // stored rows (same helper the MangaDex enrichment path uses).
     if count > 0 {
-        sqlx::query(
-            r#"
-            UPDATE media_items
-            SET chapters = GREATEST(COALESCE(media_items.chapters, 0), sub.max_ch)
-            FROM (
-                SELECT ((MAX(chapter_number) + 99) / 100) AS max_ch
-                FROM series_chapters
-                WHERE provider = 'mangaupdates' AND external_id = $1
-            ) AS sub
-            WHERE media_items.provider = 'mangaupdates'
-              AND media_items.external_id = $1
-              AND sub.max_ch > COALESCE(media_items.chapters, 0)
-            "#,
-        )
-        .bind(&external_id)
-        .execute(&mut *tx)
-        .await?;
+        sync_media_items_chapters(&mut tx, "mangaupdates", &external_id).await?;
     }
 
     tx.commit().await?;
@@ -507,6 +522,9 @@ pub async fn upsert_series_chapters(
     .bind(&release_dates)
     .execute(&mut *tx)
     .await?;
+    // Enrichment inserts/merges rows but historically never refreshed the
+    // counter; sync it in the same transaction so it can never drift.
+    sync_media_items_chapters(&mut tx, provider, external_id).await?;
     tx.commit().await?;
 
     Ok(result.rows_affected() as usize)
