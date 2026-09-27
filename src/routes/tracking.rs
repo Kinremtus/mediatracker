@@ -49,6 +49,7 @@ fn get_all_media_types() -> Vec<(&'static str, &'static str, &'static str)> {
         ("manhwa", "📚", "Манхва"),
         ("manhua", "📚", "Маньхуа"),
         ("novel", "", "Новеллы"),
+        ("comic", "🦸", "Комиксы"),
         ("other-comics", "📚", "Другие комиксы"),
         ("movie", "", "Фильмы"),
         ("series", "", "Сериалы"),

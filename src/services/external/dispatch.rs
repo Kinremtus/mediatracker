@@ -12,16 +12,19 @@ use std::time::Duration;
 
 use crate::app_state::AppState;
 use crate::models::media_item::CreateMediaItem;
+use crate::services::external::anilist::AniListService;
+use crate::services::external::comicvine::ComicVineService;
 use crate::services::external::google_books::GoogleBooksService;
 use crate::services::external::igdb::IgdbService;
 use crate::services::external::mal::MalService;
+use crate::services::external::mangadex::MangaDexService;
 use crate::services::external::mangaupdates::MangaUpdatesService;
 use crate::services::external::openlibrary::OpenLibraryService;
 use crate::services::external::rawg::RawgService;
 use crate::services::external::shikimori::ShikimoriService;
 use crate::services::external::tmdb::TmdbService;
 
-/// Borrowed set of provider clients. `AppState` owns all eight; the
+/// Borrowed set of provider clients. `AppState` owns all eleven; the
 /// refresh worker keeps its own copies in `RefreshCtx`.
 pub struct ProviderClients<'a> {
     pub shikimori: &'a ShikimoriService,
@@ -32,6 +35,9 @@ pub struct ProviderClients<'a> {
     pub igdb: &'a IgdbService,
     pub google_books: &'a GoogleBooksService,
     pub openlibrary: &'a OpenLibraryService,
+    pub mangadex: &'a MangaDexService,
+    pub anilist: &'a AniListService,
+    pub comicvine: &'a ComicVineService,
 }
 
 impl<'a> ProviderClients<'a> {
@@ -46,8 +52,20 @@ impl<'a> ProviderClients<'a> {
             igdb: &state.igdb,
             google_books: &state.google_books,
             openlibrary: &state.openlibrary,
+            mangadex: &state.mangadex,
+            anilist: &state.anilist,
+            comicvine: &state.comicvine,
         }
     }
+}
+
+/// Media types served by the manga-family chain (MAL/Shikimori split
+/// their detail endpoint by family).
+fn is_manga_family(media_type: &str) -> bool {
+    matches!(
+        media_type,
+        "manga" | "manhwa" | "manhua" | "novel" | "other-comics" | "comic"
+    )
 }
 
 /// One external provider, resolved from its `media_items.provider` name.
@@ -61,6 +79,9 @@ pub enum Provider {
     Igdb(IgdbService),
     GoogleBooks(GoogleBooksService),
     OpenLibrary(OpenLibraryService),
+    MangaDex(MangaDexService),
+    AniList(AniListService),
+    ComicVine(ComicVineService),
 }
 
 impl Provider {
@@ -76,6 +97,9 @@ impl Provider {
             "igdb" => Some(Self::Igdb(clients.igdb.clone())),
             "google_books" => Some(Self::GoogleBooks(clients.google_books.clone())),
             "openlibrary" => Some(Self::OpenLibrary(clients.openlibrary.clone())),
+            "mangadex" => Some(Self::MangaDex(clients.mangadex.clone())),
+            "anilist" => Some(Self::AniList(clients.anilist.clone())),
+            "comicvine" => Some(Self::ComicVine(clients.comicvine.clone())),
             _ => None,
         }
     }
@@ -91,6 +115,9 @@ impl Provider {
             Self::Igdb(_) => "igdb",
             Self::GoogleBooks(_) => "google_books",
             Self::OpenLibrary(_) => "openlibrary",
+            Self::MangaDex(_) => "mangadex",
+            Self::AniList(_) => "anilist",
+            Self::ComicVine(_) => "comicvine",
         }
     }
 
@@ -103,14 +130,21 @@ impl Provider {
         media_type: &str,
     ) -> Result<CreateMediaItem, anyhow::Error> {
         match self {
-            Self::Shikimori(s) => s.get_details(external_id).await,
+            Self::Mal(s) if is_manga_family(media_type) => s.get_manga_details(external_id).await,
             Self::Mal(s) => s.get_details(external_id).await,
+            Self::Shikimori(s) if is_manga_family(media_type) => {
+                s.get_manga_details(external_id).await
+            }
+            Self::Shikimori(s) => s.get_details(external_id).await,
             Self::MangaUpdates(s) => s.get_details(external_id).await,
             Self::Tmdb(s) => s.get_details(external_id, media_type).await,
             Self::Rawg(s) => s.get_details(external_id).await,
             Self::Igdb(s) => s.get_details(external_id).await,
             Self::GoogleBooks(s) => s.get_details(external_id).await,
             Self::OpenLibrary(s) => s.get_details(external_id).await,
+            Self::MangaDex(s) => s.get_details(external_id).await,
+            Self::AniList(s) => s.get_details(external_id).await,
+            Self::ComicVine(s) => s.get_details(external_id).await,
         }
     }
 
@@ -118,6 +152,8 @@ impl Provider {
     pub fn delay(&self) -> Duration {
         match self {
             Self::Mal(_) => Duration::from_millis(350),
+            Self::ComicVine(_) => Duration::from_millis(1000),
+            Self::AniList(_) => Duration::from_millis(350),
             _ => Duration::from_millis(200),
         }
     }
@@ -126,6 +162,7 @@ impl Provider {
     pub fn concurrency(&self) -> usize {
         match self {
             Self::Mal(_) => 2,
+            Self::ComicVine(_) | Self::AniList(_) => 1,
             _ => 3,
         }
     }

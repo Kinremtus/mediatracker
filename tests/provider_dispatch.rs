@@ -19,6 +19,9 @@ async fn provider_dispatcher_maps_names_and_rejects_unknown() {
         "igdb",
         "google_books",
         "openlibrary",
+        "mangadex",
+        "anilist",
+        "comicvine",
     ] {
         let provider = Provider::from_name(&clients, name)
             .unwrap_or_else(|| panic!("provider {name} was not mapped"));

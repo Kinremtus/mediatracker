@@ -90,6 +90,31 @@ struct ShikimoriDemographic {
     name: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct ShikimoriManga {
+    id: i64,
+    name: String,
+    name_en: Option<String>,
+    russian: Option<String>,
+    image: Option<ShikimoriImage>,
+    kind: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_f64")]
+    score: Option<f64>,
+    status: Option<String>,
+    chapters: Option<i32>,
+    volumes: Option<i32>,
+    description: Option<String>,
+    aired_on: Option<chrono::NaiveDate>,
+    released_on: Option<chrono::NaiveDate>,
+    rating: Option<String>,
+    #[serde(default)]
+    publishers: Vec<ShikimoriStudio>,
+    #[serde(default)]
+    genres: Vec<ShikimoriGenre>,
+    #[serde(default)]
+    demographics: Vec<ShikimoriDemographic>,
+}
+
 fn poster_url(original: Option<String>) -> Option<String> {
     original.map(|url| {
         if url.starts_with("http") {
@@ -201,6 +226,86 @@ fn map_anime(r: ShikimoriSearchResult) -> CreateMediaItem {
     }
 }
 
+fn map_manga(m: ShikimoriManga) -> CreateMediaItem {
+    let comparison_key = m.name_en.clone().unwrap_or_else(|| m.name.clone());
+    let (genres, themes) = extract_genre_names(&m.genres);
+    let demographics = extract_demographic_names(&m.demographics);
+    let publishers = extract_studio_names(&m.publishers);
+
+    let media_type = match m.kind.as_deref() {
+        Some("manhwa") => "manhwa",
+        Some("manhua") => "manhua",
+        Some("novel") => "novel",
+        Some("one_shot") => "manga",
+        Some("doujin") => "manga",
+        Some("manga") => "manga",
+        _ => "manga",
+    }
+    .to_string();
+
+    let format_type = m.kind.as_ref().map(|k| {
+        match k.as_str() {
+            "manga" => "Manga",
+            "manhwa" => "Manhwa",
+            "manhua" => "Manhua",
+            "novel" => "Novel",
+            other => other,
+        }
+        .to_string()
+    });
+
+    CreateMediaItem {
+        provider: "shikimori".to_string(),
+        external_id: m.id.to_string(),
+        media_type,
+        title: m.name,
+        title_english: m.name_en,
+        title_native: None,
+        title_russian: m.russian,
+        poster_url: poster_url(m.image.and_then(|img| img.original)),
+        episodes: None,
+        description: clean_description(m.description),
+        status: m.status,
+        score: m.score,
+        is_tracked: false,
+        mal_id: None,
+        shikimori_id: Some(m.id),
+        comparison_key: Some(comparison_key),
+        format_type,
+        details: None,
+        chapters: m.chapters,
+        volumes: m.volumes,
+        pages: None,
+        runtime_minutes: None,
+        playtime_hours: None,
+        year: None,
+        aired_from: m.aired_on,
+        aired_to: m.released_on,
+        premiered_season: None,
+        premiered_year: None,
+        broadcast: None,
+        completed: None,
+        licensed: None,
+        source: None,
+        duration: None,
+        rating: m.rating,
+        rating_votes: None,
+        authors: Vec::new(),
+        artists: Vec::new(),
+        studios: Vec::new(),
+        producers: Vec::new(),
+        licensors: Vec::new(),
+        publishers,
+        serialized_in: Vec::new(),
+        networks: Vec::new(),
+        platforms: Vec::new(),
+        genres,
+        themes,
+        demographics,
+        categories: Vec::new(),
+    }
+}
+
 #[derive(Clone)]
 pub struct ShikimoriService {
     client: Client,
@@ -247,6 +352,29 @@ impl ShikimoriService {
         }
         let r: ShikimoriSearchResult = response.json().await?;
         Ok(map_anime(r))
+    }
+
+    pub async fn search_manga(&self, query: &str) -> Result<Vec<CreateMediaItem>, anyhow::Error> {
+        let mut url = Url::parse(&format!("{}/mangas", BASE_URL))?;
+        url.query_pairs_mut()
+            .append_pair("search", query)
+            .append_pair("limit", "50");
+        let response = self.client.get(url).send().await?;
+        let results: Vec<ShikimoriManga> = response.json().await?;
+
+        let items = results.into_iter().map(map_manga).collect();
+
+        Ok(items)
+    }
+
+    pub async fn get_manga_details(&self, id: &str) -> Result<CreateMediaItem, anyhow::Error> {
+        let url = format!("{}/mangas/{}", BASE_URL, id);
+        let response = self.client.get(&url).send().await?;
+        if !response.status().is_success() {
+            anyhow::bail!("Shikimori manga details failed: {}", response.status());
+        }
+        let m: ShikimoriManga = response.json().await?;
+        Ok(map_manga(m))
     }
 
     /// Fetch the full episode list for an anime from Shikimori.
@@ -321,5 +449,53 @@ mod tests {
         assert!(item.themes.contains(&"Martial Arts".to_string()));
         assert!(item.demographics.contains(&"Shounen".to_string()));
         assert!(item.score.is_none(), "missing score must default to None");
+    }
+
+    #[test]
+    fn parses_manga_search_response_with_string_score() {
+        let json = r#"[{"id":123,"name":"Solo Leveling","name_en":"Solo Leveling","russian":"Поднятие уровня в одиночку","kind":"manhwa","score":"9.12","status":"released","chapters":179,"volumes":14}]"#;
+        let results: Vec<ShikimoriManga> = serde_json::from_str(json).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].score, Some(9.12));
+        assert_eq!(results[0].kind.as_deref(), Some("manhwa"));
+        assert_eq!(results[0].chapters, Some(179));
+        assert_eq!(
+            results[0].russian.as_deref(),
+            Some("Поднятие уровня в одиночку")
+        );
+    }
+
+    #[test]
+    fn map_manga_sets_media_type_and_fields() {
+        let json = r#"{
+            "id": 123,
+            "name": "Solo Leveling",
+            "name_en": "Solo Leveling",
+            "russian": "Поднятие уровня в одиночку",
+            "kind": "manhwa",
+            "score": "9.12",
+            "status": "released",
+            "chapters": 179,
+            "volumes": 14,
+            "publishers": [{"name": "Kakao Page"}],
+            "genres": [
+                {"name": "Action", "kind": "genre"},
+                {"name": "Super Power", "kind": "theme"}
+            ],
+            "demographics": [{"name": "Shounen"}]
+        }"#;
+        let m: ShikimoriManga = serde_json::from_str(json).unwrap();
+        let item = map_manga(m);
+        assert_eq!(item.media_type, "manhwa");
+        assert_eq!(item.external_id, "123");
+        assert_eq!(item.chapters, Some(179));
+        assert_eq!(item.volumes, Some(14));
+        assert_eq!(item.format_type.as_deref(), Some("Manhwa"));
+        assert_eq!(item.score, Some(9.12));
+        assert_eq!(item.title_english.as_deref(), Some("Solo Leveling"));
+        assert!(item.publishers.contains(&"Kakao Page".to_string()));
+        assert!(item.genres.contains(&"Action".to_string()));
+        assert!(item.themes.contains(&"Super Power".to_string()));
+        assert!(item.demographics.contains(&"Shounen".to_string()));
     }
 }

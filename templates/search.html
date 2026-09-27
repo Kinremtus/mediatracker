@@ -23,6 +23,7 @@
     <a href="?q={{ query }}&type=manhua&page=1" class="type-btn {% if current_type == "manhua" %}active{% endif %}">📚 Маньхуа</a>
     <a href="?q={{ query }}&type=novel&page=1" class="type-btn {% if current_type == "novel" %}active{% endif %}">📝 Новеллы</a>
     <a href="?q={{ query }}&type=other-comics&page=1" class="type-btn {% if current_type == "other-comics" %}active{% endif %}">📚 Другие комиксы</a>
+    <a href="?q={{ query }}&type=comic&page=1" class="type-btn {% if current_type == "comic" %}active{% endif %}">🦸 Комиксы</a>
     <a href="?q={{ query }}&type=movie&page=1" class="type-btn {% if current_type == "movie" %}active{% endif %}">🎥 Фильмы</a>
     <a href="?q={{ query }}&type=series&page=1" class="type-btn {% if current_type == "series" %}active{% endif %}"> Сериалы</a>
     <a href="?q={{ query }}&type=dramas&page=1" class="type-btn {% if current_type == "dramas" %}active{% endif %}"> Дорамы</a>
@@ -48,7 +49,7 @@
             <img src="{{ item.poster_url.as_ref().unwrap() }}" alt="{{ item.title }}" loading="lazy">
             {% else %}
             <div class="poster-placeholder">
-                {% if item.media_type == "anime" %}▶{% elif item.media_type == "manga" || item.media_type == "manhwa" || item.media_type == "manhua" || item.media_type == "novel" || item.media_type == "other-comics" %}📚{% elif item.media_type == "movie" %}🎥{% elif item.media_type == "series" || item.media_type == "dramas" %}📺{% elif item.media_type == "cartoons" || item.media_type == "animated-movies" %}🎞{% elif item.media_type == "game" %}🎮{% elif item.media_type == "book" %}📖{% else %}📄{% endif %}
+                {% if item.media_type == "anime" %}▶{% elif item.media_type == "manga" || item.media_type == "manhwa" || item.media_type == "manhua" || item.media_type == "novel" || item.media_type == "other-comics" || item.media_type == "comic" %}📚{% elif item.media_type == "movie" %}🎥{% elif item.media_type == "series" || item.media_type == "dramas" %}📺{% elif item.media_type == "cartoons" || item.media_type == "animated-movies" %}🎞{% elif item.media_type == "game" %}🎮{% elif item.media_type == "book" %}📖{% else %}📄{% endif %}
             </div>
             {% endif %}
             {% if item.score.is_some() %}

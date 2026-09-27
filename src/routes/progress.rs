@@ -31,6 +31,7 @@ const PROGRESS_MEDIA_TYPES: &[&str] = &[
     "manhua",
     "novel",
     "other-comics",
+    "comic",
     "book",
     "game",
 ];
@@ -179,6 +180,7 @@ mod tests {
             "manhua",
             "novel",
             "other-comics",
+            "comic",
             "book",
             "game",
         ] {
