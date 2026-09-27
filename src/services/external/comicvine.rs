@@ -56,6 +56,13 @@ fn map_volume(v: ComicVineVolume) -> CreateMediaItem {
         .start_year
         .and_then(|s| s.parse::<i16>().ok())
         .filter(|y| *y > 0);
+    // Comic Vine returns many distinct volumes sharing the same `name`
+    // (e.g. every "Batman" volume). Including the start year keeps
+    // `deduplicate_by_title` from collapsing them into a single result.
+    let comparison_key = match year {
+        Some(y) => format!("{title} ({y})"),
+        None => title.clone(),
+    };
     let publishers = v.publisher.and_then(|p| p.name).into_iter().collect();
 
     CreateMediaItem {
@@ -63,7 +70,7 @@ fn map_volume(v: ComicVineVolume) -> CreateMediaItem {
         external_id: v.id.to_string(),
         media_type: "comic".to_string(),
         title: title.clone(),
-        comparison_key: Some(title),
+        comparison_key: Some(comparison_key),
         poster_url,
         description,
         chapters: v.count_of_issues,
@@ -174,7 +181,7 @@ mod tests {
         assert_eq!(item.external_id, "12345");
         assert_eq!(item.media_type, "comic");
         assert_eq!(item.title, "Saga");
-        assert_eq!(item.comparison_key.as_deref(), Some("Saga"));
+        assert_eq!(item.comparison_key.as_deref(), Some("Saga (2012)"));
         assert_eq!(item.chapters, Some(54));
         assert_eq!(
             item.poster_url.as_deref(),
@@ -204,6 +211,7 @@ mod tests {
         let item = map_volume(resp.results);
         assert_eq!(item.external_id, "999");
         assert_eq!(item.title, "Comic #999");
+        assert_eq!(item.comparison_key.as_deref(), Some("Comic #999"));
         assert_eq!(item.chapters, Some(12));
         assert_eq!(
             item.poster_url.as_deref(),
@@ -211,5 +219,29 @@ mod tests {
         );
         assert_eq!(item.year, None);
         assert!(item.publishers.is_empty());
+    }
+
+    #[test]
+    fn distinct_volumes_with_same_name_keep_distinct_comparison_keys() {
+        let volume = |id: i64, start_year: &str| ComicVineVolume {
+            id,
+            name: Some("Batman".to_string()),
+            start_year: Some(start_year.to_string()),
+            image: None,
+            publisher: None,
+            count_of_issues: None,
+            description: None,
+            deck: None,
+            site_detail_url: None,
+        };
+
+        let old = map_volume(volume(1, "1940"));
+        let new = map_volume(volume(2, "2011"));
+
+        assert_eq!(old.title, "Batman");
+        assert_eq!(new.title, "Batman");
+        assert_eq!(old.comparison_key.as_deref(), Some("Batman (1940)"));
+        assert_eq!(new.comparison_key.as_deref(), Some("Batman (2011)"));
+        assert_ne!(old.comparison_key, new.comparison_key);
     }
 }
