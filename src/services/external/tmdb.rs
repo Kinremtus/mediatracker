@@ -156,7 +156,12 @@ fn map_details(r: TmdbDetails, media_type: &str) -> CreateMediaItem {
         episodes: if media_type == "movie" {
             None
         } else {
-            r.number_of_episodes.or(r.number_of_seasons)
+            r.number_of_episodes
+        },
+        seasons: if media_type == "movie" {
+            None
+        } else {
+            r.number_of_seasons
         },
         description: r.overview,
         status: r.status,
@@ -228,6 +233,7 @@ fn map_search_result(r: &serde_json::Value, media_type: &str) -> Option<CreateMe
         title_russian: None,
         poster_url,
         episodes: None,
+        seasons: None,
         description,
         status: None,
         score,
@@ -499,8 +505,25 @@ mod tests {
         let item = map_details(details, "series");
         assert_eq!(item.format_type.as_deref(), Some("TV"));
         assert_eq!(item.episodes, Some(73));
+        assert_eq!(item.seasons, Some(8));
         assert_eq!(item.runtime_minutes, Some(60));
         assert!(item.networks.contains(&"HBO".to_string()));
+    }
+
+    #[test]
+    fn movie_has_no_seasons() {
+        let json = r#"{
+            "id": 27205,
+            "title": "Inception",
+            "number_of_seasons": 1,
+            "number_of_episodes": 1,
+            "vote_average": 8.4,
+            "vote_count": 30000
+        }"#;
+        let details: TmdbDetails = serde_json::from_str(json).unwrap();
+        let item = map_details(details, "movie");
+        assert_eq!(item.episodes, None);
+        assert_eq!(item.seasons, None);
     }
 
     #[test]

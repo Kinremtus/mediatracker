@@ -192,6 +192,7 @@ fn map_game(g: IgdbGame) -> CreateMediaItem {
         title_russian: None,
         poster_url,
         episodes: None,
+        seasons: None,
         description: g.summary,
         status: None,
         score,

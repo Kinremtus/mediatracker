@@ -5,9 +5,9 @@ use crate::models::media_item::CreateMediaItem;
 
 const API_URL: &str = "https://graphql.anilist.co";
 
-const SEARCH_QUERY: &str = r#"query ($search: String, $type: MediaType) { Page(perPage: 10) { media(type: $type, search: $search) { id title { romaji english native } coverImage { large } chapters volumes episodes description averageScore genres status startDate { year } format } } }"#;
+const SEARCH_QUERY: &str = r#"query ($search: String, $type: MediaType) { Page(perPage: 10) { media(type: $type, search: $search) { id idMal title { romaji english native } coverImage { large } chapters volumes episodes description averageScore genres status startDate { year } format } } }"#;
 
-const DETAILS_QUERY: &str = r#"query ($id: Int) { Media(id: $id) { id title { romaji english native } coverImage { large } chapters volumes episodes description averageScore genres status startDate { year } format } }"#;
+const DETAILS_QUERY: &str = r#"query ($id: Int) { Media(id: $id) { id idMal title { romaji english native } coverImage { large } chapters volumes episodes description averageScore genres status startDate { year } format } }"#;
 
 #[derive(Debug, Deserialize)]
 struct AniListResponse<T> {
@@ -34,6 +34,8 @@ struct AniListMediaData {
 #[derive(Debug, Deserialize)]
 struct AniListMedia {
     id: i64,
+    #[serde(rename = "idMal")]
+    id_mal: Option<i64>,
     title: AniListTitle,
     #[serde(rename = "coverImage")]
     cover_image: Option<AniListCover>,
@@ -96,11 +98,12 @@ fn map_media(m: AniListMedia, media_type: &str) -> CreateMediaItem {
         title_russian: None,
         poster_url: m.cover_image.and_then(|c| c.large),
         episodes: if anime { m.episodes } else { None },
+        seasons: None,
         description: crate::utils::clean_description(m.description),
         status: m.status,
         score,
         is_tracked: false,
-        mal_id: None,
+        mal_id: m.id_mal,
         shikimori_id: None,
         comparison_key,
         format_type: m.format,
@@ -218,6 +221,7 @@ mod tests {
                     "media": [
                         {
                             "id": 30002,
+                            "idMal": null,
                             "title": {
                                 "romaji": "Berserk",
                                 "english": "Berserk",
@@ -252,6 +256,7 @@ mod tests {
         assert_eq!(item.provider, "anilist");
         assert_eq!(item.external_id, "30002");
         assert_eq!(item.media_type, "manga");
+        assert_eq!(item.mal_id, None);
         assert_eq!(item.title, "Berserk");
         assert_eq!(
             item.poster_url.as_deref(),
@@ -271,6 +276,7 @@ mod tests {
             "data": {
                 "Media": {
                     "id": 105778,
+                    "idMal": null,
                     "title": {
                         "romaji": "Chainsaw Man",
                         "english": "Chainsaw Man",
@@ -311,6 +317,7 @@ mod tests {
                     "media": [
                         {
                             "id": 21,
+                            "idMal": 25,
                             "title": { "romaji": "One Piece", "english": "One Piece", "native": "ワンピース" },
                             "coverImage": { "large": "https://s4.anilist.co/file/op.jpg" },
                             "chapters": null,
@@ -333,6 +340,7 @@ mod tests {
 
         assert_eq!(item.media_type, "anime");
         assert_eq!(item.episodes, Some(1100));
+        assert_eq!(item.mal_id, Some(25));
         assert_eq!(item.chapters, None);
         assert_eq!(item.format_type.as_deref(), Some("TV"));
     }

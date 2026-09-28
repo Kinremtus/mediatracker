@@ -27,6 +27,7 @@ struct MediaDrawerTemplate {
     rating: Option<f64>,
     total_count: Option<i32>,
     progress_unit: String,
+    mal_id: Option<i64>,
     has_progress: bool,
     role: String,
     star_classes: Vec<&'static str>,
@@ -72,12 +73,20 @@ struct MediaDetailTemplate {
     flash_message: String,
     from_cache: bool,
     fallback_notice: String,
+    mal_id: Option<i64>,
 }
 
 #[derive(Deserialize)]
 pub struct MediaDetailQuery {
     media_type: Option<String>,
     flash: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct EpisodesQuery {
+    /// Клиентский hint MAL id. Принимается только для anime-провайдеров
+    /// (mal | shikimori | anilist) — защита от подмены чужого id.
+    mal_id: Option<i64>,
 }
 
 /// Why a card is rendering from stored data (or not).
@@ -167,6 +176,7 @@ pub async fn get_media_detail(
         Some((mut item, fallback)) => {
             let from_cache = fallback.is_from_cache();
             let fallback_notice = fallback.notice().to_string();
+            let mal_id = item.mal_id;
             if let Ok(Some(_)) = state
                 .tracking
                 .find_entry_by_media(user.id, &item.provider, &item.external_id)
@@ -196,6 +206,7 @@ pub async fn get_media_detail(
                     flash_message,
                     from_cache,
                     fallback_notice,
+                    mal_id,
                 }
                 .render()
                 .unwrap_or_else(|e| {
@@ -222,6 +233,7 @@ pub async fn get_media_drawer_content(
         Some((item, fallback)) => {
             let from_cache = fallback.is_from_cache();
             let fallback_notice = fallback.notice().to_string();
+            let mal_id = item.mal_id;
             let tracking = state
                 .tracking
                 .find_entry_by_media(user.id, &provider, &external_id)
@@ -277,6 +289,7 @@ pub async fn get_media_drawer_content(
                     status_display,
                     from_cache,
                     fallback_notice,
+                    mal_id,
                 }
                 .render()
                 .unwrap_or_else(|e| {
@@ -312,6 +325,44 @@ pub struct SetWatchedForm {
     pub watched: bool,
 }
 
+/// Разрешён ли клиентский `mal_id` для этого провайдера.
+fn query_mal_id_allowed(provider: &str) -> bool {
+    matches!(provider, "mal" | "shikimori" | "anilist")
+}
+
+/// Приоритет: явный query `mal_id` (только для доверенных провайдеров)
+/// выигрывает у значения, выведенного из БД/`external_id`.
+fn pick_mal_id(query_mal_id: Option<i64>, provider: &str, stored: Option<i64>) -> Option<i64> {
+    if query_mal_id_allowed(provider)
+        && let Some(id) = query_mal_id
+    {
+        return Some(id);
+    }
+    stored
+}
+
+/// Определить MAL id для эпизодов аниме.
+async fn resolve_mal_id(
+    query_mal_id: Option<i64>,
+    provider: &str,
+    external_id: &str,
+    db: &sqlx::PgPool,
+) -> Option<i64> {
+    let stored = match provider {
+        "mal" => external_id.parse::<i64>().ok(),
+        "shikimori" | "anilist" => {
+            crate::services::episodes::lookup_mal_id(db, provider, external_id)
+                .await
+                .unwrap_or_else(|e| {
+                    tracing::warn!(provider, external_id, error = %e, "lookup_mal_id failed");
+                    None
+                })
+        }
+        _ => None,
+    };
+    pick_mal_id(query_mal_id, provider, stored)
+}
+
 /// Lazy-loaded endpoint for the drawer's "Episodes" section.
 /// If episodes aren't in the DB yet (e.g. background fetch from
 /// post_add_to_tracking hasn't completed), trigger a synchronous
@@ -327,22 +378,11 @@ pub async fn get_episodes(
     user: CurrentUser,
     State(state): State<AppState>,
     Path((provider, external_id)): Path<(String, String)>,
+    Query(query): Query<EpisodesQuery>,
 ) -> impl IntoResponse {
     // Resolve the MAL id (episode key) for this anime.
-    let mal_id: Option<i64> = match provider.as_str() {
-        "mal" => external_id.parse::<i64>().ok(),
-        "shikimori" => {
-            match crate::services::episodes::lookup_mal_id(&state.db, &provider, &external_id).await
-            {
-                Ok(id) => id,
-                Err(e) => {
-                    tracing::warn!(provider, external_id, error = %e, "lookup_mal_id failed");
-                    None
-                }
-            }
-        }
-        _ => None,
-    };
+    let mal_id: Option<i64> =
+        resolve_mal_id(query.mal_id, &provider, &external_id, &state.db).await;
 
     // Try DB first (episodes are stored under provider="mal" keyed by mal_id).
     let mut existing = Vec::new();
@@ -871,7 +911,35 @@ pub async fn set_chapter_read(
 
 #[cfg(test)]
 mod tests {
-    use super::Fallback;
+    use super::*;
+
+    #[test]
+    fn query_mal_id_allowed_only_anime_providers() {
+        assert!(query_mal_id_allowed("mal"));
+        assert!(query_mal_id_allowed("shikimori"));
+        assert!(query_mal_id_allowed("anilist"));
+        assert!(!query_mal_id_allowed("tmdb"));
+        assert!(!query_mal_id_allowed("manual"));
+        assert!(!query_mal_id_allowed("mangaupdates"));
+    }
+
+    #[test]
+    fn pick_mal_id_query_wins_for_allowed_provider() {
+        assert_eq!(pick_mal_id(Some(42), "anilist", None), Some(42));
+        assert_eq!(pick_mal_id(Some(42), "shikimori", Some(7)), Some(42));
+    }
+
+    #[test]
+    fn pick_mal_id_ignores_query_for_untrusted_provider() {
+        assert_eq!(pick_mal_id(Some(42), "tmdb", Some(7)), Some(7));
+        assert_eq!(pick_mal_id(Some(42), "tmdb", None), None);
+    }
+
+    #[test]
+    fn pick_mal_id_falls_back_to_stored() {
+        assert_eq!(pick_mal_id(None, "anilist", Some(9)), Some(9));
+        assert_eq!(pick_mal_id(None, "tmdb", None), None);
+    }
 
     #[test]
     fn fresh_is_not_from_cache_and_has_no_notice() {

@@ -99,6 +99,10 @@ pub struct CreateMediaItem {
     pub runtime_minutes: Option<i32>,
     #[serde(default)]
     pub playtime_hours: Option<i32>,
+    /// Число сезонов (TMDB). Транзиентное поле для карточки/drawer,
+    /// в БД не хранится — приходит только из живого fetch.
+    #[serde(default)]
+    pub seasons: Option<i32>,
     #[serde(default)]
     pub year: Option<i16>,
     #[serde(default)]
@@ -310,6 +314,7 @@ impl From<MediaItem> for CreateMediaItem {
             title_russian: m.title_russian,
             poster_url: m.poster_url,
             episodes: m.episodes,
+            seasons: None,
             description: m.description,
             status: m.status,
             score: m.score,

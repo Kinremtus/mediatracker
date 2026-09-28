@@ -544,6 +544,7 @@ pub async fn post_add_to_tracking(
         title_russian: form.title_russian,
         poster_url: form.poster_url,
         episodes: form.episodes,
+        seasons: None,
         description: form.description,
         status: form.status,
         score: form.score,
