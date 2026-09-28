@@ -97,6 +97,8 @@ struct ManualFormTemplate {
     media_types: Vec<MediaTypeItem>,
     statuses: Vec<StatusItem>,
     flash_message: String,
+    metric_fields: &'static [ManualMetricField],
+    media_type_default: String,
 }
 
 #[derive(Deserialize)]
@@ -146,6 +148,69 @@ const MANUAL_MEDIA_TYPES: &[&str] = &[
 
 /// Статусы трекинга (migrations/004_status_rename.sql).
 const MANUAL_STATUSES: &[&str] = &["in_progress", "completed", "planned", "dropped", "paused"];
+
+/// Поле метрики ручной формы: имя input'а, подпись и типы медиа,
+/// для которых метрика имеет смысл.
+pub struct ManualMetricField {
+    pub name: &'static str,
+    pub label: &'static str,
+    pub types: &'static [&'static str],
+}
+
+impl ManualMetricField {
+    /// JS-выражение для Alpine `x-show` (список типов в одинарных кавычках).
+    pub fn alpine_show(&self) -> String {
+        let list = self
+            .types
+            .iter()
+            .map(|t| format!("'{t}'"))
+            .collect::<Vec<_>>()
+            .join(",");
+        format!("[{list}].includes(mediaType)")
+    }
+}
+
+/// Метрики ручного добавления и типы медиа, к которым они применимы.
+pub const MANUAL_METRIC_FIELDS: &[ManualMetricField] = &[
+    ManualMetricField {
+        name: "episodes",
+        label: "Эпизоды",
+        types: &["anime", "series", "cartoons", "animated-movies"],
+    },
+    ManualMetricField {
+        name: "chapters",
+        label: "Главы",
+        types: &["manga", "manhwa", "manhua", "novel", "comic", "other-comics"],
+    },
+    ManualMetricField {
+        name: "volumes",
+        label: "Тома",
+        types: &["manga", "manhwa", "manhua", "novel", "comic", "other-comics"],
+    },
+    ManualMetricField {
+        name: "pages",
+        label: "Страницы",
+        types: &["book"],
+    },
+    ManualMetricField {
+        name: "runtime_minutes",
+        label: "Длительность, мин",
+        types: &["movie", "dramas"],
+    },
+    ManualMetricField {
+        name: "playtime_hours",
+        label: "Время игры, ч",
+        types: &["game"],
+    },
+];
+
+/// Применима ли метрика `metric` к типу медиа `media_type`.
+fn manual_metric_relevant(media_type: &str, metric: &str) -> bool {
+    MANUAL_METRIC_FIELDS
+        .iter()
+        .find(|f| f.name == metric)
+        .is_some_and(|f| f.types.contains(&media_type))
+}
 
 fn manual_flash(flash: Option<&str>) -> String {
     match flash {
@@ -237,7 +302,7 @@ pub async fn get_manual_form(
     Query(params): Query<ManualFormQuery>,
 ) -> Response {
     let stats = get_sidebar_stats(&state, &user).await;
-    let media_types = get_all_media_types()
+    let media_types: Vec<MediaTypeItem> = get_all_media_types()
         .into_iter()
         .map(|(k, i, l)| MediaTypeItem {
             key: k.to_string(),
@@ -245,6 +310,10 @@ pub async fn get_manual_form(
             label: l.to_string(),
         })
         .collect();
+    let media_type_default = media_types
+        .first()
+        .map(|t| t.key.clone())
+        .unwrap_or_default();
     let statuses = MANUAL_STATUSES
         .iter()
         .map(|k| StatusItem {
@@ -260,6 +329,8 @@ pub async fn get_manual_form(
         active_page: "tracking".to_string(),
         media_types,
         statuses,
+        metric_fields: MANUAL_METRIC_FIELDS,
+        media_type_default,
         flash_message: manual_flash(params.flash.as_deref()),
     }
     .render()
@@ -297,6 +368,28 @@ pub async fn post_manual_add(
     }
 
     let external_id = Uuid::new_v4().to_string();
+
+    // Оставляем только метрики, релевантные выбранному типу:
+    // остальные обнуляем, чтобы в БД не оседали чужие поля.
+    let episodes = form
+        .episodes
+        .filter(|_| manual_metric_relevant(&media_type, "episodes"));
+    let chapters = form
+        .chapters
+        .filter(|_| manual_metric_relevant(&media_type, "chapters"));
+    let volumes = form
+        .volumes
+        .filter(|_| manual_metric_relevant(&media_type, "volumes"));
+    let pages = form
+        .pages
+        .filter(|_| manual_metric_relevant(&media_type, "pages"));
+    let runtime_minutes = form
+        .runtime_minutes
+        .filter(|_| manual_metric_relevant(&media_type, "runtime_minutes"));
+    let playtime_hours = form
+        .playtime_hours
+        .filter(|_| manual_metric_relevant(&media_type, "playtime_hours"));
+
     let media = crate::models::media_item::CreateMediaItem {
         provider: "manual".to_string(),
         external_id: external_id.clone(),
@@ -305,12 +398,12 @@ pub async fn post_manual_add(
         description: form.description.filter(|s| !s.trim().is_empty()),
         poster_url: form.poster_url.filter(|s| !s.trim().is_empty()),
         year: form.year,
-        episodes: form.episodes,
-        chapters: form.chapters,
-        volumes: form.volumes,
-        pages: form.pages,
-        runtime_minutes: form.runtime_minutes,
-        playtime_hours: form.playtime_hours,
+        episodes,
+        chapters,
+        volumes,
+        pages,
+        runtime_minutes,
+        playtime_hours,
         ..Default::default()
     };
 

@@ -257,3 +257,84 @@ async fn manual_provider_is_unknown_to_dispatch() {
         "manual must stay unknown to Provider::from_name"
     );
 }
+
+#[tokio::test]
+async fn post_manual_add_clears_irrelevant_metrics() {
+    let ctx = common::TestContext::new().await;
+    let user_id = seed_user(&ctx.pool, "manual_clear_metrics_user").await;
+
+    let app = Router::new()
+        .route(
+            "/tracking/manual",
+            get(tracking::get_manual_form).post(tracking::post_manual_add),
+        )
+        .layer(Extension(current_user(user_id)))
+        .with_state(ctx.state.clone());
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/tracking/manual")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "title=Movie+With+Stray+Chapters&media_type=movie&tracking_status=planned&chapters=5&runtime_minutes=120",
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), StatusCode::SEE_OTHER);
+
+    let (chapters, runtime_minutes): (Option<i32>, Option<i32>) = sqlx::query_as(
+        "SELECT chapters, runtime_minutes FROM media_items WHERE title = $1",
+    )
+    .bind("Movie With Stray Chapters")
+    .fetch_one(&ctx.pool)
+    .await
+    .expect("manual movie row must exist");
+
+    assert_eq!(chapters, None, "chapters must be cleared for a movie");
+    assert_eq!(runtime_minutes, Some(120), "runtime_minutes must persist");
+}
+
+#[tokio::test]
+async fn post_manual_add_keeps_relevant_metrics() {
+    let ctx = common::TestContext::new().await;
+    let user_id = seed_user(&ctx.pool, "manual_keep_metrics_user").await;
+
+    let app = Router::new()
+        .route(
+            "/tracking/manual",
+            get(tracking::get_manual_form).post(tracking::post_manual_add),
+        )
+        .layer(Extension(current_user(user_id)))
+        .with_state(ctx.state.clone());
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/tracking/manual")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "title=Kept+Manga+Metrics&media_type=manga&tracking_status=planned&chapters=12&volumes=3",
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), StatusCode::SEE_OTHER);
+
+    let (chapters, volumes): (Option<i32>, Option<i32>) =
+        sqlx::query_as("SELECT chapters, volumes FROM media_items WHERE title = $1")
+            .bind("Kept Manga Metrics")
+            .fetch_one(&ctx.pool)
+            .await
+            .expect("manual manga row must exist");
+
+    assert_eq!(chapters, Some(12), "chapters must persist for manga");
+    assert_eq!(volumes, Some(3), "volumes must persist for manga");
+}

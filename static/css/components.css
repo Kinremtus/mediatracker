@@ -2716,6 +2716,54 @@ body.drawer-open {
     color: var(--destructive-foreground);
 }
 
+/* Manual Add Form */
+.manual-form-field {
+    margin-bottom: 1rem;
+}
+
+.manual-form-label {
+    display: block;
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+}
+
+.manual-form-input,
+.manual-form-select,
+.manual-form-textarea {
+    width: 100%;
+    height: 40px;
+    padding: 0 0.75rem;
+    background: var(--secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--foreground);
+    font-size: 14px;
+}
+
+.manual-form-input:focus,
+.manual-form-select:focus,
+.manual-form-textarea:focus {
+    outline: none;
+    border-color: var(--ring);
+}
+
+.manual-form-textarea {
+    height: auto;
+    padding: 0.5rem 0.75rem;
+    resize: vertical;
+}
+
+.manual-form-input {
+    -moz-appearance: textfield;
+}
+
+.manual-form-input::-webkit-outer-spin-button,
+.manual-form-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
 .btn-danger {
     height: 40px;
     padding: 0 1.25rem;
