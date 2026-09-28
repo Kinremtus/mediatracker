@@ -1,8 +1,8 @@
-# Runbook: local PC SOPS + age setup
+# Runbook: local PC SOPS + age setup (private key backup)
 
-Optional local setup to decrypt/inspect `k8s/secrets/*.enc.yaml` on the
-development machine (Arch Linux). Encryption is always done on VPS1 -- the local
-`.env` is NOT authoritative.
+The local PC (Arch Linux) is the **backup host for the age private key** and can
+decrypt/inspect `k8s/secrets/*.enc.yaml` locally. It is NOT the encryption
+source: encryption always runs on VPS1 from its `.env`.
 
 ## 1. Install the tools (Arch Linux)
 
@@ -13,15 +13,16 @@ sudo pacman -S --needed sops age
 sops --version
 ```
 
-## 2. Copy the private key from VPS1
+## 2. Copy the private key from VPS1 (this IS the backup) (this IS the backup)
 
-`ssh` needs `-o ClearAllForwardings=yes` here because of a broken `LocalForward`
-in the local SSH config:
+`ssh`/`scp` need `-o ClearAllForwardings=yes` here because of a broken
+`LocalForward` in the local SSH config:
 
 ```bash
-ssh -o ClearAllForwardings=yes VPS1 'cat ~/.config/sops/age/keys.txt' > /tmp/age-keys.txt
-mkdir -p ~/.config/sops/age && mv /tmp/age-keys.txt ~/.config/sops/age/keys.txt
+mkdir -p ~/.config/sops/age
+scp -o ClearAllForwardings=yes VPS1:~/.config/sops/age/keys.txt ~/.config/sops/age/keys.txt
 chmod 600 ~/.config/sops/age/keys.txt
+age-keygen -y ~/.config/sops/age/keys.txt   # must match the age1... in .sops.yaml
 ```
 
 ## 3. Verify decryption
@@ -35,5 +36,9 @@ sops -d k8s/secrets/app-secret.enc.yaml | head   # must print a Kubernetes Secre
 
 - The local `.env` is not authoritative. Always encrypt from the VPS1 `.env`;
   the local key is only for debugging/reading.
+- The key file is plaintext: never commit it, never put it in an unencrypted
+  cloud-synced folder, keep `chmod 600` on both hosts.
+- Consider a third copy in a password manager -- losing both VPS1 and the PC
+  means losing the secrets.
 - On a machine where the plain `kubectl` already sees a kubeconfig,
   `scripts/update-secrets.sh` works as-is.

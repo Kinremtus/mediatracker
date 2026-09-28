@@ -48,7 +48,8 @@ chmod 600 ~/.config/sops/age/keys.txt
 # 2. copy that "age1..." public key into .sops.yaml
 #    (replace the age1REPLACE_WITH_YOUR_AGE_PUBLIC_KEY placeholder)
 
-# 3. back the private key up OFF-SITE. If it is lost, the encrypted files
+# 3. back the private key up by copying it to the local PC (see
+#    docs/runbooks/sops-secrets-local.md). If it is lost, the encrypted files
 #    cannot be recovered -- not even by the author.
 ```
 
@@ -84,7 +85,7 @@ scripts/update-secrets.sh
 - [`docs/runbooks/sops-secrets-bootstrap.md`](../../docs/runbooks/sops-secrets-bootstrap.md) --
   one-time activation on VPS1 (install tools, generate key, encrypt, commit).
 - [`docs/runbooks/sops-secrets-local.md`](../../docs/runbooks/sops-secrets-local.md) --
-  optional local PC setup (decrypt/inspect).
+  local PC setup: private key backup + decrypt/inspect.
 
 ## Rules
 

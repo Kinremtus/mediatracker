@@ -35,10 +35,28 @@ chmod 600 ~/.config/sops/age/keys.txt
 age-keygen -y ~/.config/sops/age/keys.txt   # prints the public age1... key
 ```
 
-## 4. Back the private key up OFF-SITE IMMEDIATELY
+## 4. Back the private key up IMMEDIATELY (copy to the local PC)
 
-Store the private key in a password manager / encrypted archive on a DIFFERENT
-host. Without it `*.enc.yaml` cannot be recovered. Also record the public key.
+The private key is the ONLY way to decrypt `*.enc.yaml`. If it is lost, the
+secrets are lost forever. The backup host is the local PC (Arch Linux); the
+same copy doubles as the local decryption key -- full setup in
+`sops-secrets-local.md`.
+
+Run this ON THE LOCAL PC right after step 3:
+
+```bash
+mkdir -p ~/.config/sops/age
+scp -o ClearAllForwardings=yes VPS1:~/.config/sops/age/keys.txt ~/.config/sops/age/keys.txt
+chmod 600 ~/.config/sops/age/keys.txt
+age-keygen -y ~/.config/sops/age/keys.txt   # must print the same age1... as step 3
+```
+
+Rules:
+
+- The key file is plaintext. Never commit it, never put it in an unencrypted
+  cloud-synced folder, keep `chmod 600` on both hosts.
+- Consider a third copy in a password manager: with only VPS1 + PC, losing both
+  machines loses the secrets.
 
 ## 5. Put the public key into `.sops.yaml`
 
