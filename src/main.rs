@@ -148,6 +148,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             get(tracking::get_tracking_list).post(tracking::post_add_to_tracking),
         )
         .route(
+            "/tracking/manual",
+            get(tracking::get_manual_form).post(tracking::post_manual_add),
+        )
+        .route(
             "/tracking/{id}",
             axum::routing::post(tracking::post_update_tracking),
         )

@@ -5,6 +5,8 @@
 {% block content %}
 <h1 class="content-title">{{ status_label }}</h1>
 
+<a href="/tracking/manual" class="btn btn-primary" style="margin-bottom: 1rem; display: inline-block;">+ Добавить вручную</a>
+
 <div class="filter-bar" x-data="{ typeOpen: false, statusOpen: false }">
     <!-- Media Type dropdown -->
     <div class="filter-dropdown" @click.outside="typeOpen = false">

@@ -1,7 +1,7 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::models::media_item::CreateMediaItem;
+use crate::models::media_item::{CreateMediaItem, MediaItem};
 use crate::models::tracking_entry::{TrackingEntry, TrackingEntryWithMedia, UpdateTracking};
 use crate::services::tmdb_episodes;
 
@@ -303,6 +303,49 @@ impl TrackingService {
              WHERE te.user_id = $1 AND mi.provider = $2 AND mi.external_id = $3",
         )
         .bind(user_id)
+        .bind(provider)
+        .bind(external_id)
+        .fetch_optional(&self.db)
+        .await?;
+        Ok(row)
+    }
+
+    /// Загрузить локальную строку `media_items` по `(provider, external_id)`.
+    ///
+    /// Это источник истины для карточки: читаем её первой, чтобы тайтл
+    /// рендерился, даже если провайдер удалил запись (этап 4), и чтобы
+    /// рендерились `provider = "manual"` строки, у которых провайдера нет
+    /// вообще.
+    ///
+    /// SELECT алиасит `id`/`created_at`/`updated_at` под имена, которые ждут
+    /// `#[sqlx(rename = ...)]` в `MediaItem`, и кастит `score` в
+    /// `double precision` (иначе NUMERIC -> f64 требует bigdecimal — см.
+    /// `update_entry`).
+    pub async fn find_media_item(
+        &self,
+        provider: &str,
+        external_id: &str,
+    ) -> Result<Option<MediaItem>, anyhow::Error> {
+        let row = sqlx::query_as::<_, MediaItem>(
+            r#"
+            SELECT
+                id                      AS media_id,
+                provider, external_id, media_type, title,
+                title_english, title_native, title_russian, poster_url, color_hex,
+                episodes, description, status,
+                score::double precision AS score,
+                created_at              AS media_created_at,
+                updated_at              AS media_updated_at,
+                format_type, details,
+                chapters, volumes, pages, runtime_minutes, playtime_hours,
+                year, aired_from, aired_to, premiered_season, premiered_year, broadcast,
+                completed, licensed, source, duration, rating, rating_votes,
+                authors, artists, studios, producers, licensors, publishers,
+                serialized_in, networks, platforms, genres, themes, demographics, categories
+            FROM media_items
+            WHERE provider = $1 AND external_id = $2
+            "#,
+        )
         .bind(provider)
         .bind(external_id)
         .fetch_optional(&self.db)

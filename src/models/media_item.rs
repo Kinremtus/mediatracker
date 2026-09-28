@@ -292,6 +292,67 @@ impl MediaItem {
     }
 }
 
+impl From<MediaItem> for CreateMediaItem {
+    /// Переиспользовать сохранённую строку `media_items` как DTO карточки.
+    ///
+    /// Всё, что рендерит карточка, приходит из БД. Поля, которые может дать
+    /// только живой fetch (`comparison_key`, `is_tracked`), сбрасываются;
+    /// `mal_id`/`shikimori_id` в `MediaItem` отсутствуют и у manual-строк
+    /// всегда пусты.
+    fn from(m: MediaItem) -> Self {
+        Self {
+            provider: m.provider,
+            external_id: m.external_id,
+            media_type: m.media_type,
+            title: m.title,
+            title_english: m.title_english,
+            title_native: m.title_native,
+            title_russian: m.title_russian,
+            poster_url: m.poster_url,
+            episodes: m.episodes,
+            description: m.description,
+            status: m.status,
+            score: m.score,
+            is_tracked: false,
+            mal_id: None,
+            shikimori_id: None,
+            comparison_key: None,
+            format_type: m.format_type,
+            details: Some(m.details),
+            chapters: m.chapters,
+            volumes: m.volumes,
+            pages: m.pages,
+            runtime_minutes: m.runtime_minutes,
+            playtime_hours: m.playtime_hours,
+            year: m.year,
+            aired_from: m.aired_from,
+            aired_to: m.aired_to,
+            premiered_season: m.premiered_season,
+            premiered_year: m.premiered_year,
+            broadcast: m.broadcast,
+            completed: m.completed,
+            licensed: m.licensed,
+            source: m.source,
+            duration: m.duration,
+            rating: m.rating,
+            rating_votes: m.rating_votes,
+            authors: m.authors,
+            artists: m.artists,
+            studios: m.studios,
+            producers: m.producers,
+            licensors: m.licensors,
+            publishers: m.publishers,
+            serialized_in: m.serialized_in,
+            networks: m.networks,
+            platforms: m.platforms,
+            genres: m.genres,
+            themes: m.themes,
+            demographics: m.demographics,
+            categories: m.categories,
+        }
+    }
+}
+
 impl MediaItemSlim {
     pub fn score_class(&self) -> &'static str {
         match self.score {
@@ -483,5 +544,86 @@ impl CreateMediaItem {
 
     pub fn status_class(&self) -> &'static str {
         status_release_class(self.status.as_deref())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample() -> MediaItem {
+        MediaItem {
+            id: Uuid::nil(),
+            provider: "manual".to_string(),
+            external_id: "11111111-1111-1111-1111-111111111111".to_string(),
+            media_type: "movie".to_string(),
+            title: "Handmade".to_string(),
+            title_english: Some("Handmade EN".to_string()),
+            title_native: None,
+            title_russian: Some("Ручное".to_string()),
+            poster_url: Some("https://example.com/p.jpg".to_string()),
+            color_hex: Some("#123456".to_string()),
+            episodes: None,
+            description: Some("desc".to_string()),
+            status: Some("Released".to_string()),
+            score: Some(7.5),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            format_type: Some("Movie".to_string()),
+            details: serde_json::json!({}),
+            chapters: None,
+            volumes: None,
+            pages: None,
+            runtime_minutes: Some(120),
+            playtime_hours: None,
+            year: Some(1999),
+            aired_from: None,
+            aired_to: None,
+            premiered_season: None,
+            premiered_year: None,
+            broadcast: None,
+            completed: None,
+            licensed: None,
+            source: None,
+            duration: None,
+            rating: None,
+            rating_votes: None,
+            authors: vec![],
+            artists: vec![],
+            studios: vec!["Studio".to_string()],
+            producers: vec![],
+            licensors: vec![],
+            publishers: vec![],
+            serialized_in: vec![],
+            networks: vec![],
+            platforms: vec![],
+            genres: vec!["Drama".to_string()],
+            themes: vec![],
+            demographics: vec![],
+            categories: vec![],
+        }
+    }
+
+    #[test]
+    fn media_item_converts_to_card_dto() {
+        let c: CreateMediaItem = sample().into();
+        assert_eq!(c.provider, "manual");
+        assert_eq!(c.media_type, "movie");
+        assert_eq!(c.title, "Handmade");
+        assert_eq!(c.title_english.as_deref(), Some("Handmade EN"));
+        assert_eq!(c.title_russian.as_deref(), Some("Ручное"));
+        assert_eq!(c.poster_url.as_deref(), Some("https://example.com/p.jpg"));
+        assert_eq!(c.year, Some(1999));
+        assert_eq!(c.runtime_minutes, Some(120));
+        assert_eq!(c.score, Some(7.5));
+        assert_eq!(c.studios, vec!["Studio".to_string()]);
+        assert_eq!(c.genres, vec!["Drama".to_string()]);
+        // Upstream-only поля сбрасываются.
+        assert!(!c.is_tracked);
+        assert_eq!(c.comparison_key, None);
+        assert_eq!(c.mal_id, None);
+        assert_eq!(c.shikimori_id, None);
+        // details переносится.
+        assert!(c.details.is_some());
     }
 }
