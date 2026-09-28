@@ -31,10 +31,10 @@ struct TrackingListTemplate {
     current_type_label: String,
 }
 
-struct MediaTypeItem {
-    key: String,
-    icon: String,
-    label: String,
+pub(crate) struct MediaTypeItem {
+    pub(crate) key: String,
+    pub(crate) icon: String,
+    pub(crate) label: String,
 }
 
 struct StatusItem {
@@ -42,23 +42,46 @@ struct StatusItem {
     label: String,
 }
 
-fn get_all_media_types() -> Vec<(&'static str, &'static str, &'static str)> {
+/// Canonical media-type registry: `(key, icon, label)`.
+/// Single source of truth for the search page, the tracking list, the manual
+/// form and manual-add validation.
+pub(crate) fn get_all_media_types() -> Vec<(&'static str, &'static str, &'static str)> {
     vec![
         ("anime", "▶", "Аниме"),
         ("manga", "📚", "Манга"),
         ("manhwa", "📚", "Манхва"),
         ("manhua", "📚", "Маньхуа"),
-        ("novel", "", "Новеллы"),
+        ("novel", "📝", "Новеллы"),
         ("comic", "🦸", "Комиксы"),
         ("other-comics", "📚", "Другие комиксы"),
-        ("movie", "", "Фильмы"),
-        ("series", "", "Сериалы"),
+        ("movie", "🎥", "Фильмы"),
+        ("series", "📺", "Сериалы"),
         ("dramas", "🎬", "Дорамы"),
         ("cartoons", "📺", "Мультсериалы"),
-        ("animated-movies", "", "Мультфильмы"),
-        ("game", "", "Игры"),
+        ("animated-movies", "🎞", "Мультфильмы"),
+        ("game", "🎮", "Игры"),
         ("book", "📖", "Книги"),
     ]
+}
+
+/// Media types accepted by `post_manual_add` — derived from the canonical list.
+pub(crate) fn manual_media_types() -> Vec<&'static str> {
+    get_all_media_types()
+        .into_iter()
+        .map(|(k, _, _)| k)
+        .collect()
+}
+
+/// Canonical list rendered as template items (search page + manual form).
+pub(crate) fn all_media_type_items() -> Vec<MediaTypeItem> {
+    get_all_media_types()
+        .into_iter()
+        .map(|(k, i, l)| MediaTypeItem {
+            key: k.to_string(),
+            icon: i.to_string(),
+            label: l.to_string(),
+        })
+        .collect()
 }
 
 fn get_status_label(status: &str) -> String {
@@ -127,25 +150,6 @@ pub struct ManualAddForm {
     pub playtime_hours: Option<i32>,
 }
 
-/// Значения, разрешённые CHECK-констрейнтом `media_items.media_type`
-/// (migrations/022_add_comic_media_type.sql).
-const MANUAL_MEDIA_TYPES: &[&str] = &[
-    "anime",
-    "manga",
-    "manhwa",
-    "manhua",
-    "novel",
-    "movie",
-    "series",
-    "game",
-    "book",
-    "dramas",
-    "cartoons",
-    "animated-movies",
-    "other-comics",
-    "comic",
-];
-
 /// Статусы трекинга (migrations/004_status_rename.sql).
 const MANUAL_STATUSES: &[&str] = &["in_progress", "completed", "planned", "dropped", "paused"];
 
@@ -154,6 +158,8 @@ const MANUAL_STATUSES: &[&str] = &["in_progress", "completed", "planned", "dropp
 pub struct ManualMetricField {
     pub name: &'static str,
     pub label: &'static str,
+    /// Подпись для media_type == "comic" («Выпуски» вместо «Главы»).
+    pub label_comic: Option<&'static str>,
     pub types: &'static [&'static str],
 }
 
@@ -175,31 +181,51 @@ pub const MANUAL_METRIC_FIELDS: &[ManualMetricField] = &[
     ManualMetricField {
         name: "episodes",
         label: "Эпизоды",
+        label_comic: None,
         types: &["anime", "series", "cartoons", "animated-movies"],
     },
     ManualMetricField {
         name: "chapters",
         label: "Главы",
-        types: &["manga", "manhwa", "manhua", "novel", "comic", "other-comics"],
+        label_comic: Some("Выпуски"),
+        types: &[
+            "manga",
+            "manhwa",
+            "manhua",
+            "novel",
+            "comic",
+            "other-comics",
+        ],
     },
     ManualMetricField {
         name: "volumes",
         label: "Тома",
-        types: &["manga", "manhwa", "manhua", "novel", "comic", "other-comics"],
+        label_comic: None,
+        types: &[
+            "manga",
+            "manhwa",
+            "manhua",
+            "novel",
+            "comic",
+            "other-comics",
+        ],
     },
     ManualMetricField {
         name: "pages",
         label: "Страницы",
+        label_comic: None,
         types: &["book"],
     },
     ManualMetricField {
         name: "runtime_minutes",
         label: "Длительность, мин",
+        label_comic: None,
         types: &["movie", "dramas"],
     },
     ManualMetricField {
         name: "playtime_hours",
         label: "Время игры, ч",
+        label_comic: None,
         types: &["game"],
     },
 ];
@@ -208,8 +234,8 @@ pub const MANUAL_METRIC_FIELDS: &[ManualMetricField] = &[
 fn manual_metric_relevant(media_type: &str, metric: &str) -> bool {
     MANUAL_METRIC_FIELDS
         .iter()
-        .find(|f| f.name == metric)
-        .is_some_and(|f| f.types.contains(&media_type))
+        .filter(|f| f.name == metric)
+        .any(|f| f.types.contains(&media_type))
 }
 
 fn manual_flash(flash: Option<&str>) -> String {
@@ -251,14 +277,7 @@ pub async fn get_tracking_list(
             .map(|(_, _, l)| l.to_string())
             .unwrap_or_default()
     };
-    let media_types: Vec<MediaTypeItem> = all_types
-        .into_iter()
-        .map(|(k, i, l)| MediaTypeItem {
-            key: k.to_string(),
-            icon: i.to_string(),
-            label: l.to_string(),
-        })
-        .collect();
+    let media_types = all_media_type_items();
     let statuses: Vec<StatusItem> = vec![
         ("", "Все списки"),
         ("in_progress", "В процессе"),
@@ -302,14 +321,7 @@ pub async fn get_manual_form(
     Query(params): Query<ManualFormQuery>,
 ) -> Response {
     let stats = get_sidebar_stats(&state, &user).await;
-    let media_types: Vec<MediaTypeItem> = get_all_media_types()
-        .into_iter()
-        .map(|(k, i, l)| MediaTypeItem {
-            key: k.to_string(),
-            icon: i.to_string(),
-            label: l.to_string(),
-        })
-        .collect();
+    let media_types = all_media_type_items();
     let media_type_default = media_types
         .first()
         .map(|t| t.key.clone())
@@ -356,7 +368,7 @@ pub async fn post_manual_add(
     };
 
     if title.is_empty()
-        || !MANUAL_MEDIA_TYPES.contains(&media_type.as_str())
+        || !manual_media_types().contains(&media_type.as_str())
         || !MANUAL_STATUSES.contains(&status.as_str())
     {
         tracing::warn!(
@@ -365,6 +377,19 @@ pub async fn post_manual_add(
             "manual add rejected"
         );
         return Redirect::to("/tracking/manual?flash=error").into_response();
+    }
+
+    match state.tracking.find_duplicate(&media_type, &title).await {
+        Ok(Some((provider, external_id))) => {
+            tracing::info!(provider, external_id, "manual add blocked: duplicate");
+            return Redirect::to(&format!("/media/{provider}/{external_id}?flash=duplicate"))
+                .into_response();
+        }
+        Ok(None) => {}
+        Err(e) => {
+            tracing::error!(error = %e, "manual duplicate lookup failed");
+            return Redirect::to("/tracking/manual?flash=error").into_response();
+        }
     }
 
     let external_id = Uuid::new_v4().to_string();
@@ -914,4 +939,36 @@ pub async fn htmx_tracking_partial(
         }),
     )
     .into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn canonical_media_types_have_fourteen_entries() {
+        assert_eq!(get_all_media_types().len(), 14);
+        assert_eq!(manual_media_types().len(), 14);
+        assert!(manual_media_types().contains(&"comic"));
+        assert!(manual_media_types().contains(&"animated-movies"));
+    }
+
+    #[test]
+    fn canonical_items_match_manual_types() {
+        let keys: Vec<&str> = get_all_media_types()
+            .into_iter()
+            .map(|(k, _, _)| k)
+            .collect();
+        assert_eq!(keys, manual_media_types());
+    }
+
+    #[test]
+    fn chapters_metric_has_comic_label() {
+        let chapters = MANUAL_METRIC_FIELDS
+            .iter()
+            .find(|f| f.name == "chapters")
+            .expect("chapters field");
+        assert_eq!(chapters.label, "Главы");
+        assert_eq!(chapters.label_comic, Some("Выпуски"));
+    }
 }

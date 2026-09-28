@@ -14,7 +14,7 @@ mod common;
 
 use axum::{
     Extension, Router,
-    body::Body,
+    body::{Body, to_bytes},
     http::{Request, StatusCode},
     routing::get,
 };
@@ -48,6 +48,43 @@ async fn search_page_renders_without_query_or_providers() {
         .with_state(ctx.state.clone());
 
     assert_eq!(get_page(app, "/search").await, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn search_page_renders_all_fourteen_type_buttons() {
+    let ctx = common::TestContext::new().await;
+    let app = Router::new()
+        .route("/search", get(search::get_search))
+        .layer(Extension(current_user()))
+        .with_state(ctx.state.clone());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/search?type=anime")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let bytes = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("read body");
+    let html = String::from_utf8(bytes.to_vec()).expect("utf8");
+
+    assert!(
+        html.contains("Мультфильмы"),
+        "animated-movies label must render"
+    );
+    assert!(
+        html.contains("type=animated-movies"),
+        "animated-movies link must render"
+    );
+    assert!(html.contains("🎞"), "animated-movies icon must render");
+    assert!(html.contains("🎮"), "game icon must render");
 }
 
 #[tokio::test]

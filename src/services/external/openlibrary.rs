@@ -268,8 +268,14 @@ impl OpenLibraryService {
     pub async fn get_details(&self, id: &str) -> Result<CreateMediaItem, anyhow::Error> {
         let url = format!("{}/works/{}.json", BASE_URL, id);
         let resp = self.client.get(&url).send().await?;
-        if !resp.status().is_success() {
-            anyhow::bail!("OpenLibrary details failed: {}", resp.status());
+        let status = resp.status();
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Err(
+                crate::services::external::NotFoundError(format!("openlibrary {id}")).into(),
+            );
+        }
+        if !status.is_success() {
+            anyhow::bail!("OpenLibrary details failed: {}", status);
         }
         let work: OpenLibraryWork = resp.json().await?;
         map_work(id, work)

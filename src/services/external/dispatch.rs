@@ -127,9 +127,10 @@ impl Provider {
         }
     }
 
-    /// Fetch full details. `media_type` is only meaningful for TMDB; the
-    /// other providers ignore it. TMDB call sites pass either the raw
-    /// media type (routes) or their own normalised value (refresh worker).
+    /// Fetch full details. `media_type` is only meaningful for TMDB and
+    /// AniList; the other providers ignore it. TMDB call sites pass either
+    /// the raw media type (routes) or their own normalised value (refresh
+    /// worker).
     pub async fn fetch(
         &self,
         external_id: &str,
@@ -149,7 +150,7 @@ impl Provider {
             Self::GoogleBooks(s) => s.get_details(external_id).await,
             Self::OpenLibrary(s) => s.get_details(external_id).await,
             Self::MangaDex(s) => s.get_details(external_id).await,
-            Self::AniList(s) => s.get_details(external_id).await,
+            Self::AniList(s) => s.get_details(external_id, media_type).await,
             Self::ComicVine(s) => s.get_details(external_id).await,
             Self::Hardcover(s) => s.get_details(external_id).await,
         }

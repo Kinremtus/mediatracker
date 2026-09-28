@@ -31,6 +31,7 @@ fn provider_priority(media_type: &str, provider: &str) -> u8 {
         "anime" => match provider {
             "mal" => 0,
             "shikimori" => 1,
+            "anilist" => 2,
             _ => 10,
         },
         "manga" | "manhwa" | "manhua" | "novel" | "other-comics" => match provider {
@@ -121,7 +122,7 @@ async fn manga_family_search(
         ("mangadex", Box::pin(state.mangadex.search(query))),
         ("mal", Box::pin(state.mal.search_manga(query))),
         ("shikimori", Box::pin(state.shikimori.search_manga(query))),
-        ("anilist", Box::pin(state.anilist.search(query))),
+        ("anilist", Box::pin(state.anilist.search(query, requested))),
     ];
     let winner = first_non_empty(attempts).await;
     deduplicate_by_title(normalize_media_type(winner, requested))
@@ -169,7 +170,20 @@ pub async fn anime(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
         }
     }
 
-    deduplicate_by_title(shiki_items)
+    let merged = deduplicate_by_title(shiki_items);
+    if !merged.is_empty() {
+        return merged;
+    }
+
+    // Lazy last-resort fallback: only queried when Shikimori + MAL both came
+    // back empty. Mirrors the manga-family `first_non_empty` laziness.
+    match state.anilist.search(query, "anime").await {
+        Ok(items) => deduplicate_by_title(normalize_media_type(items, "anime")),
+        Err(e) => {
+            tracing::warn!(provider = "anilist", error = %e, "anime fallback failed");
+            Vec::new()
+        }
+    }
 }
 
 pub async fn manga(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
@@ -492,5 +506,29 @@ mod tests {
         let out = deduplicate_by_title(items);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].provider, "hardcover");
+    }
+
+    #[test]
+    fn provider_priority_anime_order() {
+        assert_eq!(provider_priority("anime", "mal"), 0);
+        assert_eq!(provider_priority("anime", "shikimori"), 1);
+        assert_eq!(provider_priority("anime", "anilist"), 2);
+        assert_eq!(provider_priority("anime", "tmdb"), 10);
+    }
+
+    #[test]
+    fn provider_priority_manga_anilist_is_last() {
+        assert_eq!(provider_priority("manga", "anilist"), 4);
+    }
+
+    #[test]
+    fn deduplicate_prefers_shikimori_over_anilist_for_anime() {
+        let items = vec![
+            item("anilist", "anime", "same"),
+            item("shikimori", "anime", "same"),
+        ];
+        let out = deduplicate_by_title(items);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].provider, "shikimori");
     }
 }

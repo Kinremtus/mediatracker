@@ -406,6 +406,11 @@ impl TmdbService {
             .append_pair("language", "ru-RU");
 
         let response = self.client.get(url.as_str()).send().await?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(
+                crate::services::external::NotFoundError(format!("tmdb {tmdb_type} {id}")).into(),
+            );
+        }
         let r: TmdbDetails = response.json().await?;
         Ok(map_details(r, media_type))
     }

@@ -34,6 +34,11 @@ impl MangaDexService {
 
         let response = self.client.get(&url).send().await?;
         let status = response.status();
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Err(
+                crate::services::external::NotFoundError(format!("mangadex {query}")).into(),
+            );
+        }
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
             anyhow::bail!("MangaDex search failed: {} - {}", status, body);
@@ -88,6 +93,12 @@ impl MangaDexService {
             };
 
             let status = response.status();
+            if status == reqwest::StatusCode::NOT_FOUND {
+                return Err(crate::services::external::NotFoundError(format!(
+                    "mangadex {manga_uuid}"
+                ))
+                .into());
+            }
             if !status.is_success() {
                 let body = response.text().await.unwrap_or_default();
                 anyhow::bail!("MangaDex chapters failed: {} - {}", status, body);
@@ -130,6 +141,11 @@ impl MangaDexService {
 
         let response = self.client.get(&url).send().await?;
         let status = response.status();
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Err(
+                crate::services::external::NotFoundError(format!("mangadex {query}")).into(),
+            );
+        }
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
             anyhow::bail!("MangaDex search failed: {} - {}", status, body);
@@ -156,6 +172,9 @@ impl MangaDexService {
 
         let response = self.client.get(&url).send().await?;
         let status = response.status();
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Err(crate::services::external::NotFoundError(format!("mangadex {id}")).into());
+        }
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
             anyhow::bail!("MangaDex details failed: {} - {}", status, body);

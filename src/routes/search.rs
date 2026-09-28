@@ -29,6 +29,7 @@ struct SearchTemplate {
     active_page: String,
     query: String,
     current_type: String,
+    media_types: Vec<super::tracking::MediaTypeItem>,
     results: Vec<CreateMediaItem>,
     current_status: String,
     flash_message: String,
@@ -77,6 +78,7 @@ pub async fn get_search(
         .to_vec();
 
     let stats = get_sidebar_stats(&state, &user).await;
+    let media_types = super::tracking::all_media_type_items();
 
     let flash_message = params
         .flash
@@ -95,6 +97,7 @@ pub async fn get_search(
         active_page: "search".to_string(),
         query,
         current_type: search_type,
+        media_types,
         results,
         current_status: String::new(),
         flash_message,

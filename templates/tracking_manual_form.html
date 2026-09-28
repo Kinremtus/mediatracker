@@ -54,7 +54,14 @@
             </div>
             {% for f in metric_fields %}
             <div class="manual-form-field" x-show="{{ f.alpine_show()|safe }}">
-                <label class="manual-form-label" for="manual-{{ f.name }}">{{ f.label }}</label>
+                <label class="manual-form-label" for="manual-{{ f.name }}">
+                    {% match f.label_comic %}
+                    {% when Some with (comic_label) %}
+                    <span x-show="mediaType === 'comic'">{{ comic_label }}</span><span x-show="mediaType !== 'comic'">{{ f.label }}</span>
+                    {% when None %}
+                    {{ f.label }}
+                    {% endmatch %}
+                </label>
                 <input class="manual-form-input" type="number" id="manual-{{ f.name }}" name="{{ f.name }}" min="0">
             </div>
             {% endfor %}

@@ -27,20 +27,19 @@ const REFRESH_INTERVAL: Duration = Duration::from_secs(6 * 3600);
 const LOCK_ID: i64 = 42;
 
 #[derive(Debug, Clone, sqlx::FromRow)]
-#[expect(dead_code)]
-struct MediaItemRow {
-    id: Uuid,
-    provider: String,
-    external_id: String,
-    media_type: String,
-    episodes: Option<i32>,
-    chapters: Option<i32>,
-    volumes: Option<i32>,
-    pages: Option<i32>,
-    runtime_minutes: Option<i32>,
-    playtime_hours: Option<i32>,
-    status: Option<String>,
-    score: Option<f64>,
+pub struct MediaItemRow {
+    pub id: Uuid,
+    pub provider: String,
+    pub external_id: String,
+    pub media_type: String,
+    pub episodes: Option<i32>,
+    pub chapters: Option<i32>,
+    pub volumes: Option<i32>,
+    pub pages: Option<i32>,
+    pub runtime_minutes: Option<i32>,
+    pub playtime_hours: Option<i32>,
+    pub status: Option<String>,
+    pub score: Option<f64>,
 }
 
 pub struct RefreshCtx {
@@ -206,12 +205,10 @@ async fn refresh_group(db: &PgPool, items: Vec<MediaItemRow>, provider: Provider
         handles.push(tokio::spawn(async move {
             let _permit = permit;
             tokio::time::sleep(delay).await;
-            // TMDB expects "movie" or "tv"; the other providers ignore it.
-            let fetch_media_type = match media_type.as_str() {
-                "movie" | "dramas" => "movie",
-                _ => "tv",
-            };
-            match provider.fetch(&ext_id, fetch_media_type).await {
+            // TMDB normalizes "movie"/"tv" internally; AniList and the
+            // MAL/Shikimori manga-family split need the real value.
+            let fetch_media_type = media_type.clone();
+            match provider.fetch(&ext_id, &fetch_media_type).await {
                 Ok(details) => match update_item(&db, &item, &details).await {
                     Ok(true) => {
                         updated.fetch_add(1, Ordering::Relaxed);
@@ -240,7 +237,7 @@ async fn refresh_group(db: &PgPool, items: Vec<MediaItemRow>, provider: Provider
     );
 }
 
-async fn update_item(
+pub async fn update_item(
     db: &PgPool,
     old: &MediaItemRow,
     new: &CreateMediaItem,
@@ -257,6 +254,7 @@ async fn update_item(
             playtime_hours = COALESCE($7, playtime_hours),
             status = COALESCE($8, status),
             score = COALESCE($9, score),
+            poster_url = COALESCE(NULLIF($10, ''), poster_url),
             updated_at = now()
         WHERE id = $1
           AND (
@@ -268,6 +266,7 @@ async fn update_item(
             OR ($7 IS NOT NULL AND playtime_hours IS DISTINCT FROM $7)
             OR ($8 IS NOT NULL AND status IS DISTINCT FROM $8)
             OR ($9 IS NOT NULL AND score IS DISTINCT FROM $9)
+            OR (NULLIF($10, '') IS NOT NULL AND poster_url IS DISTINCT FROM $10)
           )
         "#,
     )
@@ -280,6 +279,7 @@ async fn update_item(
     .bind(new.playtime_hours)
     .bind(&new.status)
     .bind(new.score)
+    .bind(new.poster_url.as_deref().unwrap_or(""))
     .execute(db)
     .await?;
 

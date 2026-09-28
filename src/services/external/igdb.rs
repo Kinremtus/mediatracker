@@ -356,11 +356,15 @@ impl IgdbService {
             .send()
             .await?;
 
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(crate::services::external::NotFoundError(format!("igdb {id}")).into());
+        }
+
         let games: Vec<IgdbGame> = resp.json().await?;
         let g = games
             .into_iter()
             .next()
-            .ok_or_else(|| anyhow::anyhow!("Game not found"))?;
+            .ok_or_else(|| crate::services::external::NotFoundError(format!("igdb {id}")))?;
         Ok(map_game(g))
     }
 
