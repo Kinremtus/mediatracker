@@ -5,8 +5,11 @@ use url::Url;
 use crate::models::media_item::CreateMediaItem;
 use crate::utils::clean_description;
 
-/// MyAnimeList data via Jikan v4 (https://jikan.moe) — no API key required.
-const BASE_URL: &str = "https://api.jikan.moe/v4";
+/// MyAnimeList data. Tenrai is a Jikan-v4-compatible proxy and is the
+/// primary host; Jikan is kept as a fallback while it is still online.
+/// Both return the same schema, so parsing is shared.
+const TENRAI_BASE_URL: &str = "https://api.tenrai.org/v1";
+const JIKAN_BASE_URL: &str = "https://api.jikan.moe/v4";
 const SEARCH_LIMIT: u32 = 25;
 
 #[derive(Debug, Deserialize)]
@@ -170,9 +173,13 @@ pub struct JikanEpisode {
     /// responses already use.
     #[serde(default)]
     pub aired: Option<String>,
-    /// Human-readable duration, e.g. "24 min. per ep.". Parsed
-    /// into minutes by `parse_duration_to_minutes()` at persistence.
-    #[serde(default)]
+    /// Human-readable duration, e.g. "24 min. per ep.".
+    ///
+    /// Tenrai returns an integer number of seconds (`1440`), Jikan omits the
+    /// field, and older payloads used a string. `deserialize_duration_lenient`
+    /// accepts all three; numbers become `"{n} sec"`, which
+    /// `parse_duration_to_minutes()` already understands (ceil to minutes).
+    #[serde(default, deserialize_with = "deserialize_duration_lenient")]
     pub duration: Option<String>,
 }
 
@@ -217,6 +224,27 @@ fn parse_date(s: &str) -> Option<chrono::NaiveDate> {
     chrono::DateTime::parse_from_rfc3339(s)
         .ok()
         .map(|dt| dt.naive_utc().date())
+}
+
+/// Accepts `duration` as a JSON string, an integer number of seconds, or null.
+/// Integer seconds are normalized to a `"{n} sec"` string so the existing
+/// `parse_duration_to_minutes()` parser is reused unchanged.
+fn deserialize_duration_lenient<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error as _;
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(match value {
+        None | Some(serde_json::Value::Null) => None,
+        Some(serde_json::Value::String(s)) => Some(s),
+        Some(serde_json::Value::Number(n)) => n.as_i64().map(|secs| format!("{secs} sec")),
+        Some(other) => {
+            return Err(D::Error::custom(format!(
+                "unexpected `duration` value: {other}"
+            )));
+        }
+    })
 }
 
 /// Парсит строку `duration` от MAL в минуты (длительность одного эпизода).
@@ -552,6 +580,8 @@ fn map_manga_full(manga: MalMangaFull) -> CreateMediaItem {
 #[derive(Clone)]
 pub struct MalService {
     client: Client,
+    /// Ordered by priority: primary first, fallback second.
+    base_urls: [&'static str; 2],
 }
 
 impl Default for MalService {
@@ -560,22 +590,87 @@ impl Default for MalService {
     }
 }
 
+/// True when an episode row carries real data. Tenrai's `/episodes` endpoint
+/// sometimes appends placeholder rows: a repeated title with no `aired` date
+/// (e.g. mal_id 27899). Such rows must not enter the catalog.
+fn is_real_episode(ep: &JikanEpisode) -> bool {
+    ep.title.is_some() || ep.aired.is_some()
+}
+
+/// Outcome of trying every host for one logical request.
+enum HostAttempt {
+    /// A terminal response from some host: success, or a non-retryable 4xx
+    /// (e.g. 404). Returned to the caller untouched.
+    Response(reqwest::Response),
+    /// Every host failed transiently (network error / 429 / 5xx). Carries a
+    /// per-host description so the final error lists all statuses.
+    AllTransient(String),
+}
+
 impl MalService {
     pub fn new() -> Self {
         Self {
             client: super::http_client(),
+            base_urls: [TENRAI_BASE_URL, JIKAN_BASE_URL],
+        }
+    }
+
+    /// Sends `GET {host}{path}` against each host in priority order and
+    /// returns the first *terminal* response. Only a network error, 429 or
+    /// 5xx advances to the next host. When every host fails transiently the
+    /// returned summary lists each host's status.
+    async fn try_hosts(&self, hosts: &[&str], path: &str) -> HostAttempt {
+        let mut failures: Vec<String> = Vec::with_capacity(hosts.len());
+        for host in hosts {
+            let url = format!("{host}{path}");
+            match self.client.get(&url).send().await {
+                Ok(resp) => {
+                    let status = resp.status();
+                    if status.as_u16() == 429 || status.is_server_error() {
+                        failures.push(format!("{host}: {status}"));
+                        continue;
+                    }
+                    return HostAttempt::Response(resp);
+                }
+                Err(e) => {
+                    failures.push(format!("{host}: {e}"));
+                    continue;
+                }
+            }
+        }
+        HostAttempt::AllTransient(failures.join("; "))
+    }
+
+    /// Terminal response or an error whose message contains every host's
+    /// failure, used by the non-paginated methods.
+    async fn get_with_failover(
+        &self,
+        hosts: &[&str],
+        path: &str,
+    ) -> Result<reqwest::Response, anyhow::Error> {
+        match self.try_hosts(hosts, path).await {
+            HostAttempt::Response(resp) => Ok(resp),
+            HostAttempt::AllTransient(msg) => {
+                anyhow::bail!("MAL request failed on all hosts: {msg}")
+            }
         }
     }
 
     pub async fn search(&self, query: &str) -> Result<Vec<CreateMediaItem>, anyhow::Error> {
-        let mut url = Url::parse(&format!("{}/anime", BASE_URL))?;
+        // Build the query once with `Url` (correct percent-encoding), then
+        // reuse the path across hosts.
+        let mut url = Url::parse("https://mal.invalid/anime")?;
         {
             let mut pairs = url.query_pairs_mut();
             pairs.append_pair("q", query);
             pairs.append_pair("limit", &SEARCH_LIMIT.to_string());
         }
+        let path = match url.query() {
+            Some(q) => format!("{}?{}", url.path(), q),
+            None => url.path().to_string(),
+        };
 
-        let response = self.client.get(url).send().await?;
+        let response = self.get_with_failover(&self.base_urls, &path).await?;
         let status = response.status();
         if status == reqwest::StatusCode::NOT_FOUND {
             return Err(
@@ -583,7 +678,7 @@ impl MalService {
             );
         }
         if !status.is_success() {
-            anyhow::bail!("MAL/Jikan search failed: {}", status);
+            anyhow::bail!("MAL search failed: {}", status);
         }
 
         let body: MalAnimeSearchResponse = response.json().await?;
@@ -591,30 +686,34 @@ impl MalService {
     }
 
     pub async fn get_details(&self, id: &str) -> Result<CreateMediaItem, anyhow::Error> {
-        let url = format!("{}/anime/{id}/full", BASE_URL);
-        let response = self.client.get(&url).send().await?;
+        let path = format!("/anime/{id}/full");
+        let response = self.get_with_failover(&self.base_urls, &path).await?;
         let status = response.status();
         if status == reqwest::StatusCode::NOT_FOUND {
             return Err(crate::services::external::NotFoundError(format!("mal {id}")).into());
         }
         if !status.is_success() {
-            anyhow::bail!("MAL/Jikan details failed: {}", status);
+            anyhow::bail!("MAL details failed: {}", status);
         }
 
         let body: MalAnimeResponse = response.json().await?;
         Ok(map_full(body.data))
     }
 
-    /// Search manga via Jikan v4 `GET /manga?q=...&limit=N`.
+    /// Search manga via `GET /manga?q=...&limit=N` (Tenrai, Jikan fallback).
     pub async fn search_manga(&self, query: &str) -> Result<Vec<CreateMediaItem>, anyhow::Error> {
-        let mut url = Url::parse(&format!("{}/manga", BASE_URL))?;
+        let mut url = Url::parse("https://mal.invalid/manga")?;
         {
             let mut pairs = url.query_pairs_mut();
             pairs.append_pair("q", query);
             pairs.append_pair("limit", &SEARCH_LIMIT.to_string());
         }
+        let path = match url.query() {
+            Some(q) => format!("{}?{}", url.path(), q),
+            None => url.path().to_string(),
+        };
 
-        let response = self.client.get(url).send().await?;
+        let response = self.get_with_failover(&self.base_urls, &path).await?;
         let status = response.status();
         if status == reqwest::StatusCode::NOT_FOUND {
             return Err(crate::services::external::NotFoundError(format!(
@@ -623,39 +722,42 @@ impl MalService {
             .into());
         }
         if !status.is_success() {
-            anyhow::bail!("MAL/Jikan manga search failed: {}", status);
+            anyhow::bail!("MAL manga search failed: {}", status);
         }
 
         let body: MalMangaSearchResponse = response.json().await?;
         Ok(body.data.into_iter().map(map_manga_search).collect())
     }
 
-    /// Fetch full manga details via Jikan v4 `GET /manga/{id}/full`.
+    /// Fetch full manga details via `GET /manga/{id}/full` (Tenrai, Jikan fallback).
     pub async fn get_manga_details(&self, id: &str) -> Result<CreateMediaItem, anyhow::Error> {
-        let url = format!("{}/manga/{id}/full", BASE_URL);
-        let response = self.client.get(&url).send().await?;
+        let path = format!("/manga/{id}/full");
+        let response = self.get_with_failover(&self.base_urls, &path).await?;
         let status = response.status();
         if status == reqwest::StatusCode::NOT_FOUND {
             return Err(crate::services::external::NotFoundError(format!("mal manga {id}")).into());
         }
         if !status.is_success() {
-            anyhow::bail!("MAL/Jikan manga details failed: {}", status);
+            anyhow::bail!("MAL manga details failed: {}", status);
         }
 
         let body: MalMangaResponse = response.json().await?;
         Ok(map_manga_full(body.data))
     }
 
-    /// Fetch the full episode list for an anime from Jikan v4.
-    /// Endpoint: `GET /v4/anime/{mal_id}/episodes?page=N` — paginated
-    /// (100 per page, rate-limited to ~3 req/sec and ~60 req/min).
-    /// Iterates pages until `pagination.has_next_page == false`.
+    /// Fetch the full episode list for an anime.
+    /// Endpoint: `GET /anime/{mal_id}/episodes?page=N`, paginated until
+    /// `pagination.has_next_page == false`.
     ///
-    /// Resilience: per-page retry on 429 / 5xx / network errors
-    /// (up to 3 attempts with backoff 2s, 4s, 6s) so a single
-    /// rate-limited page doesn't truncate the rest of the list.
-    /// On a JSON parse error or 4xx (which would never self-heal)
-    /// we stop immediately.
+    /// Resilience: each page is requested with host failover (Tenrai first,
+    /// Jikan second) and retried on transient failure of *both* hosts
+    /// (network / 429 / 5xx, up to `MAX_ATTEMPTS` with linear backoff).
+    /// A JSON parse error or a non-retryable 4xx stops the whole loop.
+    ///
+    /// Placeholder rows (no title AND no air date) are dropped: Tenrai's
+    /// endpoint occasionally repeats the list (e.g. mal_id 27899 returns 24
+    /// rows for a 12-episode show), which would otherwise double the drawer
+    /// and inflate the `media_items.episodes` denominator.
     pub async fn fetch_episodes(&self, mal_id: i64) -> Result<Vec<JikanEpisode>, anyhow::Error> {
         const MAX_ATTEMPTS: u32 = 3;
         const RETRY_BACKOFF: std::time::Duration = std::time::Duration::from_millis(2000);
@@ -664,10 +766,17 @@ impl MalService {
         let mut all = Vec::new();
         let mut page: i32 = 1;
         loop {
-            let url = format!("{}/anime/{}/episodes?page={}", BASE_URL, mal_id, page);
+            let path = format!("/anime/{mal_id}/episodes?page={page}");
 
             let body: JikanEpisodesResponse = match self
-                .fetch_page_with_retry(&url, mal_id, page, MAX_ATTEMPTS, RETRY_BACKOFF)
+                .fetch_page_with_retry(
+                    &self.base_urls,
+                    &path,
+                    mal_id,
+                    page,
+                    MAX_ATTEMPTS,
+                    RETRY_BACKOFF,
+                )
                 .await
             {
                 Ok(b) => b,
@@ -680,7 +789,7 @@ impl MalService {
                 page,
                 got,
                 total_so_far = all.len() + got,
-                "jikan episodes page"
+                "mal episodes page (tenrai/jikan)"
             );
             all.extend(body.data);
             if got == 0
@@ -691,20 +800,22 @@ impl MalService {
             }
             page += 1;
             // Jikan rate limit: 3 req/sec, 60 req/min. 250 ms keeps us
-            // under the per-second cap with small margin. 12 pages
-            // for One Piece = ~3s of sleep, ~10s of network round-trips.
+            // under the per-second cap with small margin.
             tokio::time::sleep(PAGE_PAUSE).await;
         }
+
+        // Drop Tenrai placeholder rows (see doc comment above).
+        all.retain(is_real_episode);
         Ok(all)
     }
 
-    /// GET one page, retrying on 429 / 5xx / network errors. Returns
-    /// `Err(())` to signal "stop the whole pagination loop" (only on
-    /// non-recoverable errors: 4xx, JSON parse failure, or retries
-    /// exhausted).
+    /// GET one page with host failover, retrying while *every* host fails
+    /// transiently. Returns `Err(())` to signal "stop the whole pagination
+    /// loop" (non-recoverable 4xx, JSON parse failure, or retries exhausted).
     async fn fetch_page_with_retry(
         &self,
-        url: &str,
+        hosts: &[&str],
+        path: &str,
         mal_id: i64,
         page: i32,
         max_attempts: u32,
@@ -713,54 +824,37 @@ impl MalService {
         let mut attempt = 0u32;
         loop {
             attempt += 1;
-            match self.client.get(url).send().await {
-                Ok(resp) => {
+            match self.try_hosts(hosts, path).await {
+                HostAttempt::Response(resp) => {
                     let status = resp.status();
                     if status.is_success() {
                         return match resp.json().await {
                             Ok(b) => Ok(b),
                             Err(e) => {
-                                tracing::warn!(mal_id, page, error = %e, "jikan episodes: json parse failed, stopping");
+                                tracing::warn!(mal_id, page, error = %e, "mal episodes: json parse failed, stopping");
                                 Err(())
                             }
                         };
                     }
-                    if status.as_u16() == 429 || status.is_server_error() {
-                        if attempt < max_attempts {
-                            let backoff = base_backoff * attempt;
-                            tracing::warn!(
-                                mal_id,
-                                page,
-                                attempt,
-                                %status,
-                                backoff_ms = backoff.as_millis() as u64,
-                                "jikan episodes: transient error, retrying"
-                            );
-                            tokio::time::sleep(backoff).await;
-                            continue;
-                        }
-                        tracing::warn!(mal_id, page, %status, "jikan episodes: retries exhausted, stopping");
-                        return Err(());
-                    }
-                    // 4xx other than 429 — won't self-heal.
-                    tracing::warn!(mal_id, page, %status, "jikan episodes: non-retryable status, stopping");
+                    // 404 / other 4xx — won't self-heal, and 404 never fails over.
+                    tracing::warn!(mal_id, page, %status, "mal episodes: non-retryable status, stopping");
                     return Err(());
                 }
-                Err(e) => {
+                HostAttempt::AllTransient(msg) => {
                     if attempt < max_attempts {
                         let backoff = base_backoff * attempt;
                         tracing::warn!(
                             mal_id,
                             page,
                             attempt,
-                            error = %e,
+                            error = %msg,
                             backoff_ms = backoff.as_millis() as u64,
-                            "jikan episodes: request failed, retrying"
+                            "mal episodes: all hosts transient, retrying"
                         );
                         tokio::time::sleep(backoff).await;
                         continue;
                     }
-                    tracing::warn!(mal_id, page, error = %e, "jikan episodes: retries exhausted, stopping");
+                    tracing::warn!(mal_id, page, error = %msg, "mal episodes: retries exhausted, stopping");
                     return Err(());
                 }
             }
@@ -771,6 +865,179 @@ impl MalService {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// Minimal one-shot HTTP/1.1 server for failover tests.
+    /// Replies to every request with `status` + `body` and counts how many
+    /// requests actually arrived. Returns `(base_url, request_counter)`.
+    /// No external mock crate: tokio is already a dependency.
+    async fn spawn_stub(status: u16, body: &'static str) -> (String, Arc<AtomicUsize>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let count = Arc::new(AtomicUsize::new(0));
+        let count_task = count.clone();
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut stream, _)) = listener.accept().await else {
+                    break;
+                };
+                let count = count_task.clone();
+                tokio::spawn(async move {
+                    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                    let mut buf = [0u8; 2048];
+                    let _ = stream.read(&mut buf).await;
+                    count.fetch_add(1, Ordering::SeqCst);
+                    let reason = match status {
+                        200 => "OK",
+                        404 => "Not Found",
+                        429 => "Too Many Requests",
+                        500 => "Internal Server Error",
+                        503 => "Service Unavailable",
+                        _ => "Status",
+                    };
+                    let resp = format!(
+                        "HTTP/1.1 {status} {reason}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    let _ = stream.write_all(resp.as_bytes()).await;
+                    let _ = stream.shutdown().await;
+                });
+            }
+        });
+        (format!("http://{addr}"), count)
+    }
+
+    #[tokio::test]
+    async fn failover_returns_first_host_without_contacting_second() {
+        let (a, ca) = spawn_stub(200, "{}").await;
+        let (b, cb) = spawn_stub(200, "{}").await;
+        let svc = MalService::new();
+        let resp = svc
+            .get_with_failover(&[a.as_str(), b.as_str()], "/anime")
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        assert_eq!(ca.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            cb.load(Ordering::SeqCst),
+            0,
+            "second host must not be called"
+        );
+    }
+
+    #[tokio::test]
+    async fn failover_falls_back_on_5xx() {
+        let (a, ca) = spawn_stub(500, "{}").await;
+        let (b, cb) = spawn_stub(200, "{}").await;
+        let svc = MalService::new();
+        let resp = svc
+            .get_with_failover(&[a.as_str(), b.as_str()], "/anime/1/full")
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        assert_eq!(ca.load(Ordering::SeqCst), 1);
+        assert_eq!(cb.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn failover_reports_both_statuses_when_all_fail() {
+        let (a, _ca) = spawn_stub(500, "{}").await;
+        let (b, _cb) = spawn_stub(503, "{}").await;
+        let svc = MalService::new();
+        let err = svc
+            .get_with_failover(&[a.as_str(), b.as_str()], "/anime")
+            .await
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("500"), "missing first status: {msg}");
+        assert!(msg.contains("503"), "missing second status: {msg}");
+    }
+
+    #[tokio::test]
+    async fn failover_does_not_retry_on_404() {
+        let (a, ca) = spawn_stub(404, "{}").await;
+        let (b, cb) = spawn_stub(200, "{}").await;
+        let svc = MalService::new();
+        let resp = svc
+            .get_with_failover(&[a.as_str(), b.as_str()], "/anime/999999/full")
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 404);
+        assert_eq!(ca.load(Ordering::SeqCst), 1);
+        assert_eq!(cb.load(Ordering::SeqCst), 0, "404 must not fail over");
+    }
+
+    #[tokio::test]
+    async fn failover_falls_back_on_429() {
+        let (a, _ca) = spawn_stub(429, "{}").await;
+        let (b, cb) = spawn_stub(200, "{}").await;
+        let svc = MalService::new();
+        let resp = svc
+            .get_with_failover(&[a.as_str(), b.as_str()], "/anime")
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        assert_eq!(cb.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn failover_falls_back_on_network_error() {
+        // Reserve a port, then drop the listener so the connect is refused.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let dead = format!("http://{}", listener.local_addr().unwrap());
+        drop(listener);
+        let (b, cb) = spawn_stub(200, "{}").await;
+        let svc = MalService::new();
+        let resp = svc
+            .get_with_failover(&[dead.as_str(), b.as_str()], "/anime")
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        assert_eq!(cb.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn parses_tenrai_episode_integer_duration() {
+        // Live Tenrai shape: `duration` is seconds as a number.
+        let json = r#"{"data":[{"mal_id":1,"title":"New Surge","duration":1440,"aired":"2015-01-09T00:00:00+00:00"}],"pagination":{"last_visible_page":1,"has_next_page":false}}"#;
+        let body: JikanEpisodesResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(body.data[0].duration.as_deref(), Some("1440 sec"));
+        assert_eq!(
+            parse_duration_to_minutes(body.data[0].duration.as_deref().unwrap()),
+            Some(24)
+        );
+    }
+
+    #[test]
+    fn parses_jikan_episode_without_duration() {
+        // Jikan omits `duration` entirely; must stay a clean None.
+        let json = r#"{"data":[{"mal_id":1,"title":"x","aired":null}],"pagination":{"last_visible_page":1,"has_next_page":false}}"#;
+        let body: JikanEpisodesResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(body.data[0].duration, None);
+    }
+
+    #[test]
+    fn drops_tenrai_placeholder_episodes() {
+        let real = JikanEpisode {
+            mal_id: 1,
+            title: Some("New Surge".to_string()),
+            title_japanese: Some("新洸".to_string()),
+            aired: Some("2015-01-09T00:00:00+00:00".to_string()),
+            duration: Some("1440 sec".to_string()),
+        };
+        let placeholder = JikanEpisode {
+            mal_id: 13,
+            title: None,
+            title_japanese: None,
+            aired: None,
+            duration: None,
+        };
+        assert!(is_real_episode(&real));
+        assert!(!is_real_episode(&placeholder));
+    }
 
     #[test]
     fn parses_search_response() {

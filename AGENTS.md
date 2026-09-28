@@ -47,7 +47,7 @@ Rust 1.95 · Axum 0.8 · SQLx 0.8 · Askama 0.16 · PostgreSQL 17 · Alpine.js �
 ## External Providers
 | Type | Provider |
 |------|----------|
-| anime | Shikimori + MAL (Jikan v4) |
+| anime | Shikimori + MAL (Tenrai, Jikan fallback) |
 | manga/manhwa/manhua/novels/comics | MangaUpdates |
 | movies/tv/dramas/cartoons | TMDB |
 | games | RAWG + IGDB |
