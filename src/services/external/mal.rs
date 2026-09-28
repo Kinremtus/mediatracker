@@ -590,11 +590,14 @@ impl Default for MalService {
     }
 }
 
-/// True when an episode row carries real data. Tenrai's `/episodes` endpoint
-/// sometimes appends placeholder rows: a repeated title with no `aired` date
-/// (e.g. mal_id 27899). Such rows must not enter the catalog.
+/// True when an episode row is real. Tenrai's `/episodes` endpoint sometimes
+/// appends placeholder rows that repeat an earlier title and carry no `aired`
+/// date (e.g. mal_id 27899 returned 24 rows for a 12-episode show). A row
+/// without an air date must not enter the catalog, so `aired` is the only
+/// reliable signal: `title` and `duration` can both be present on junk rows,
+/// and `duration` can legitimately be absent on real ones (One Piece 1167).
 fn is_real_episode(ep: &JikanEpisode) -> bool {
-    ep.title.is_some() || ep.aired.is_some()
+    ep.aired.is_some()
 }
 
 /// Outcome of trying every host for one logical request.
@@ -1021,22 +1024,35 @@ mod tests {
 
     #[test]
     fn drops_tenrai_placeholder_episodes() {
+        // Real row: One Piece shape — `aired` set, `duration` may be absent
+        // (rows 1167/1168/1172-1174). `aired` is the realness signal.
         let real = JikanEpisode {
-            mal_id: 1,
-            title: Some("New Surge".to_string()),
-            title_japanese: Some("新洸".to_string()),
+            mal_id: 1167,
+            title: Some("The Legend Begins".to_string()),
+            title_japanese: None,
             aired: Some("2015-01-09T00:00:00+00:00".to_string()),
-            duration: Some("1440 sec".to_string()),
+            duration: None,
         };
+        // LIVE placeholder shape (mal_id 27899): repeated title, no air date.
         let placeholder = JikanEpisode {
             mal_id: 13,
-            title: None,
+            title: Some("New Surge".to_string()),
             title_japanese: None,
             aired: None,
             duration: None,
         };
+        // Junk row that still carries `duration` -> dropped. Proves the rule
+        // is aired-only, not title- or duration-based.
+        let placeholder_with_duration = JikanEpisode {
+            mal_id: 99,
+            title: Some("New Surge".to_string()),
+            title_japanese: None,
+            aired: None,
+            duration: Some("1440 sec".to_string()),
+        };
         assert!(is_real_episode(&real));
         assert!(!is_real_episode(&placeholder));
+        assert!(!is_real_episode(&placeholder_with_duration));
     }
 
     #[test]
