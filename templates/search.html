@@ -47,10 +47,7 @@
         </div>
         <div class="media-card-body">
             <div class="media-card-title">{{ item.title }}</div>
-            <div class="media-card-meta">
-                {{ item.primary_label() }}
-                {% if let Some(y) = item.year %} · {{ y }}{% endif %}
-            </div>
+            <div class="media-card-meta">{{ item.primary_label() }}{% if let Some(tc) = item.total_count() %} · {{ tc }} {{ item.progress_unit_ru() }}{% endif %}{% if let Some(y) = item.year %} · {{ y }}{% endif %}</div>
             {% if !item.genres.is_empty() %}
             <div class="media-card-genres">
                 {% for g in item.genres.iter().take(3) %}<span class="chip chip-genre chip-sm">{{ g }}</span>{% endfor %}

@@ -112,6 +112,7 @@ fn map_item(r: GoogleBooksItem) -> CreateMediaItem {
         title_russian: None,
         poster_url,
         episodes: None,
+        seasons: None,
         description: r.volume_info.description,
         status: None,
         score: r.volume_info.average_rating,

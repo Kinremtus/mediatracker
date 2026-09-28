@@ -250,6 +250,7 @@ fn map_series(series: MangaUpdatesSeries) -> CreateMediaItem {
         title_russian: None,
         poster_url,
         episodes: None,
+        seasons: None,
         description: clean_description(series.description),
         status,
         score: series.bayesian_rating,

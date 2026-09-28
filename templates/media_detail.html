@@ -145,14 +145,14 @@
             {% endif %}
         </div>
 
-        {% if item.provider != "manual" && item.provider != "anilist" && item.media_type == "anime" %}
+        {% if item.provider != "manual" && item.media_type == "anime" %}
         <div class="media-detail-section" x-data="{ episodesOpen: true }">
             <button class="media-detail-section-toggle" @click="episodesOpen = !episodesOpen" type="button">
                 <h3 style="display: inline;">Эпизоды</h3>
                 <span class="drawer-section-arrow" :class="{ 'rotated': episodesOpen }">▾</span>
             </button>
             <div class="media-detail-episodes" x-show="episodesOpen" x-cloak
-                 hx-get="/api/anime/{{ item.provider }}/{{ item.external_id }}/episodes"
+                 hx-get="/api/anime/{{ item.provider }}/{{ item.external_id }}/episodes{% if let Some(m) = mal_id %}?mal_id={{ m }}{% endif %}"
                  hx-trigger="revealed once"
                  hx-swap="innerHTML">
                 <div class="drawer-episodes-loading">Загрузка эпизодов…</div>
