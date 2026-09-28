@@ -67,6 +67,7 @@ fn get_status_label(status: &str) -> String {
         "completed" => "Завершено",
         "planned" => "Запланировано",
         "dropped" => "Брошено",
+        "paused" => "Приостановлено",
         _ => "Все списки",
     }
     .to_string()
@@ -78,6 +79,79 @@ pub struct TrackingQuery {
     #[serde(rename = "type")]
     media_type: Option<String>,
     q: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct ManualFormQuery {
+    flash: Option<String>,
+}
+
+#[derive(Template)]
+#[template(path = "tracking_manual_form.html")]
+#[expect(dead_code)]
+struct ManualFormTemplate {
+    username: String,
+    role: String,
+    stats: SidebarStats,
+    active_page: String,
+    media_types: Vec<MediaTypeItem>,
+    statuses: Vec<StatusItem>,
+    flash_message: String,
+}
+
+#[derive(Deserialize)]
+pub struct ManualAddForm {
+    pub title: String,
+    pub media_type: String,
+    #[serde(default)]
+    pub tracking_status: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub poster_url: Option<String>,
+    #[serde(default)]
+    pub year: Option<i16>,
+    #[serde(default)]
+    pub episodes: Option<i32>,
+    #[serde(default)]
+    pub chapters: Option<i32>,
+    #[serde(default)]
+    pub volumes: Option<i32>,
+    #[serde(default)]
+    pub pages: Option<i32>,
+    #[serde(default)]
+    pub runtime_minutes: Option<i32>,
+    #[serde(default)]
+    pub playtime_hours: Option<i32>,
+}
+
+/// Значения, разрешённые CHECK-констрейнтом `media_items.media_type`
+/// (migrations/022_add_comic_media_type.sql).
+const MANUAL_MEDIA_TYPES: &[&str] = &[
+    "anime",
+    "manga",
+    "manhwa",
+    "manhua",
+    "novel",
+    "movie",
+    "series",
+    "game",
+    "book",
+    "dramas",
+    "cartoons",
+    "animated-movies",
+    "other-comics",
+    "comic",
+];
+
+/// Статусы трекинга (migrations/004_status_rename.sql).
+const MANUAL_STATUSES: &[&str] = &["in_progress", "completed", "planned", "dropped", "paused"];
+
+fn manual_flash(flash: Option<&str>) -> String {
+    match flash {
+        Some("error") => "Не удалось добавить: проверьте название и тип".to_string(),
+        _ => String::new(),
+    }
 }
 
 pub async fn get_tracking_list(
@@ -155,6 +229,98 @@ pub async fn get_tracking_list(
         Html(String::from("Internal Server Error"))
     })
     .into_response()
+}
+
+pub async fn get_manual_form(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Query(params): Query<ManualFormQuery>,
+) -> Response {
+    let stats = get_sidebar_stats(&state, &user).await;
+    let media_types = get_all_media_types()
+        .into_iter()
+        .map(|(k, i, l)| MediaTypeItem {
+            key: k.to_string(),
+            icon: i.to_string(),
+            label: l.to_string(),
+        })
+        .collect();
+    let statuses = MANUAL_STATUSES
+        .iter()
+        .map(|k| StatusItem {
+            key: (*k).to_string(),
+            label: get_status_label(k),
+        })
+        .collect();
+
+    ManualFormTemplate {
+        username: user.username,
+        role: user.role,
+        stats,
+        active_page: "tracking".to_string(),
+        media_types,
+        statuses,
+        flash_message: manual_flash(params.flash.as_deref()),
+    }
+    .render()
+    .map(Html)
+    .unwrap_or_else(|e| {
+        tracing::error!(error = %e, "template render failed");
+        Html(String::from("Internal Server Error"))
+    })
+    .into_response()
+}
+
+pub async fn post_manual_add(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Form(form): Form<ManualAddForm>,
+) -> Response {
+    let title = form.title.trim().to_string();
+    let media_type = form.media_type.trim().to_string();
+    let status = if form.tracking_status.trim().is_empty() {
+        "planned".to_string()
+    } else {
+        form.tracking_status.trim().to_string()
+    };
+
+    if title.is_empty()
+        || !MANUAL_MEDIA_TYPES.contains(&media_type.as_str())
+        || !MANUAL_STATUSES.contains(&status.as_str())
+    {
+        tracing::warn!(
+            media_type = %media_type,
+            status = %status,
+            "manual add rejected"
+        );
+        return Redirect::to("/tracking/manual?flash=error").into_response();
+    }
+
+    let external_id = Uuid::new_v4().to_string();
+    let media = crate::models::media_item::CreateMediaItem {
+        provider: "manual".to_string(),
+        external_id: external_id.clone(),
+        media_type,
+        title,
+        description: form.description.filter(|s| !s.trim().is_empty()),
+        poster_url: form.poster_url.filter(|s| !s.trim().is_empty()),
+        year: form.year,
+        episodes: form.episodes,
+        chapters: form.chapters,
+        volumes: form.volumes,
+        pages: form.pages,
+        runtime_minutes: form.runtime_minutes,
+        playtime_hours: form.playtime_hours,
+        ..Default::default()
+    };
+
+    match state.tracking.add_to_list(user.id, &media, &status).await {
+        Ok(_) => Redirect::to(&format!("/media/manual/{external_id}")).into_response(),
+        Err(e) => {
+            tracing::error!(error = %e, "manual add failed");
+            Redirect::to("/tracking/manual?flash=error").into_response()
+        }
+    }
 }
 
 fn csv_str<'de, D>(de: D) -> Result<Vec<String>, D::Error>

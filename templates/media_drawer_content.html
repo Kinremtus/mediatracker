@@ -10,6 +10,10 @@
 </div>
 {% endif %}
 
+{% if from_cache %}
+<div class="drawer-meta-line" style="color: var(--muted, #888);">Показаны сохранённые данные — провайдер недоступен</div>
+{% endif %}
+
 {# === HERO ZONE === #}
 <div class="drawer-hero">
     <div class="drawer-hero-poster">
@@ -75,6 +79,7 @@
 {% endif %}
 
 {# === EPISODES (anime only) === #}
+{% if item.provider != "manual" %}
 {% if item.media_type == "anime" %}
 <div class="drawer-divider"></div>
 <div class="drawer-section drawer-section--collapsible" x-data="{ open: true }">
@@ -90,8 +95,10 @@
     </div>
 </div>
 {% endif %}
+{% endif %}
 
 {# === TMDB SEASONS (series/cartoons/dramas) === #}
+{% if item.provider != "manual" %}
 {% if item.media_type == "series" || item.media_type == "cartoons" || item.media_type == "dramas" %}
 <div class="drawer-divider"></div>
 <div class="drawer-section drawer-section--collapsible" x-data="{ open: true }">
@@ -108,8 +115,10 @@
     </div>
 </div>
 {% endif %}
+{% endif %}
 
 {# === CHAPTERS (manga-like types) === #}
+{% if item.provider != "manual" %}
 {% if item.media_type == "manga" || item.media_type == "manhwa" || item.media_type == "manhua" || item.media_type == "novel" || item.media_type == "other-comics" %}
 <div class="drawer-divider"></div>
 <div class="drawer-section drawer-section--collapsible" x-data="{ open: true }">
@@ -125,8 +134,10 @@
     </div>
 </div>
 {% endif %}
+{% endif %}
 
 {# === GAME ADDITIONS (games only) === #}
+{% if item.provider != "manual" %}
 {% if item.media_type == "game" %}
 <div class="drawer-divider"></div>
 <div class="drawer-section drawer-section--collapsible" x-data="{ open: true }">
@@ -141,6 +152,7 @@
         <div class="drawer-episodes-loading">Загрузка дополнений…</div>
     </div>
 </div>
+{% endif %}
 {% endif %}
 
 {# === ADD TO TRACKING (only if NOT tracked) === #}

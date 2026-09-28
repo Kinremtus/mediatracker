@@ -133,6 +133,7 @@ pub async fn post_refresh_details(
             FROM media_items
             WHERE ($1::text IS NULL OR media_type = $1)
               AND ($2::text IS NULL OR provider = $2)
+              AND provider <> 'manual'
             ORDER BY created_at ASC
             LIMIT $3
             "#,

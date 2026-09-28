@@ -7,6 +7,9 @@
     {% if !flash_message.is_empty() %}
     <div x-data="{ show: true }" x-init="setTimeout(() => show = false, 3000)" x-show="show" class="flash-notification">{{ flash_message }}</div>
     {% endif %}
+    {% if from_cache %}
+    <div class="badge badge-status" style="margin-bottom: 0.5rem;">Показаны сохранённые данные — провайдер недоступен</div>
+    {% endif %}
 
     <div class="media-detail-poster">
         {% if item.poster_url.is_some() %}
@@ -142,7 +145,7 @@
             {% endif %}
         </div>
 
-        {% if item.media_type == "anime" %}
+        {% if item.provider != "manual" && item.media_type == "anime" %}
         <div class="media-detail-section" x-data="{ episodesOpen: true }">
             <button class="media-detail-section-toggle" @click="episodesOpen = !episodesOpen" type="button">
                 <h3 style="display: inline;">Эпизоды</h3>

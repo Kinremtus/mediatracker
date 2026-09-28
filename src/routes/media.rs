@@ -35,6 +35,7 @@ struct MediaDrawerTemplate {
     can_increment: bool,
     can_decrement: bool,
     status_display: String,
+    from_cache: bool,
 }
 
 impl MediaDrawerTemplate {
@@ -67,6 +68,7 @@ struct MediaDetailTemplate {
     item: CreateMediaItem,
     current_status: String,
     flash_message: String,
+    from_cache: bool,
 }
 
 #[derive(Deserialize)]
@@ -75,23 +77,62 @@ pub struct MediaDetailQuery {
     flash: Option<String>,
 }
 
+/// Решить, что рендерить для карточки.
+///
+/// Возвращает `(item, from_cache)`:
+/// - `manual` / неизвестный провайдер -> строка из БД, `from_cache = false`
+///   (апстрима нет, «провайдер недоступен» показывать нечестно); `None`, если
+///   строки нет.
+/// - известный провайдер, fetch Ok -> свежий item, `from_cache = false`.
+/// - известный провайдер, fetch Err + локальная строка -> item из БД,
+///   `from_cache = true` (этап 4: тайтл выживает 404/сетевой сбой); `None`,
+///   если строки нет.
+async fn resolve_card_data(
+    state: &AppState,
+    provider: &str,
+    external_id: &str,
+    media_type: &str,
+) -> Option<(CreateMediaItem, bool)> {
+    let local = state
+        .tracking
+        .find_media_item(provider, external_id)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!(provider, external_id, error = %e, "media: local lookup failed");
+            None
+        });
+
+    let clients = ProviderClients::from_state(state);
+    match Provider::from_name(&clients, provider) {
+        None => local.map(|m| (m.into(), false)),
+        Some(p) => match p.fetch(external_id, media_type).await {
+            Ok(item) => Some((item, false)),
+            Err(e) => {
+                tracing::debug!(
+                    provider,
+                    external_id,
+                    error = %e,
+                    "media: provider fetch failed, falling back to stored data"
+                );
+                local.map(|m| (m.into(), true))
+            }
+        },
+    }
+}
+
 pub async fn get_media_detail(
     user: CurrentUser,
     State(state): State<AppState>,
     Path((provider, external_id)): Path<(String, String)>,
     Query(params): Query<MediaDetailQuery>,
 ) -> impl IntoResponse {
-    let clients = ProviderClients::from_state(&state);
     let media_type = params.media_type.as_deref().unwrap_or("movie");
-    let item = match Provider::from_name(&clients, &provider) {
-        Some(provider) => provider.fetch(&external_id, media_type).await,
-        None => Err(anyhow::anyhow!("Unknown provider")),
-    };
+    let resolved = resolve_card_data(&state, &provider, &external_id, media_type).await;
 
     let stats = get_sidebar_stats(&state, &user).await;
 
-    match item {
-        Ok(mut item) => {
+    match resolved {
+        Some((mut item, from_cache)) => {
             if let Ok(Some(_)) = state
                 .tracking
                 .find_entry_by_media(user.id, &item.provider, &item.external_id)
@@ -118,6 +159,7 @@ pub async fn get_media_detail(
                     item,
                     current_status: String::new(),
                     flash_message,
+                    from_cache,
                 }
                 .render()
                 .unwrap_or_else(|e| {
@@ -127,7 +169,7 @@ pub async fn get_media_detail(
             )
             .into_response()
         }
-        Err(_) => Html("Not found".to_string()).into_response(),
+        None => Html("Not found".to_string()).into_response(),
     }
 }
 
@@ -137,15 +179,11 @@ pub async fn get_media_drawer_content(
     Path((provider, external_id)): Path<(String, String)>,
     Query(params): Query<MediaDetailQuery>,
 ) -> impl IntoResponse {
-    let clients = ProviderClients::from_state(&state);
     let media_type = params.media_type.as_deref().unwrap_or("movie");
-    let item = match Provider::from_name(&clients, &provider) {
-        Some(provider) => provider.fetch(&external_id, media_type).await,
-        None => Err(anyhow::anyhow!("Unknown provider")),
-    };
+    let resolved = resolve_card_data(&state, &provider, &external_id, media_type).await;
 
-    match item {
-        Ok(item) => {
+    match resolved {
+        Some((item, from_cache)) => {
             let tracking = state
                 .tracking
                 .find_entry_by_media(user.id, &provider, &external_id)
@@ -199,6 +237,7 @@ pub async fn get_media_drawer_content(
                     can_increment,
                     can_decrement,
                     status_display,
+                    from_cache,
                 }
                 .render()
                 .unwrap_or_else(|e| {
@@ -208,7 +247,7 @@ pub async fn get_media_drawer_content(
             )
             .into_response()
         }
-        Err(_) => Html("Not found".to_string()).into_response(),
+        None => Html("Not found".to_string()).into_response(),
     }
 }
 
