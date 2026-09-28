@@ -14,4 +14,4 @@ creation_rules:
   - path_regex: k8s/secrets/.*\.enc\.yaml$
     encrypted_regex: '^(data|stringData)$'
     # [!] REPLACE with your real age public key before encrypting.
-    age: age1REPLACE_WITH_YOUR_AGE_PUBLIC_KEY
+    age: age1yt509vs6zpwp6h5gpjy62t4rkt2f0gaeg73rlqu690myypa4zfushnzvqj
