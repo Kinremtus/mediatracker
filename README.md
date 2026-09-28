@@ -8,7 +8,7 @@ Keep a personal log of everything you watch, read, and play in one place.
 - **Unified tracking** — single interface for movies, TV, anime, manga, manhwa, books, games, and more
 - **Multiple statuses** — `in_progress`, `completed`, `planned`, `dropped`, `paused`
 - **Rich metadata** — posters, descriptions, ratings from external providers
-- **External providers** — TMDB (movies/TV), Shikimori & MAL (anime), MangaUpdates + MangaDex (manga/manhwa/manhua/novels), Comic Vine (western comics), RAWG & IGDB (games), Google Books, OpenLibrary & Hardcover (books)
+- **External providers** — TMDB (movies/TV), Shikimori, MAL & AniList (anime), MangaUpdates + MangaDex (manga/manhwa/manhua/novels), Comic Vine (western comics), RAWG & IGDB (games), Google Books, OpenLibrary & Hardcover (books)
 - **Release schedule** — upcoming episodes/chapters in a calendar view
 - **Telegram notifications** — get notified when new episodes are available
 - **Search** — unified search across all media types
@@ -67,7 +67,9 @@ the stack. Browsers revalidate them on every request through `ETag` /
 | `MANGAUPDATES_API_KEY` | No | — | For manga metadata |
 | `COMIC_VINE_API_KEY` | No | — | For western comic metadata (Comic Vine) |
 
-MangaDex needs no API key — it is used for chapter enrichment only.
+AniList and MangaDex need no API key. MangaDex is a fallback provider in the
+manga chain and also enriches chapter titles; AniList is the last-resort
+fallback in the anime search chain.
 
 ## Deployment
 

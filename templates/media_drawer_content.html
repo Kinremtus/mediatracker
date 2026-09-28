@@ -11,7 +11,7 @@
 {% endif %}
 
 {% if from_cache %}
-<div class="drawer-meta-line" style="color: var(--muted, #888);">Показаны сохранённые данные — провайдер недоступен</div>
+<div class="drawer-meta-line" style="color: var(--muted, #888);">{{ fallback_notice }}</div>
 {% endif %}
 
 {# === HERO ZONE === #}
@@ -20,7 +20,7 @@
         {% if item.poster_url.is_some() %}
         <img src="{{ item.poster_url.as_ref().unwrap() }}" alt="{{ item.title }}">
         {% else %}
-        <div class="poster-placeholder" style="aspect-ratio: 2/3; border-radius: var(--radius-lg);">{% if item.media_type == "anime" %}▶{% elif item.media_type == "manga" || item.media_type == "manhwa" || item.media_type == "manhua" || item.media_type == "novel" || item.media_type == "other-comics" %}📚{% elif item.media_type == "movie" %}🎥{% elif item.media_type == "series" || item.media_type == "dramas" %}📺{% elif item.media_type == "cartoons" || item.media_type == "animated-movies" %}🎞{% elif item.media_type == "game" %}🎮{% elif item.media_type == "book" %}📖{% else %}📄{% endif %}</div>
+        <div class="poster-placeholder" style="aspect-ratio: 2/3; border-radius: var(--radius-lg);">{% if item.media_type == "anime" %}▶{% elif item.media_type == "manga" || item.media_type == "manhwa" || item.media_type == "manhua" || item.media_type == "novel" || item.media_type == "other-comics" || item.media_type == "comic" %}📚{% elif item.media_type == "movie" %}🎥{% elif item.media_type == "series" || item.media_type == "dramas" %}📺{% elif item.media_type == "cartoons" || item.media_type == "animated-movies" %}🎞{% elif item.media_type == "game" %}🎮{% elif item.media_type == "book" %}📖{% else %}📄{% endif %}</div>
         {% endif %}
     </div>
     <div class="drawer-hero-info">

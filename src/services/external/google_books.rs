@@ -195,6 +195,11 @@ impl GoogleBooksService {
     pub async fn get_details(&self, id: &str) -> Result<CreateMediaItem, anyhow::Error> {
         let url = format!("{}/volumes/{}", BASE_URL, id);
         let response = self.client.get(&url).send().await?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(
+                crate::services::external::NotFoundError(format!("google_books {id}")).into(),
+            );
+        }
         if !response.status().is_success() {
             anyhow::bail!("Google Books details failed: {}", response.status());
         }

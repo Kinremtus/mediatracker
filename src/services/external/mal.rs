@@ -572,8 +572,14 @@ impl MalService {
         }
 
         let response = self.client.get(url).send().await?;
-        if !response.status().is_success() {
-            anyhow::bail!("MAL/Jikan search failed: {}", response.status());
+        let status = response.status();
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Err(
+                crate::services::external::NotFoundError(format!("mal search: {query}")).into(),
+            );
+        }
+        if !status.is_success() {
+            anyhow::bail!("MAL/Jikan search failed: {}", status);
         }
 
         let body: MalAnimeSearchResponse = response.json().await?;
@@ -583,8 +589,12 @@ impl MalService {
     pub async fn get_details(&self, id: &str) -> Result<CreateMediaItem, anyhow::Error> {
         let url = format!("{}/anime/{id}/full", BASE_URL);
         let response = self.client.get(&url).send().await?;
-        if !response.status().is_success() {
-            anyhow::bail!("MAL/Jikan details failed: {}", response.status());
+        let status = response.status();
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Err(crate::services::external::NotFoundError(format!("mal {id}")).into());
+        }
+        if !status.is_success() {
+            anyhow::bail!("MAL/Jikan details failed: {}", status);
         }
 
         let body: MalAnimeResponse = response.json().await?;
@@ -601,8 +611,15 @@ impl MalService {
         }
 
         let response = self.client.get(url).send().await?;
-        if !response.status().is_success() {
-            anyhow::bail!("MAL/Jikan manga search failed: {}", response.status());
+        let status = response.status();
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Err(crate::services::external::NotFoundError(format!(
+                "mal manga search: {query}"
+            ))
+            .into());
+        }
+        if !status.is_success() {
+            anyhow::bail!("MAL/Jikan manga search failed: {}", status);
         }
 
         let body: MalMangaSearchResponse = response.json().await?;
@@ -613,8 +630,12 @@ impl MalService {
     pub async fn get_manga_details(&self, id: &str) -> Result<CreateMediaItem, anyhow::Error> {
         let url = format!("{}/manga/{id}/full", BASE_URL);
         let response = self.client.get(&url).send().await?;
-        if !response.status().is_success() {
-            anyhow::bail!("MAL/Jikan manga details failed: {}", response.status());
+        let status = response.status();
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Err(crate::services::external::NotFoundError(format!("mal manga {id}")).into());
+        }
+        if !status.is_success() {
+            anyhow::bail!("MAL/Jikan manga details failed: {}", status);
         }
 
         let body: MalMangaResponse = response.json().await?;

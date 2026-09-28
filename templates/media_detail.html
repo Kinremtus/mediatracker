@@ -8,7 +8,7 @@
     <div x-data="{ show: true }" x-init="setTimeout(() => show = false, 3000)" x-show="show" class="flash-notification">{{ flash_message }}</div>
     {% endif %}
     {% if from_cache %}
-    <div class="badge badge-status" style="margin-bottom: 0.5rem;">Показаны сохранённые данные — провайдер недоступен</div>
+    <div class="badge badge-status" style="margin-bottom: 0.5rem;">{{ fallback_notice }}</div>
     {% endif %}
 
     <div class="media-detail-poster">
@@ -55,7 +55,7 @@
             {% endif %}
             {% if let Some(ch) = item.chapters %}
             <div class="meta-item">
-                <div class="meta-item-label">Главы</div>
+                <div class="meta-item-label">{% if item.media_type == "comic" %}Выпуски{% else %}Главы{% endif %}</div>
                 <div class="meta-item-value">{{ ch }}</div>
             </div>
             {% endif %}
@@ -145,7 +145,7 @@
             {% endif %}
         </div>
 
-        {% if item.provider != "manual" && item.media_type == "anime" %}
+        {% if item.provider != "manual" && item.provider != "anilist" && item.media_type == "anime" %}
         <div class="media-detail-section" x-data="{ episodesOpen: true }">
             <button class="media-detail-section-toggle" @click="episodesOpen = !episodesOpen" type="button">
                 <h3 style="display: inline;">Эпизоды</h3>

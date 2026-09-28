@@ -17,20 +17,9 @@
 
 <div class="type-selector">
     <a href="?q={{ query }}&page=1" class="type-btn {% if current_type.is_empty() %}active{% endif %}">🔍 Все типы</a>
-    <a href="?q={{ query }}&type=anime&page=1" class="type-btn {% if current_type == "anime" %}active{% endif %}">▶ Аниме</a>
-    <a href="?q={{ query }}&type=manga&page=1" class="type-btn {% if current_type == "manga" %}active{% endif %}"> Манга</a>
-    <a href="?q={{ query }}&type=manhwa&page=1" class="type-btn {% if current_type == "manhwa" %}active{% endif %}"> Манхва</a>
-    <a href="?q={{ query }}&type=manhua&page=1" class="type-btn {% if current_type == "manhua" %}active{% endif %}">📚 Маньхуа</a>
-    <a href="?q={{ query }}&type=novel&page=1" class="type-btn {% if current_type == "novel" %}active{% endif %}">📝 Новеллы</a>
-    <a href="?q={{ query }}&type=other-comics&page=1" class="type-btn {% if current_type == "other-comics" %}active{% endif %}">📚 Другие комиксы</a>
-    <a href="?q={{ query }}&type=comic&page=1" class="type-btn {% if current_type == "comic" %}active{% endif %}">🦸 Комиксы</a>
-    <a href="?q={{ query }}&type=movie&page=1" class="type-btn {% if current_type == "movie" %}active{% endif %}">🎥 Фильмы</a>
-    <a href="?q={{ query }}&type=series&page=1" class="type-btn {% if current_type == "series" %}active{% endif %}"> Сериалы</a>
-    <a href="?q={{ query }}&type=dramas&page=1" class="type-btn {% if current_type == "dramas" %}active{% endif %}"> Дорамы</a>
-    <a href="?q={{ query }}&type=cartoons&page=1" class="type-btn {% if current_type == "cartoons" %}active{% endif %}">📺 Мультсериалы</a>
-    <a href="?q={{ query }}&type=animated-movies&page=1" class="type-btn {% if current_type == "animated-movies" %}active{% endif %}">🎞 Мультфильмы</a>
-    <a href="?q={{ query }}&type=game&page=1" class="type-btn {% if current_type == "game" %}active{% endif %}">🎮 Игры</a>
-    <a href="?q={{ query }}&type=book&page=1" class="type-btn {% if current_type == "book" %}active{% endif %}">📖 Книги</a>
+    {% for t in media_types %}
+    <a href="?q={{ query }}&type={{ t.key }}&page=1" class="type-btn {% if current_type == t.key %}active{% endif %}">{{ t.icon }} {{ t.label }}</a>
+    {% endfor %}
 </div>
 
 {% if !results.is_empty() %}

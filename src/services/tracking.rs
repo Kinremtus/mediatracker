@@ -353,6 +353,32 @@ impl TrackingService {
         Ok(row)
     }
 
+    /// Find an existing `media_items` row with the same media type and a
+    /// case-insensitive, whitespace-trimmed title. Used to block manual
+    /// duplicates before insert (design workstream 2). `media_type` is part
+    /// of the key on purpose: the same title may legitimately exist as two
+    /// different media types.
+    pub async fn find_duplicate(
+        &self,
+        media_type: &str,
+        title: &str,
+    ) -> Result<Option<(String, String)>, anyhow::Error> {
+        let row: Option<(String, String)> = sqlx::query_as(
+            r#"
+            SELECT provider, external_id
+            FROM media_items
+            WHERE media_type = $1
+              AND lower(btrim(title)) = lower(btrim($2))
+            LIMIT 1
+            "#,
+        )
+        .bind(media_type)
+        .bind(title)
+        .fetch_optional(&self.db)
+        .await?;
+        Ok(row)
+    }
+
     /// Return the `(provider, external_id)` pairs the user is tracking.
     ///
     /// Batched alternative to calling [`Self::find_entry_by_media`] per search

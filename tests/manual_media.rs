@@ -72,7 +72,10 @@ async fn manual_card_renders_from_db_without_network() {
         .expect("seed manual row");
 
     let app = Router::new()
-        .route("/media/{provider}/{external_id}", get(media::get_media_detail))
+        .route(
+            "/media/{provider}/{external_id}",
+            get(media::get_media_detail),
+        )
         .layer(Extension(current_user(user_id)))
         .with_state(ctx.state.clone());
 
@@ -108,7 +111,10 @@ async fn provider_failure_falls_back_to_stored_row() {
         .expect("seed comicvine row");
 
     let app = Router::new()
-        .route("/media/{provider}/{external_id}", get(media::get_media_detail))
+        .route(
+            "/media/{provider}/{external_id}",
+            get(media::get_media_detail),
+        )
         .layer(Extension(current_user(user_id)))
         .with_state(ctx.state.clone());
 
@@ -125,10 +131,7 @@ async fn provider_failure_falls_back_to_stored_row() {
     assert_eq!(resp.status(), StatusCode::OK);
     let html = body_string(resp).await;
     assert!(html.contains("Cached Comic"), "stored row must render");
-    assert!(
-        html.contains("сохранённые данные"),
-        "fallback badge must be shown"
-    );
+    assert!(html.contains("источник"), "cache badge text");
 }
 
 #[tokio::test]
@@ -137,7 +140,10 @@ async fn missing_provider_and_no_row_is_not_found() {
     let user_id = seed_user(&ctx.pool, "manual_404_user").await;
 
     let app = Router::new()
-        .route("/media/{provider}/{external_id}", get(media::get_media_detail))
+        .route(
+            "/media/{provider}/{external_id}",
+            get(media::get_media_detail),
+        )
         .layer(Extension(current_user(user_id)))
         .with_state(ctx.state.clone());
 
@@ -287,13 +293,12 @@ async fn post_manual_add_clears_irrelevant_metrics() {
 
     assert_eq!(resp.status(), StatusCode::SEE_OTHER);
 
-    let (chapters, runtime_minutes): (Option<i32>, Option<i32>) = sqlx::query_as(
-        "SELECT chapters, runtime_minutes FROM media_items WHERE title = $1",
-    )
-    .bind("Movie With Stray Chapters")
-    .fetch_one(&ctx.pool)
-    .await
-    .expect("manual movie row must exist");
+    let (chapters, runtime_minutes): (Option<i32>, Option<i32>) =
+        sqlx::query_as("SELECT chapters, runtime_minutes FROM media_items WHERE title = $1")
+            .bind("Movie With Stray Chapters")
+            .fetch_one(&ctx.pool)
+            .await
+            .expect("manual movie row must exist");
 
     assert_eq!(chapters, None, "chapters must be cleared for a movie");
     assert_eq!(runtime_minutes, Some(120), "runtime_minutes must persist");

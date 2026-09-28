@@ -259,6 +259,9 @@ impl RawgService {
         url.query_pairs_mut().append_pair("key", &self.api_key);
 
         let response = self.client.get(url.as_str()).send().await?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(crate::services::external::NotFoundError(format!("rawg {id}")).into());
+        }
         let r: RawgDetails = response.json().await?;
         Ok(map_details(r))
     }

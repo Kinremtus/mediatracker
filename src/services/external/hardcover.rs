@@ -302,13 +302,15 @@ impl HardcoverService {
     }
 
     /// POST a GraphQL document with the given `variables`; non-2xx (401/403/
-    /// 429) becomes an error via `error_for_status`.
+    /// 429) becomes an error via `error_for_status`. A 404 is classified as a
+    /// [`super::NotFoundError`] so callers can tell "gone" from "unavailable".
     async fn post_graphql<T: serde::de::DeserializeOwned>(
         &self,
         query: &str,
         variables: serde_json::Value,
+        not_found_context: &str,
     ) -> Result<HardcoverResponse<T>, anyhow::Error> {
-        let resp = self
+        let response = self
             .client
             .post(API_URL)
             .bearer_auth(&self.api_token)
@@ -317,8 +319,13 @@ impl HardcoverService {
                 "variables": variables,
             }))
             .send()
-            .await?
-            .error_for_status()?;
+            .await?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(
+                crate::services::external::NotFoundError(not_found_context.to_string()).into(),
+            );
+        }
+        let resp = response.error_for_status()?;
         let parsed: HardcoverResponse<T> = resp.json().await?;
         Ok(parsed)
     }
@@ -338,6 +345,7 @@ impl HardcoverService {
                     "queryType": "Book",
                     "perPage": 10,
                 }),
+                "hardcover search",
             )
             .await?;
 
@@ -350,8 +358,13 @@ impl HardcoverService {
         }
 
         self.throttle().await;
+        let not_found_context = format!("hardcover {id}");
         let parsed: HardcoverResponse<BooksData> = self
-            .post_graphql(DETAILS_BY_SLUG_QUERY, serde_json::json!({ "slug": id }))
+            .post_graphql(
+                DETAILS_BY_SLUG_QUERY,
+                serde_json::json!({ "slug": id }),
+                &not_found_context,
+            )
             .await?;
         if let Some(book) = parsed.data.books.into_iter().next() {
             return Ok(map_book_detail(book));
@@ -361,14 +374,21 @@ impl HardcoverService {
         if let Ok(numeric_id) = id.parse::<i32>() {
             self.throttle().await;
             let parsed: HardcoverResponse<BooksData> = self
-                .post_graphql(DETAILS_BY_ID_QUERY, serde_json::json!({ "id": numeric_id }))
+                .post_graphql(
+                    DETAILS_BY_ID_QUERY,
+                    serde_json::json!({ "id": numeric_id }),
+                    &not_found_context,
+                )
                 .await?;
             if let Some(book) = parsed.data.books.into_iter().next() {
                 return Ok(map_book_detail(book));
             }
         }
 
-        anyhow::bail!("Hardcover book not found: {id}")
+        Err(
+            crate::services::external::NotFoundError(format!("Hardcover book not found: {id}"))
+                .into(),
+        )
     }
 }
 

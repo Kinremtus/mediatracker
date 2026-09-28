@@ -5,9 +5,9 @@ use crate::models::media_item::CreateMediaItem;
 
 const API_URL: &str = "https://graphql.anilist.co";
 
-const SEARCH_QUERY: &str = r#"query ($search: String) { Page(perPage: 10) { media(type: MANGA, search: $search) { id title { romaji english native } coverImage { large } chapters volumes description averageScore genres status startDate { year } format } } }"#;
+const SEARCH_QUERY: &str = r#"query ($search: String, $type: MediaType) { Page(perPage: 10) { media(type: $type, search: $search) { id title { romaji english native } coverImage { large } chapters volumes episodes description averageScore genres status startDate { year } format } } }"#;
 
-const DETAILS_QUERY: &str = r#"query ($id: Int) { Media(id: $id) { id title { romaji english native } coverImage { large } chapters volumes description averageScore genres status startDate { year } format } }"#;
+const DETAILS_QUERY: &str = r#"query ($id: Int) { Media(id: $id) { id title { romaji english native } coverImage { large } chapters volumes episodes description averageScore genres status startDate { year } format } }"#;
 
 #[derive(Debug, Deserialize)]
 struct AniListResponse<T> {
@@ -39,6 +39,7 @@ struct AniListMedia {
     cover_image: Option<AniListCover>,
     chapters: Option<i32>,
     volumes: Option<i32>,
+    episodes: Option<i32>,
     description: Option<String>,
     #[serde(rename = "averageScore")]
     average_score: Option<f64>,
@@ -66,7 +67,8 @@ struct AniListDate {
     year: Option<i32>,
 }
 
-fn map_media(m: AniListMedia) -> CreateMediaItem {
+fn map_media(m: AniListMedia, media_type: &str) -> CreateMediaItem {
+    let anime = media_type == "anime";
     let title = m
         .title
         .romaji
@@ -87,13 +89,13 @@ fn map_media(m: AniListMedia) -> CreateMediaItem {
     CreateMediaItem {
         provider: "anilist".to_string(),
         external_id: m.id.to_string(),
-        media_type: "manga".to_string(),
+        media_type: media_type.to_string(),
         title,
         title_english: m.title.english.clone(),
         title_native: m.title.native.clone(),
         title_russian: None,
         poster_url: m.cover_image.and_then(|c| c.large),
-        episodes: None,
+        episodes: if anime { m.episodes } else { None },
         description: crate::utils::clean_description(m.description),
         status: m.status,
         score,
@@ -103,8 +105,8 @@ fn map_media(m: AniListMedia) -> CreateMediaItem {
         comparison_key,
         format_type: m.format,
         details: None,
-        chapters: m.chapters,
-        volumes: m.volumes,
+        chapters: if anime { None } else { m.chapters },
+        volumes: if anime { None } else { m.volumes },
         pages: None,
         runtime_minutes: None,
         playtime_hours: None,
@@ -154,18 +156,40 @@ impl AniListService {
         }
     }
 
-    pub async fn search(&self, query: &str) -> Result<Vec<CreateMediaItem>, anyhow::Error> {
+    pub async fn search(
+        &self,
+        query: &str,
+        media_type: &str,
+    ) -> Result<Vec<CreateMediaItem>, anyhow::Error> {
+        let anilist_type = if media_type == "anime" {
+            "ANIME"
+        } else {
+            "MANGA"
+        };
         let body = serde_json::json!({
             "query": SEARCH_QUERY,
-            "variables": { "search": query }
+            "variables": { "search": query, "type": anilist_type }
         });
 
         let resp = self.client.post(API_URL).json(&body).send().await?;
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(super::NotFoundError(format!("anilist search: {query}")).into());
+        }
         let parsed: AniListResponse<AniListPageData> = resp.json().await?;
-        Ok(parsed.data.page.media.into_iter().map(map_media).collect())
+        Ok(parsed
+            .data
+            .page
+            .media
+            .into_iter()
+            .map(|m| map_media(m, media_type))
+            .collect())
     }
 
-    pub async fn get_details(&self, id: &str) -> Result<CreateMediaItem, anyhow::Error> {
+    pub async fn get_details(
+        &self,
+        id: &str,
+        media_type: &str,
+    ) -> Result<CreateMediaItem, anyhow::Error> {
         let numeric_id = id.parse::<i64>()?;
 
         let body = serde_json::json!({
@@ -174,8 +198,11 @@ impl AniListService {
         });
 
         let resp = self.client.post(API_URL).json(&body).send().await?;
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(super::NotFoundError(format!("anilist {id}")).into());
+        }
         let parsed: AniListResponse<AniListMediaData> = resp.json().await?;
-        Ok(map_media(parsed.data.media))
+        Ok(map_media(parsed.data.media, media_type))
     }
 }
 
@@ -212,8 +239,13 @@ mod tests {
         }"#;
 
         let parsed: AniListResponse<AniListPageData> = serde_json::from_str(json).unwrap();
-        let items: Vec<CreateMediaItem> =
-            parsed.data.page.media.into_iter().map(map_media).collect();
+        let items: Vec<CreateMediaItem> = parsed
+            .data
+            .page
+            .media
+            .into_iter()
+            .map(|m| map_media(m, "manga"))
+            .collect();
 
         assert_eq!(items.len(), 1);
         let item = &items[0];
@@ -258,7 +290,7 @@ mod tests {
         }"#;
 
         let parsed: AniListResponse<AniListMediaData> = serde_json::from_str(json).unwrap();
-        let item = map_media(parsed.data.media);
+        let item = map_media(parsed.data.media, "manga");
 
         assert_eq!(item.external_id, "105778");
         assert_eq!(item.title, "Chainsaw Man");
@@ -269,5 +301,66 @@ mod tests {
         assert_eq!(item.score, Some(8.5));
         assert_eq!(item.chapters, None);
         assert!(item.genres.is_empty());
+    }
+
+    #[test]
+    fn parses_anime_search_response() {
+        let json = r#"{
+            "data": {
+                "Page": {
+                    "media": [
+                        {
+                            "id": 21,
+                            "title": { "romaji": "One Piece", "english": "One Piece", "native": "ワンピース" },
+                            "coverImage": { "large": "https://s4.anilist.co/file/op.jpg" },
+                            "chapters": null,
+                            "volumes": null,
+                            "episodes": 1100,
+                            "description": "Pirates.",
+                            "averageScore": 88,
+                            "genres": ["Adventure"],
+                            "status": "RELEASING",
+                            "startDate": { "year": 1999 },
+                            "format": "TV"
+                        }
+                    ]
+                }
+            }
+        }"#;
+
+        let parsed: AniListResponse<AniListPageData> = serde_json::from_str(json).unwrap();
+        let item = map_media(parsed.data.page.media.into_iter().next().unwrap(), "anime");
+
+        assert_eq!(item.media_type, "anime");
+        assert_eq!(item.episodes, Some(1100));
+        assert_eq!(item.chapters, None);
+        assert_eq!(item.format_type.as_deref(), Some("TV"));
+    }
+
+    #[test]
+    fn anime_ignores_manga_counts() {
+        let json = r#"{
+            "data": {
+                "Media": {
+                    "id": 7,
+                    "title": { "romaji": "A", "english": null, "native": null },
+                    "coverImage": null,
+                    "chapters": 9,
+                    "volumes": 3,
+                    "episodes": 12,
+                    "description": null,
+                    "averageScore": null,
+                    "genres": null,
+                    "status": null,
+                    "startDate": null,
+                    "format": null
+                }
+            }
+        }"#;
+        let parsed: AniListResponse<AniListMediaData> = serde_json::from_str(json).unwrap();
+        let item = map_media(parsed.data.media, "anime");
+        assert_eq!(item.episodes, Some(12));
+        assert_eq!(item.chapters, None);
+        assert_eq!(item.volumes, None);
     }
 }

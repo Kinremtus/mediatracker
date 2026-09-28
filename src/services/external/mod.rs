@@ -12,6 +12,8 @@ pub mod shikimori;
 pub mod tmdb;
 
 pub mod dispatch;
+
+use anyhow::Error as AnyhowError;
 use std::time::Duration;
 
 /// Shared outbound HTTP client used by every external provider.
@@ -32,6 +34,23 @@ pub fn http_client() -> reqwest::Client {
             reqwest::Client::new()
         }
     }
+}
+
+/// Marker error: the provider explicitly reported the entity as missing
+/// (HTTP 404, or a structured "not found" payload). It carries the provider
+/// message so logs stay useful, but the card layer only needs to know the
+/// *class* of failure to pick the right fallback badge text.
+#[derive(Debug, thiserror::Error)]
+#[error("not found: {0}")]
+pub struct NotFoundError(pub String);
+
+/// True when an `anyhow` chain was produced by [`NotFoundError`].
+///
+/// Searches the whole error chain, so the marker is still detected when the
+/// provider error was later wrapped with `.context(...)`.
+pub fn is_not_found(e: &AnyhowError) -> bool {
+    e.chain()
+        .any(|c| c.downcast_ref::<NotFoundError>().is_some())
 }
 
 /// One DLC / expansion ("addition") for a game, normalized across providers.
@@ -80,5 +99,26 @@ mod tests {
         assert_eq!(make("expansion").kind_label(), "Расширение");
         assert_eq!(make("addition").kind_label(), "Дополнение");
         assert_eq!(make("weird").kind_label(), "Дополнение");
+    }
+
+    #[test]
+    fn is_not_found_detects_marker_error() {
+        let err: anyhow::Error = NotFoundError("Shikimori 42".to_string()).into();
+        assert!(is_not_found(&err));
+    }
+
+    #[test]
+    fn is_not_found_rejects_other_errors() {
+        let err = anyhow::anyhow!("connection refused");
+        assert!(!is_not_found(&err));
+        let wrapped = err.context("while fetching details");
+        assert!(!is_not_found(&wrapped));
+    }
+
+    #[test]
+    fn is_not_found_detects_marker_through_context() {
+        let err: anyhow::Error = NotFoundError("Shikimori 42".to_string()).into();
+        let wrapped = err.context("while fetching details");
+        assert!(is_not_found(&wrapped));
     }
 }

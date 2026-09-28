@@ -347,8 +347,12 @@ impl ShikimoriService {
     pub async fn get_details(&self, id: &str) -> Result<CreateMediaItem, anyhow::Error> {
         let url = format!("{}/animes/{}", BASE_URL, id);
         let response = self.client.get(&url).send().await?;
-        if !response.status().is_success() {
-            anyhow::bail!("Shikimori details failed: {}", response.status());
+        let status = response.status();
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Err(crate::services::external::NotFoundError(format!("shikimori {id}")).into());
+        }
+        if !status.is_success() {
+            anyhow::bail!("Shikimori details failed: {}", status);
         }
         let r: ShikimoriSearchResult = response.json().await?;
         Ok(map_anime(r))
@@ -370,8 +374,12 @@ impl ShikimoriService {
     pub async fn get_manga_details(&self, id: &str) -> Result<CreateMediaItem, anyhow::Error> {
         let url = format!("{}/mangas/{}", BASE_URL, id);
         let response = self.client.get(&url).send().await?;
-        if !response.status().is_success() {
-            anyhow::bail!("Shikimori manga details failed: {}", response.status());
+        let status = response.status();
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Err(crate::services::external::NotFoundError(format!("shikimori {id}")).into());
+        }
+        if !status.is_success() {
+            anyhow::bail!("Shikimori manga details failed: {}", status);
         }
         let m: ShikimoriManga = response.json().await?;
         Ok(map_manga(m))
@@ -389,8 +397,15 @@ impl ShikimoriService {
     ) -> Result<Vec<ShikimoriEpisode>, anyhow::Error> {
         let url = format!("{}/animes/{}/episodes", BASE_URL, shikimori_id);
         let response = self.client.get(&url).send().await?;
-        if !response.status().is_success() {
-            anyhow::bail!("Shikimori episodes failed: {}", response.status());
+        let status = response.status();
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Err(crate::services::external::NotFoundError(format!(
+                "shikimori {shikimori_id}"
+            ))
+            .into());
+        }
+        if !status.is_success() {
+            anyhow::bail!("Shikimori episodes failed: {}", status);
         }
         let episodes: Vec<ShikimoriEpisode> = response.json().await?;
         Ok(episodes)

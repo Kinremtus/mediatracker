@@ -3,4 +3,9 @@
 # Pulled by sqlx-mysql (caching_sha2_password auth plugin).
 # No patched version exists yet. We don't use MySQL, but
 # sqlx features pull it in. Tracked: RUSTSEC-2023-0071
+#
+# proc-macro-error2 (RUSTSEC-2026-0173, unmaintained) was eliminated at the
+# root: the unused `validator` dependency was removed from Cargo.toml
+# (nothing in src/ used it). Do not re-add validator without checking
+# its dependency tree.
 ignore = ["RUSTSEC-2023-0071"]

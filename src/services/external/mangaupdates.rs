@@ -360,12 +360,14 @@ impl MangaUpdatesService {
     pub async fn get_details(&self, id: &str) -> Result<CreateMediaItem, anyhow::Error> {
         let url = format!("{}/series/{}", BASE_URL, id);
         let response = self.client.get(&url).send().await?;
-        if !response.status().is_success() {
-            anyhow::bail!(
-                "MangaUpdates details failed: {} for id={}",
-                response.status(),
-                id
+        let status = response.status();
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Err(
+                crate::services::external::NotFoundError(format!("mangaupdates {id}")).into(),
             );
+        }
+        if !status.is_success() {
+            anyhow::bail!("MangaUpdates details failed: {} for id={}", status, id);
         }
         let series: MangaUpdatesSeries = response.json().await?;
         Ok(map_series(series))

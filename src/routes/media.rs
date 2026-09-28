@@ -12,6 +12,7 @@ use crate::app_state::AppState;
 use crate::middleware::CurrentUser;
 use crate::models::media_item::CreateMediaItem;
 use crate::services::external::dispatch::{Provider, ProviderClients};
+use crate::services::external::is_not_found;
 
 use super::progress::ProgressRow;
 
@@ -36,6 +37,7 @@ struct MediaDrawerTemplate {
     can_decrement: bool,
     status_display: String,
     from_cache: bool,
+    fallback_notice: String,
 }
 
 impl MediaDrawerTemplate {
@@ -69,6 +71,7 @@ struct MediaDetailTemplate {
     current_status: String,
     flash_message: String,
     from_cache: bool,
+    fallback_notice: String,
 }
 
 #[derive(Deserialize)]
@@ -77,22 +80,46 @@ pub struct MediaDetailQuery {
     flash: Option<String>,
 }
 
+/// Why a card is rendering from stored data (or not).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Fallback {
+    Fresh,
+    /// Provider explicitly reported the entity as gone (404).
+    ProviderGone,
+    /// Network / auth / decode / 5xx failure.
+    ProviderUnavailable,
+}
+
+impl Fallback {
+    pub(crate) fn is_from_cache(&self) -> bool {
+        !matches!(self, Fallback::Fresh)
+    }
+
+    pub(crate) fn notice(&self) -> &'static str {
+        match self {
+            Fallback::Fresh => "",
+            Fallback::ProviderGone => "Показаны сохранённые данные — источник удалил тайтл",
+            Fallback::ProviderUnavailable => "Показаны сохранённые данные — источник недоступен",
+        }
+    }
+}
+
 /// Решить, что рендерить для карточки.
 ///
-/// Возвращает `(item, from_cache)`:
-/// - `manual` / неизвестный провайдер -> строка из БД, `from_cache = false`
+/// Возвращает `(item, kind)`:
+/// - `manual` / неизвестный провайдер -> строка из БД, `Fallback::Fresh`
 ///   (апстрима нет, «провайдер недоступен» показывать нечестно); `None`, если
 ///   строки нет.
-/// - известный провайдер, fetch Ok -> свежий item, `from_cache = false`.
+/// - известный провайдер, fetch Ok -> свежий item, `Fallback::Fresh`.
 /// - известный провайдер, fetch Err + локальная строка -> item из БД,
-///   `from_cache = true` (этап 4: тайтл выживает 404/сетевой сбой); `None`,
-///   если строки нет.
+///   `Fallback::ProviderGone` (404) / `Fallback::ProviderUnavailable`
+///   (этап 4: тайтл выживает 404/сетевой сбой); `None`, если строки нет.
 async fn resolve_card_data(
     state: &AppState,
     provider: &str,
     external_id: &str,
     media_type: &str,
-) -> Option<(CreateMediaItem, bool)> {
+) -> Option<(CreateMediaItem, Fallback)> {
     let local = state
         .tracking
         .find_media_item(provider, external_id)
@@ -104,9 +131,9 @@ async fn resolve_card_data(
 
     let clients = ProviderClients::from_state(state);
     match Provider::from_name(&clients, provider) {
-        None => local.map(|m| (m.into(), false)),
+        None => local.map(|m| (m.into(), Fallback::Fresh)),
         Some(p) => match p.fetch(external_id, media_type).await {
-            Ok(item) => Some((item, false)),
+            Ok(item) => Some((item, Fallback::Fresh)),
             Err(e) => {
                 tracing::debug!(
                     provider,
@@ -114,7 +141,12 @@ async fn resolve_card_data(
                     error = %e,
                     "media: provider fetch failed, falling back to stored data"
                 );
-                local.map(|m| (m.into(), true))
+                let kind = if is_not_found(&e) {
+                    Fallback::ProviderGone
+                } else {
+                    Fallback::ProviderUnavailable
+                };
+                local.map(|m| (m.into(), kind))
             }
         },
     }
@@ -132,7 +164,9 @@ pub async fn get_media_detail(
     let stats = get_sidebar_stats(&state, &user).await;
 
     match resolved {
-        Some((mut item, from_cache)) => {
+        Some((mut item, fallback)) => {
+            let from_cache = fallback.is_from_cache();
+            let fallback_notice = fallback.notice().to_string();
             if let Ok(Some(_)) = state
                 .tracking
                 .find_entry_by_media(user.id, &item.provider, &item.external_id)
@@ -145,6 +179,7 @@ pub async fn get_media_detail(
                 .as_deref()
                 .map(|f| match f {
                     "added" => "✓ Медиа добавлено в список".to_string(),
+                    "duplicate" => "Этот тайтл уже есть в базе".to_string(),
                     "error" => "Ошибка при добавлении".to_string(),
                     _ => String::new(),
                 })
@@ -160,6 +195,7 @@ pub async fn get_media_detail(
                     current_status: String::new(),
                     flash_message,
                     from_cache,
+                    fallback_notice,
                 }
                 .render()
                 .unwrap_or_else(|e| {
@@ -183,7 +219,9 @@ pub async fn get_media_drawer_content(
     let resolved = resolve_card_data(&state, &provider, &external_id, media_type).await;
 
     match resolved {
-        Some((item, from_cache)) => {
+        Some((item, fallback)) => {
+            let from_cache = fallback.is_from_cache();
+            let fallback_notice = fallback.notice().to_string();
             let tracking = state
                 .tracking
                 .find_entry_by_media(user.id, &provider, &external_id)
@@ -238,6 +276,7 @@ pub async fn get_media_drawer_content(
                     can_decrement,
                     status_display,
                     from_cache,
+                    fallback_notice,
                 }
                 .render()
                 .unwrap_or_else(|e| {
@@ -828,4 +867,41 @@ pub async fn set_chapter_read(
     let mut resp = Html(html).into_response();
     crate::utils::set_hx_trigger(&mut resp, &trigger.to_string());
     resp
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Fallback;
+
+    #[test]
+    fn fresh_is_not_from_cache_and_has_no_notice() {
+        assert!(!Fallback::Fresh.is_from_cache());
+        assert_eq!(Fallback::Fresh.notice(), "");
+    }
+
+    #[test]
+    fn provider_gone_notice_mentions_deleted_source() {
+        assert!(Fallback::ProviderGone.is_from_cache());
+        assert!(Fallback::ProviderGone.notice().contains("удалил тайтл"));
+        assert!(
+            Fallback::ProviderGone
+                .notice()
+                .contains("сохранённые данные")
+        );
+    }
+
+    #[test]
+    fn provider_unavailable_notice_mentions_unreachable_source() {
+        assert!(Fallback::ProviderUnavailable.is_from_cache());
+        assert!(
+            Fallback::ProviderUnavailable
+                .notice()
+                .contains("недоступен")
+        );
+        assert!(
+            Fallback::ProviderUnavailable
+                .notice()
+                .contains("сохранённые данные")
+        );
+    }
 }

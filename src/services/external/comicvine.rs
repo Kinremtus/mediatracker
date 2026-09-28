@@ -128,6 +128,11 @@ impl ComicVineService {
             .append_pair("format", "json");
 
         let resp = self.client.get(url).send().await?;
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(
+                crate::services::external::NotFoundError(format!("comicvine {query}")).into(),
+            );
+        }
         let parsed: ComicVineSearchResponse = resp.json().await?;
         Ok(parsed.results.into_iter().map(map_volume).collect())
     }
@@ -144,6 +149,9 @@ impl ComicVineService {
             .append_pair("format", "json");
 
         let resp = self.client.get(url).send().await?;
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(crate::services::external::NotFoundError(format!("comicvine {id}")).into());
+        }
         let parsed: ComicVineDetailResponse = resp.json().await?;
         Ok(map_volume(parsed.results))
     }
