@@ -27,6 +27,8 @@ const APP_JS: &str = "static/js/app.js";
 const SEARCH_HTML: &str = "templates/search.html";
 const DRAWER_CONTENT_HTML: &str = "templates/media_drawer_content.html";
 const PROGRESS_ROW_HTML: &str = "templates/partials/_progress_row.html";
+const DETAIL_HTML: &str = "templates/media_detail.html";
+const CHAPTER_LIST_HTML: &str = "templates/partials/_chapter_list.html";
 
 /// Walk the source tracking brace/paren/bracket depth and string/
 /// comment state. Returns `(open_braces, close_braces,
@@ -426,5 +428,72 @@ fn app_js_detects_progress_click_via_elt() {
         "app.js: progress-button detection must use `e.detail.elt` (with a \
          `e.detail.target` fallback); `e.detail.target` is the freshly-swapped \
          row, not the button that fired the request."
+    );
+}
+
+/// Redesigned drawer must expose the derived status badge (not the raw
+/// provider string), collapsed alt-titles, the info list and the MU link.
+#[test]
+fn drawer_content_redesign_markers() {
+    let src = read_root(DRAWER_CONTENT_HTML);
+    assert!(
+        src.contains("drawer-alt-titles"),
+        "drawer: alt-titles block missing"
+    );
+    assert!(
+        src.contains("status_label"),
+        "drawer: derived status_label not rendered"
+    );
+    assert!(
+        src.contains("drawer-progress-sticky"),
+        "drawer: sticky progress block missing"
+    );
+    assert!(
+        src.contains("drawer-info-list"),
+        "drawer: info list missing"
+    );
+    assert!(
+        !src.contains("{{ item.status.as_ref().unwrap() }}</span>"),
+        "drawer: raw provider status must not be rendered as a badge"
+    );
+}
+
+/// Chapter list must be server-windowed and expose the HTMX "Все главы" toggle.
+#[test]
+fn chapter_list_is_windowed_with_htmx_toggle() {
+    let src = read_root(CHAPTER_LIST_HTML);
+    assert!(
+        src.contains("chapter-list-wrapper"),
+        "chapter list: wrapper for outerHTML swap missing"
+    );
+    assert!(
+        src.contains("?all=true"),
+        "chapter list: full-list HTMX toggle missing"
+    );
+    assert!(
+        src.contains("closest .chapter-list-wrapper"),
+        "chapter list: toggle must target the wrapper"
+    );
+}
+
+/// Detail page must render the Structure sections and the MU link.
+#[test]
+fn detail_page_redesign_markers() {
+    let src = read_root(DETAIL_HTML);
+    assert!(
+        src.contains("Переводы"),
+        "detail: translations section missing"
+    );
+    assert!(
+        src.contains("detail-info-list"),
+        "detail: info list missing"
+    );
+    assert!(
+        src.contains("Открыть на MangaUpdates"),
+        "detail: MU link missing"
+    );
+    assert!(
+        !src.contains("{{ item.status.as_ref().unwrap() }}</span>"),
+        "detail: raw provider status must not be rendered as a badge"
     );
 }
