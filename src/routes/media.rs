@@ -87,6 +87,9 @@ pub struct EpisodesQuery {
     /// Клиентский hint MAL id. Принимается только для anime-провайдеров
     /// (mal | shikimori | anilist) — защита от подмены чужого id.
     mal_id: Option<i64>,
+    /// Клиентский hint на общее число эпизодов. Используется только как
+    /// fallback для синтеза строк, когда каталог провайдера пуст.
+    episodes: Option<i32>,
 }
 
 /// Why a card is rendering from stored data (or not).
@@ -330,6 +333,28 @@ fn query_mal_id_allowed(provider: &str) -> bool {
     matches!(provider, "mal" | "shikimori" | "anilist")
 }
 
+/// Верхняя граница синтетических эпизодов: защищает от мусорного hint
+/// и от генерации миллионов строк.
+const SYNTHETIC_EPISODE_CAP: i32 = 1000;
+
+/// Решить, можно ли синтезировать эпизоды `1..=n` из известного count.
+///
+/// Возвращает `Some(n)` только если:
+/// - есть MAL id (ключ хранения эпизодов),
+/// - провайдер anime-family (та же allowlist, что `query_mal_id_allowed`),
+/// - n в диапазоне `1..=SYNTHETIC_EPISODE_CAP`.
+fn synthetic_episode_count(
+    mal_id: Option<i64>,
+    provider: &str,
+    episodes: Option<i32>,
+) -> Option<i32> {
+    let _ = mal_id?;
+    if !query_mal_id_allowed(provider) {
+        return None;
+    }
+    episodes.filter(|n| (1..=SYNTHETIC_EPISODE_CAP).contains(n))
+}
+
 /// Приоритет: явный query `mal_id` (только для доверенных провайдеров)
 /// выигрывает у значения, выведенного из БД/`external_id`.
 fn pick_mal_id(query_mal_id: Option<i64>, provider: &str, stored: Option<i64>) -> Option<i64> {
@@ -420,7 +445,7 @@ pub async fn get_episodes(
         }
     }
 
-    let episodes = match mal_id {
+    let mut episodes = match mal_id {
         Some(id) => crate::services::episodes::get_episodes(
             &state.db,
             "mal",
@@ -436,6 +461,36 @@ pub async fn get_episodes(
         }),
         None => Vec::new(),
     };
+
+    // Last-resort fallback: the catalog provider returned nothing (Tenrai
+    // returns an empty list for some OVAs / short TV) but we still know the
+    // episode count from the card metadata. Synthesize untitled rows so the
+    // drawer has working tracking checkboxes instead of an empty state.
+    if episodes.is_empty()
+        && let Some(count) = synthetic_episode_count(mal_id, &provider, query.episodes)
+        && let Some(id) = mal_id
+    {
+        match crate::services::episodes::store_synthetic_episodes(&state.db, id, count).await {
+            Err(e) => {
+                tracing::warn!(mal_id = id, count, error = %e, "store_synthetic_episodes failed");
+            }
+            Ok(()) => {
+                episodes = crate::services::episodes::get_episodes(
+                    &state.db,
+                    "mal",
+                    &id.to_string(),
+                    user.id,
+                    &provider,
+                    &external_id,
+                )
+                .await
+                .unwrap_or_else(|e| {
+                    tracing::error!(error = %e, "media: failed to reload synthetic episodes");
+                    Vec::new()
+                });
+            }
+        }
+    }
 
     let html = EpisodeListPartial {
         episodes,
@@ -970,6 +1025,52 @@ mod tests {
             Fallback::ProviderUnavailable
                 .notice()
                 .contains("сохранённые данные")
+        );
+    }
+
+    #[test]
+    fn synthetic_count_rejects_missing_mal_id() {
+        assert_eq!(synthetic_episode_count(None, "mal", Some(12)), None);
+    }
+
+    #[test]
+    fn synthetic_count_rejects_non_anime_provider() {
+        assert_eq!(synthetic_episode_count(Some(1), "tmdb", Some(12)), None);
+        assert_eq!(synthetic_episode_count(Some(1), "manual", Some(12)), None);
+        assert_eq!(
+            synthetic_episode_count(Some(1), "mangaupdates", Some(12)),
+            None
+        );
+    }
+
+    #[test]
+    fn synthetic_count_rejects_out_of_range() {
+        assert_eq!(synthetic_episode_count(Some(1), "mal", None), None);
+        assert_eq!(synthetic_episode_count(Some(1), "mal", Some(0)), None);
+        assert_eq!(synthetic_episode_count(Some(1), "mal", Some(-3)), None);
+        assert_eq!(
+            synthetic_episode_count(Some(1), "mal", Some(SYNTHETIC_EPISODE_CAP + 1)),
+            None
+        );
+    }
+
+    #[test]
+    fn synthetic_count_accepts_valid_anime_hint() {
+        assert_eq!(
+            synthetic_episode_count(Some(30458), "mal", Some(1)),
+            Some(1)
+        );
+        assert_eq!(
+            synthetic_episode_count(Some(30458), "shikimori", Some(2)),
+            Some(2)
+        );
+        assert_eq!(
+            synthetic_episode_count(Some(30458), "anilist", Some(5)),
+            Some(5)
+        );
+        assert_eq!(
+            synthetic_episode_count(Some(30458), "mal", Some(SYNTHETIC_EPISODE_CAP)),
+            Some(SYNTHETIC_EPISODE_CAP)
         );
     }
 }

@@ -138,6 +138,68 @@ pub async fn store_episodes_mal(
     Ok(())
 }
 
+/// Synthesize catalog rows `1..=count` for an anime whose provider
+/// returned an empty episode list but whose total episode count is
+/// known (Tenrai gap for some OVAs / short TV).
+///
+/// Rows carry no titles/dates — only the episode number matters for
+/// the tracking checkboxes. `ON CONFLICT DO NOTHING` guarantees we can
+/// never clobber a real catalog row if one already exists. Mirrors
+/// `store_episodes_mal`'s `media_items.episodes` sync so the drawer
+/// denominator stays consistent.
+///
+/// This is a fallback, not a fetch: callers only use it when the real
+/// catalog read came back empty.
+pub async fn store_synthetic_episodes(
+    pool: &PgPool,
+    mal_id: i64,
+    count: i32,
+) -> Result<(), sqlx::Error> {
+    if count <= 0 {
+        return Ok(());
+    }
+
+    let external_id = mal_id.to_string();
+    let mut tx = pool.begin().await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO anime_episodes
+            (provider, external_id, episode_number)
+        SELECT 'mal', $1, gs
+        FROM generate_series(1, $2::int) AS gs
+        ON CONFLICT (provider, external_id, episode_number) DO NOTHING
+        "#,
+    )
+    .bind(&external_id)
+    .bind(count)
+    .execute(&mut *tx)
+    .await?;
+
+    // Same denominator sync as store_episodes_mal. Only reached when the
+    // catalog was empty, so MAX(episode_number) == count; the plain update
+    // is safe and keeps both paths identical.
+    sqlx::query(
+        r#"
+        UPDATE media_items
+        SET episodes = sub.max_ep
+        FROM (
+            SELECT MAX(episode_number) AS max_ep
+            FROM anime_episodes
+            WHERE provider = 'mal' AND external_id = $1
+        ) AS sub
+        WHERE media_items.provider = 'mal'
+          AND media_items.external_id = $1
+        "#,
+    )
+    .bind(&external_id)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+    Ok(())
+}
+
 /// Read all episodes for one anime, sorted by number ascending, with
 /// the calling user's own `watched` flag joined in. Catalog rows without
 /// a progress row are reported as not watched.
