@@ -28,7 +28,7 @@
 
         {% if !alt_titles.is_empty() || (item.title_english.is_some() && item.title_english.as_ref().unwrap().as_str() != item.title.as_str()) || (item.title_native.is_some() && item.title_native.as_ref().unwrap().as_str() != item.title.as_str()) || (item.title_russian.is_some() && item.title_russian.as_ref().unwrap().as_str() != item.title.as_str()) %}
         <details class="drawer-alt-titles">
-            <summary>Альтернативные названия</summary>
+            <summary>Альтернативные названия <span class="drawer-section-arrow">▾</span></summary>
             <div class="drawer-alt-title-list">
                 {% if let Some(en) = item.title_english %}{% if en.as_str() != item.title.as_str() %}<span>{{ en }}</span>{% endif %}{% endif %}
                 {% if let Some(nt) = item.title_native %}{% if nt.as_str() != item.title.as_str() %}<span>{{ nt }}</span>{% endif %}{% endif %}
@@ -114,7 +114,9 @@
 {% endif %}
 
 {# === 3. INFO === #}
+{% if tracking_id.is_none() %}
 <div class="drawer-divider"></div>
+{% endif %}
 <div class="drawer-section">
     <div class="drawer-section-label">Информация</div>
     <div class="drawer-info-list">
@@ -147,12 +149,9 @@
 {% if item.provider != "manual" %}
 {% if item.media_type == "anime" %}
 <div class="drawer-divider"></div>
-<div class="drawer-section drawer-section--collapsible" x-data="{ open: true }">
-    <button class="drawer-section-toggle" @click="open = !open" type="button">
-        Эпизоды
-        <span class="drawer-section-arrow" :class="{ 'rotated': open }">▾</span>
-    </button>
-    <div class="drawer-episodes" x-show="open" x-cloak
+<div class="drawer-section">
+    <div class="drawer-section-label">Эпизоды{% if let Some(tc) = total_count %} · {{ tc }}{% endif %}</div>
+    <div class="drawer-episodes"
          hx-get="/api/anime/{{ item.provider }}/{{ item.external_id }}/episodes{% if let Some(m) = mal_id %}?mal_id={{ m }}{% if let Some(tc) = total_count %}&episodes={{ tc }}{% endif %}{% else if let Some(tc) = total_count %}?episodes={{ tc }}{% endif %}"
          hx-trigger="revealed once"
          hx-swap="innerHTML">
@@ -166,12 +165,9 @@
 {% if item.provider != "manual" %}
 {% if item.media_type == "series" || item.media_type == "cartoons" || item.media_type == "dramas" %}
 <div class="drawer-divider"></div>
-<div class="drawer-section drawer-section--collapsible" x-data="{ open: true }">
-    <button class="drawer-section-toggle" @click="open = !open" type="button">
-        Сезоны
-        <span class="drawer-section-arrow" :class="{ 'rotated': open }">▾</span>
-    </button>
-    <div class="drawer-episodes" x-show="open" x-cloak
+<div class="drawer-section">
+    <div class="drawer-section-label">Сезоны</div>
+    <div class="drawer-episodes"
          id="tmdb-seasons-outlet-{{ item.external_id }}"
          hx-get="/api/tmdb/{{ item.external_id }}/seasons"
          hx-trigger="revealed once"
@@ -184,7 +180,7 @@
 
 {# === 7. CHAPTERS (manga-like, windowed server-side) === #}
 {% if item.provider != "manual" %}
-{% if item.media_type == "manga" || item.media_type == "manhwa" || item.media_type == "manhua" || item.media_type == "novel" || item.media_type == "other-comics" %}
+{% if item.media_type == "manga" || item.media_type == "manhwa" || item.media_type == "manhua" || item.media_type == "novel" || item.media_type == "other-comics" || item.media_type == "comic" %}
 <div class="drawer-divider"></div>
 <div class="drawer-section">
     <div class="drawer-section-label">Главы{% if let Some(tc) = total_count %} · {{ tc }}{% endif %}</div>
@@ -202,12 +198,9 @@
 {% if item.provider != "manual" %}
 {% if item.media_type == "game" %}
 <div class="drawer-divider"></div>
-<div class="drawer-section drawer-section--collapsible" x-data="{ open: true }">
-    <button class="drawer-section-toggle" @click="open = !open" type="button">
-        Дополнения
-        <span class="drawer-section-arrow" :class="{ 'rotated': open }">▾</span>
-    </button>
-    <div class="drawer-chapters" x-show="open" x-cloak
+<div class="drawer-section">
+    <div class="drawer-section-label">Дополнения</div>
+    <div class="drawer-chapters"
          hx-get="/api/games/{{ item.provider }}/{{ item.external_id }}/additions"
          hx-trigger="revealed once"
          hx-swap="innerHTML">

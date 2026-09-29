@@ -108,6 +108,9 @@ pub struct EpisodesQuery {
     /// Клиентский hint на общее число эпизодов. Используется только как
     /// fallback для синтеза строк, когда каталог провайдера пуст.
     episodes: Option<i32>,
+    /// `?all=true` returns the full episode list instead of the window.
+    #[serde(default)]
+    all: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -190,6 +193,8 @@ async fn resolve_card_data(
 }
 
 const CHAPTER_WINDOW: usize = 5;
+/// Number of episodes rendered in the drawer before "Все эпизоды (N)".
+const EPISODE_WINDOW: usize = 5;
 const MU_WEB_BASE: &str = "https://www.mangaupdates.com";
 
 fn mu_web_url(item: &CreateMediaItem) -> Option<String> {
@@ -372,6 +377,10 @@ struct EpisodeListPartial {
     episodes: Vec<crate::services::episodes::StoredEpisode>,
     provider: String,
     external_id: String,
+    mal_id: Option<i64>,
+    episodes_hint: Option<i32>,
+    windowed: bool,
+    total: usize,
 }
 
 #[derive(Template)]
@@ -446,6 +455,32 @@ async fn resolve_mal_id(
         _ => None,
     };
     pick_mal_id(query_mal_id, provider, stored)
+}
+
+/// Compute the `[start, end)` slice of the episode list to render.
+///
+/// Mirrors the chapter window: `all`, a zero window, or a list no longer
+/// than the window returns the whole list with `windowed = false`.
+/// Otherwise the window starts at the first episode with
+/// `episode_number > progress` (unknown progress => `0` => first window),
+/// clamped so it never overruns the end of the list; when every episode is
+/// watched the last `window` episodes are shown.
+fn episode_window_range(
+    episodes: &[crate::services::episodes::StoredEpisode],
+    progress: i32,
+    all: bool,
+    window: usize,
+) -> (usize, usize, bool) {
+    let total = episodes.len();
+    if all || window == 0 || total <= window {
+        return (0, total, false);
+    }
+    let first_unwatched = episodes
+        .iter()
+        .position(|e| e.episode_number > progress)
+        .unwrap_or(total);
+    let start = first_unwatched.min(total - window);
+    (start, start + window, true)
 }
 
 /// Lazy-loaded endpoint for the drawer's "Episodes" section.
@@ -552,10 +587,34 @@ pub async fn get_episodes(
         }
     }
 
+    // Window the episode list server-side: 5 starting at the first
+    // not-yet-watched episode (or the last 5 when everything is watched),
+    // unless the client explicitly asks for the full list via `?all=true`.
+    let progress = state
+        .tracking
+        .find_entry_by_media(user.id, &provider, &external_id)
+        .await
+        .ok()
+        .flatten()
+        .map(|(_, _, p, _)| p)
+        .unwrap_or(0);
+    let (start, end, windowed) = episode_window_range(
+        &episodes,
+        progress,
+        query.all.unwrap_or(false),
+        EPISODE_WINDOW,
+    );
+    let total = episodes.len();
+    let episodes = episodes[start..end].to_vec();
+
     let html = EpisodeListPartial {
         episodes,
         provider: provider.clone(),
         external_id: external_id.clone(),
+        mal_id,
+        episodes_hint: query.episodes,
+        windowed,
+        total,
     }
     .render()
     .unwrap_or_else(|e| {
@@ -1145,6 +1204,81 @@ mod tests {
         assert_eq!(
             synthetic_episode_count(Some(30458), "mal", Some(SYNTHETIC_EPISODE_CAP)),
             Some(SYNTHETIC_EPISODE_CAP)
+        );
+    }
+
+    fn ep(n: i32) -> crate::services::episodes::StoredEpisode {
+        crate::services::episodes::StoredEpisode {
+            episode_number: n,
+            title_en: None,
+            title_ru: None,
+            title_jp: None,
+            air_date: None,
+            duration_minutes: None,
+            watched: false,
+        }
+    }
+
+    #[test]
+    fn episode_window_empty_list() {
+        let eps: Vec<_> = Vec::new();
+        assert_eq!(
+            episode_window_range(&eps, 0, false, EPISODE_WINDOW),
+            (0, 0, false)
+        );
+    }
+
+    #[test]
+    fn episode_window_short_list_not_windowed() {
+        let eps: Vec<_> = (1..=3).map(ep).collect();
+        assert_eq!(
+            episode_window_range(&eps, 0, false, EPISODE_WINDOW),
+            (0, 3, false)
+        );
+    }
+
+    #[test]
+    fn episode_window_exact_window_not_windowed() {
+        let eps: Vec<_> = (1..=5).map(ep).collect();
+        assert_eq!(
+            episode_window_range(&eps, 0, false, EPISODE_WINDOW),
+            (0, 5, false)
+        );
+    }
+
+    #[test]
+    fn episode_window_without_progress_starts_first() {
+        let eps: Vec<_> = (1..=10).map(ep).collect();
+        assert_eq!(
+            episode_window_range(&eps, 0, false, EPISODE_WINDOW),
+            (0, 5, true)
+        );
+    }
+
+    #[test]
+    fn episode_window_with_progress_starts_at_first_unwatched() {
+        let eps: Vec<_> = (1..=10).map(ep).collect();
+        assert_eq!(
+            episode_window_range(&eps, 4, false, EPISODE_WINDOW),
+            (4, 9, true)
+        );
+    }
+
+    #[test]
+    fn episode_window_all_watched_shows_last() {
+        let eps: Vec<_> = (1..=10).map(ep).collect();
+        assert_eq!(
+            episode_window_range(&eps, 10, false, EPISODE_WINDOW),
+            (5, 10, true)
+        );
+    }
+
+    #[test]
+    fn episode_window_all_flag_returns_full_list() {
+        let eps: Vec<_> = (1..=10).map(ep).collect();
+        assert_eq!(
+            episode_window_range(&eps, 4, true, EPISODE_WINDOW),
+            (0, 10, false)
         );
     }
 }

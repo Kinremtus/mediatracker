@@ -804,50 +804,57 @@
     margin-bottom: 0.5rem;
 }
 
-/* --- Episode List (drawer section) --- */
+/* --- Episode / Chapter lists (unified drawer content) --- */
 .drawer-episodes {
     min-height: 40px;
 }
 .drawer-episodes-loading,
 .episode-list-empty,
-.episode-list-error {
+.episode-list-error,
+.chapter-list-empty {
     padding: 12px;
     color: var(--muted-foreground);
     text-align: center;
     font-size: 13px;
 }
-.episode-list {
+.episode-list,
+.chapter-list {
     display: flex;
     flex-direction: column;
-    max-height: 360px;
+    max-height: 400px;
     overflow-y: auto;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
+    scrollbar-width: thin;
 }
 /* On the full media detail page, allow the list to grow to fit all
    episodes (One Piece has 1100+) instead of being bounded. */
 .media-detail-episodes .episode-list {
     max-height: none;
     overflow: visible;
+    border: none;
+    border-radius: 0;
 }
-.episode-item {
+.episode-item,
+.chapter-item {
     display: grid;
-    grid-template-columns: 40px 60px 1fr;
+    grid-template-columns: 40px 70px 1fr;
     gap: 8px;
     padding: 8px 10px;
     align-items: center;
     border-bottom: 1px solid var(--border);
 }
-.episode-item:last-child {
+.episode-item:last-child,
+.chapter-item:last-child {
     border-bottom: none;
 }
-.episode-item-form {
+.episode-item-form,
+.chapter-item-form {
     margin: 0;
     display: grid;
     place-items: center;
     line-height: 0;
 }
-.episode-item-checkbox {
+.episode-item-checkbox,
+.chapter-item-checkbox {
     width: 32px;
     height: 32px;
     background: transparent;
@@ -865,28 +872,41 @@
     appearance: none;
     outline: none;
 }
-.episode-item-checkbox:hover {
-    color: var(--in-progress);
+.episode-item-checkbox:hover,
+.chapter-item-checkbox:hover {
+    color: var(--in_progress);
 }
-.episode-item-checkbox:active {
+.episode-item-checkbox:active,
+.chapter-item-checkbox:active {
     transform: scale(0.9);
 }
 .episode-item-checkbox--checked,
-.episode-item-checkbox--checked:hover {
-    color: var(--in-progress);
+.episode-item-checkbox--checked:hover,
+.chapter-item-checkbox--checked,
+.chapter-item-checkbox--checked:hover {
+    color: var(--in_progress);
 }
-.episode-item-number {
+.episode-item-number,
+.chapter-item-number {
     font-size: 12px;
     color: var(--muted-foreground);
     font-weight: 500;
 }
-.episode-item-content {
+.chapter-item-volume {
+    font-size: 10px;
+    background: var(--secondary);
+    padding: 1px 4px;
+    border-radius: var(--radius-sm);
+}
+.episode-item-content,
+.chapter-item-content {
     display: flex;
     flex-direction: column;
     gap: 1px;
     min-width: 0;
 }
-.episode-item-line1 {
+.episode-item-line1,
+.chapter-item-line1 {
     font-size: 13px;
     font-weight: 500;
     color: var(--foreground);
@@ -895,7 +915,8 @@
     white-space: nowrap;
 }
 .episode-item-line2,
-.episode-item-line3 {
+.episode-item-line3,
+.chapter-item-line2 {
     font-size: 11px;
     color: var(--muted-foreground);
     overflow: hidden;
@@ -904,11 +925,14 @@
 }
 .episode-item--watched .episode-item-line1,
 .episode-item--watched .episode-item-line2,
-.episode-item--watched .episode-item-line3 {
+.episode-item--watched .episode-item-line3,
+.chapter-item--read .chapter-item-line1,
+.chapter-item--read .chapter-item-line2 {
     text-decoration: line-through;
     opacity: 0.55;
 }
-.episode-item--watched .episode-item-number {
+.episode-item--watched .episode-item-number,
+.chapter-item--read .chapter-item-number {
     opacity: 0.55;
 }
 
@@ -966,103 +990,7 @@
     border-radius: 0;
 }
 
-/* --- Chapter items (manga-like types: identical structure to episodes) --- */
-.chapter-list {
-    max-height: 400px;
-    overflow-y: auto;
-    scrollbar-width: thin;
-}
-.chapter-list-empty {
-    padding: 1rem;
-    text-align: center;
-    color: var(--muted-foreground);
-    font-size: 0.9em;
-}
-.chapter-item {
-    display: grid;
-    grid-template-columns: 40px 70px 1fr;
-    gap: 8px;
-    padding: 8px 10px;
-    align-items: center;
-    border-bottom: 1px solid var(--border);
-}
-.chapter-item:last-child {
-    border-bottom: none;
-}
-.chapter-item-form {
-    margin: 0;
-    display: grid;
-    place-items: center;
-    line-height: 0;
-}
-.chapter-item-checkbox {
-    width: 32px;
-    height: 32px;
-    background: transparent;
-    color: var(--muted-foreground);
-    display: grid;
-    place-items: center;
-    line-height: 0;
-    font-size: 18px;
-    cursor: pointer;
-    padding: 0;
-    margin: 0;
-    border: 0;
-    transition: color 0.15s, transform 0.1s;
-    -webkit-appearance: none;
-    appearance: none;
-    outline: none;
-}
-.chapter-item-checkbox:hover {
-    color: var(--in-progress);
-}
-.chapter-item-checkbox:active {
-    transform: scale(0.9);
-}
-.chapter-item-checkbox--checked,
-.chapter-item-checkbox--checked:hover {
-    color: var(--in-progress);
-}
-.chapter-item-number {
-    font-size: 12px;
-    color: var(--muted-foreground);
-    font-weight: 500;
-}
-.chapter-item-volume {
-    font-size: 10px;
-    background: var(--surface-elevated);
-    padding: 1px 4px;
-    border-radius: var(--radius-sm);
-}
-.chapter-item-content {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    min-width: 0;
-}
-.chapter-item-line1 {
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--foreground);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-.chapter-item-line2 {
-    font-size: 11px;
-    color: var(--muted-foreground);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-.chapter-item--read .chapter-item-line1,
-.chapter-item--read .chapter-item-line2 {
-    text-decoration: line-through;
-    opacity: 0.55;
-}
-.chapter-item--read .chapter-item-number {
-    opacity: 0.55;
-}
+/* --- Chapter rows are styled together with episode rows (see above) --- */
 
 /* --- Search status buttons (in media card) ---
    4 icon-buttons ▶ ⏰ ✓ ✕ in a 1×4 grid at the bottom of the card.
@@ -3227,13 +3155,24 @@ input:-webkit-autofill:active {
     margin-top: 0.35rem;
 }
 .drawer-alt-titles summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
     cursor: pointer;
     font-size: 12px;
+    padding: 0.3rem 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--secondary);
     color: var(--muted-foreground);
     list-style: none;
+    transition: color 0.15s, border-color 0.15s;
 }
+.drawer-alt-titles summary:hover { color: var(--foreground); border-color: var(--ring); }
 .drawer-alt-titles summary::-webkit-details-marker { display: none; }
 .drawer-alt-titles[open] summary { margin-bottom: 0.25rem; }
+.drawer-alt-titles .drawer-section-arrow { font-size: 12px; }
+.drawer-alt-titles[open] .drawer-section-arrow { transform: rotate(180deg); }
 .drawer-alt-title-list { display: flex; flex-direction: column; gap: 0.1rem; }
 .drawer-alt-title-list span { font-size: 12px; color: var(--muted-foreground); }
 
@@ -3262,7 +3201,8 @@ input:-webkit-autofill:active {
 .drawer-struct-list { margin-top: 0.35rem; display: flex; flex-direction: column; gap: 0.15rem; }
 .drawer-struct-list span { font-size: 12px; color: var(--muted-foreground); }
 
-.chapter-list-more {
+.chapter-list-more,
+.episode-list-more {
     display: block;
     width: 100%;
     margin-top: 0.5rem;
@@ -3275,7 +3215,30 @@ input:-webkit-autofill:active {
     border-radius: var(--radius);
     cursor: pointer;
 }
-.chapter-list-more:hover { color: var(--foreground); border-color: var(--ring); }
+.chapter-list-more:hover,
+.episode-list-more:hover { color: var(--foreground); border-color: var(--ring); }
+
+/* Game additions (drawer) */
+.game-additions-list {
+    display: flex;
+    flex-direction: column;
+    max-height: 400px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+}
+.game-addition-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+}
+.game-addition-item:last-child { border-bottom: none; }
+.game-addition-name { font-size: 13px; font-weight: 500; color: var(--foreground); }
+.game-addition-meta { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.game-addition-kind,
+.game-addition-year { font-size: 11px; color: var(--muted-foreground); }
 
 /* Detail structure */
 .detail-section { margin-bottom: 1.25rem; }

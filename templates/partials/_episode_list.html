@@ -1,3 +1,4 @@
+<div class="episode-list-wrapper">
 {% if episodes.is_empty() %}
 <div class="episode-list-empty">Эпизоды не загружены</div>
 {% else %}
@@ -6,4 +7,13 @@
     {% include "partials/_episode_item.html" %}
     {% endfor %}
 </div>
+{% if windowed %}
+<button type="button" class="episode-list-more"
+        hx-get="/api/anime/{{ provider }}/{{ external_id }}/episodes?all=true{% if let Some(m) = mal_id %}&mal_id={{ m }}{% endif %}{% if let Some(tc) = episodes_hint %}&episodes={{ tc }}{% endif %}"
+        hx-target="closest .episode-list-wrapper"
+        hx-swap="outerHTML">
+    Все эпизоды ({{ total }})
+</button>
 {% endif %}
+{% endif %}
+</div>
