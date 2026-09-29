@@ -59,6 +59,9 @@ pub struct MediaItem {
     pub themes: Vec<String>,
     pub demographics: Vec<String>,
     pub categories: Vec<String>,
+    /// Альтернативные названия (MangaUpdates `associated`). Пустой массив —
+    /// блок alt-названий в UI скрывается.
+    pub associated_titles: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -153,6 +156,10 @@ pub struct CreateMediaItem {
     pub demographics: Vec<String>,
     #[serde(default)]
     pub categories: Vec<String>,
+    /// Альтернативные названия с провайдера (MU `associated`). Транзиентно
+    /// приезжает из живого fetch и персистится в `media_items.associated_titles`.
+    #[serde(default)]
+    pub associated_titles: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -242,6 +249,118 @@ pub fn status_release_class(raw: Option<&str>) -> &'static str {
     }
 }
 
+/// Derived release status for the redesigned badges.
+///
+/// Collapses the raw provider status string (which contains chapter/season
+/// ranges, e.g. `"115 Chapters (Ongoing) Season 1: Chapters 1-109"`) and the
+/// `completed` bool into one user-facing word. The raw string is never
+/// rendered to the user. `completed` wins when present (authoritative
+/// provider signal); otherwise the string is classified. `None` => hide badge.
+pub fn derived_status_label(status: Option<&str>, completed: Option<bool>) -> Option<&'static str> {
+    if let Some(true) = completed {
+        return Some("Completed");
+    }
+    if let Some(false) = completed {
+        return Some("Ongoing");
+    }
+    let s = status?.to_lowercase();
+    if s.contains("complete")
+        || s.contains("finished")
+        || s.contains("ended")
+        || s.contains("released")
+    {
+        Some("Completed")
+    } else if s.contains("ongoing")
+        || s.contains("airing")
+        || s.contains("publishing")
+        || s.contains("in production")
+        || s.contains("returning")
+    {
+        Some("Ongoing")
+    } else {
+        None
+    }
+}
+
+/// CSS class for [`derived_status_label`] — reuses tracking-status colors.
+pub fn derived_status_class(label: &str) -> &'static str {
+    match label {
+        "Completed" => "status-completed",
+        "Ongoing" => "status-in_progress",
+        _ => "",
+    }
+}
+
+/// Structured pieces extracted from a provider description.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ParsedDescription {
+    /// Description text with the structural blocks removed.
+    pub clean: Option<String>,
+    /// `Original Novel` block content, if present.
+    pub original_novel: Option<String>,
+    /// `Original Webtoon` block content, if present.
+    pub original_webtoon: Option<String>,
+    /// Languages from the `Official Translations` block (comma-separated).
+    pub translations: Vec<String>,
+}
+
+/// Extract the structural blocks providers (MangaUpdates) embed in the
+/// free-text description, so the UI renders them as data, not prose.
+///
+/// Recognised line labels (leading `**` optional, `:`/`**` suffix optional):
+/// `Original Novel`, `Original Webtoon`, `Official Translations`.
+/// Every other non-empty line is kept as the cleaned description. Pure.
+pub fn parse_description(raw: Option<&str>) -> ParsedDescription {
+    let Some(text) = raw else {
+        return ParsedDescription::default();
+    };
+    let mut out = ParsedDescription::default();
+    let mut clean_lines: Vec<&str> = Vec::new();
+
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = strip_label(trimmed, "Original Novel") {
+            if !rest.is_empty() {
+                out.original_novel = Some(rest.to_string());
+            }
+        } else if let Some(rest) = strip_label(trimmed, "Original Webtoon") {
+            if !rest.is_empty() {
+                out.original_webtoon = Some(rest.to_string());
+            }
+        } else if let Some(rest) = strip_label(trimmed, "Official Translations") {
+            out.translations = rest
+                .split(',')
+                .map(|s| s.trim().trim_matches('*').trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+        } else if !trimmed.is_empty() {
+            clean_lines.push(trimmed);
+        }
+    }
+
+    if !clean_lines.is_empty() {
+        out.clean = Some(clean_lines.join("\n"));
+    }
+    out
+}
+
+/// Match `**Original Novel:** value` (label + `:` or `**`) and return value.
+fn strip_label<'a>(line: &'a str, label: &str) -> Option<&'a str> {
+    let stripped = line.trim_start_matches('*').trim_start();
+    let after = stripped.strip_prefix(label)?;
+    if !(after.starts_with(':') || after.starts_with('*')) {
+        return None;
+    }
+    let value = after
+        .trim_start_matches('*')
+        .trim_start_matches(':')
+        .trim_start_matches('*')
+        .trim()
+        .trim_matches('*')
+        .trim();
+    Some(value)
+}
+
 impl MediaItem {
     pub fn score_class(&self) -> &'static str {
         match self.score {
@@ -293,6 +412,16 @@ impl MediaItem {
             self.aired_from
                 .and_then(|d| d.format("%Y").to_string().parse::<i16>().ok())
         })
+    }
+
+    pub fn derived_status_label(&self) -> Option<&'static str> {
+        derived_status_label(self.status.as_deref(), self.completed)
+    }
+
+    pub fn derived_status_class(&self) -> &'static str {
+        self.derived_status_label()
+            .map(derived_status_class)
+            .unwrap_or("")
     }
 }
 
@@ -354,6 +483,7 @@ impl From<MediaItem> for CreateMediaItem {
             themes: m.themes,
             demographics: m.demographics,
             categories: m.categories,
+            associated_titles: m.associated_titles,
         }
     }
 }
@@ -550,6 +680,16 @@ impl CreateMediaItem {
     pub fn status_class(&self) -> &'static str {
         status_release_class(self.status.as_deref())
     }
+
+    pub fn derived_status_label(&self) -> Option<&'static str> {
+        derived_status_label(self.status.as_deref(), self.completed)
+    }
+
+    pub fn derived_status_class(&self) -> &'static str {
+        self.derived_status_label()
+            .map(derived_status_class)
+            .unwrap_or("")
+    }
 }
 
 #[cfg(test)]
@@ -606,6 +746,7 @@ mod tests {
             themes: vec![],
             demographics: vec![],
             categories: vec![],
+            associated_titles: vec![],
         }
     }
 
@@ -630,5 +771,81 @@ mod tests {
         assert_eq!(c.shikimori_id, None);
         // details переносится.
         assert!(c.details.is_some());
+    }
+
+    #[test]
+    fn derived_status_prefers_completed_flag() {
+        assert_eq!(
+            derived_status_label(Some("Ongoing"), Some(true)),
+            Some("Completed")
+        );
+        assert_eq!(
+            derived_status_label(Some("Complete"), Some(false)),
+            Some("Ongoing")
+        );
+    }
+
+    #[test]
+    fn derived_status_classifies_raw_string() {
+        assert_eq!(
+            derived_status_label(Some("115 Chapters (Ongoing) Season 1: 1-109"), None),
+            Some("Ongoing")
+        );
+        assert_eq!(
+            derived_status_label(Some("72 Volumes (Complete)"), None),
+            Some("Completed")
+        );
+        assert_eq!(derived_status_label(Some("Discontinued"), None), None);
+        assert_eq!(derived_status_label(None, None), None);
+    }
+
+    #[test]
+    fn derived_status_class_maps_labels() {
+        assert_eq!(derived_status_class("Completed"), "status-completed");
+        assert_eq!(derived_status_class("Ongoing"), "status-in_progress");
+        assert_eq!(derived_status_class("Whatever"), "");
+    }
+
+    #[test]
+    fn parse_description_extracts_blocks_and_cleans_text() {
+        let raw = "Story text here.\n\
+                   **Original Novel:** Munpia, Naver Series Started 05/2021 and ended 07/2023\n\
+                   **Original Webtoon:** Naver\n\
+                   **Official Translations:** English, S.Chinese, T.Chinese";
+        let parsed = parse_description(Some(raw));
+        assert_eq!(parsed.clean.as_deref(), Some("Story text here."));
+        assert_eq!(
+            parsed.original_novel.as_deref(),
+            Some("Munpia, Naver Series Started 05/2021 and ended 07/2023")
+        );
+        assert_eq!(parsed.original_webtoon.as_deref(), Some("Naver"));
+        assert_eq!(
+            parsed.translations,
+            vec!["English", "S.Chinese", "T.Chinese"]
+        );
+    }
+
+    #[test]
+    fn parse_description_without_blocks_keeps_text() {
+        let parsed = parse_description(Some("Just a synopsis."));
+        assert_eq!(parsed.clean.as_deref(), Some("Just a synopsis."));
+        assert!(parsed.translations.is_empty());
+        assert!(parsed.original_novel.is_none());
+    }
+
+    #[test]
+    fn parse_description_handles_star_variants_and_none() {
+        let parsed = parse_description(Some("**Original Novel**: Foo\nline two"));
+        assert_eq!(parsed.original_novel.as_deref(), Some("Foo"));
+        assert_eq!(parsed.clean.as_deref(), Some("line two"));
+        assert_eq!(parse_description(None), ParsedDescription::default());
+    }
+
+    #[test]
+    fn associated_titles_pass_through_conversion() {
+        let mut m = sample();
+        m.associated_titles = vec!["Alt One".to_string()];
+        let c: CreateMediaItem = m.into();
+        assert_eq!(c.associated_titles, vec!["Alt One".to_string()]);
     }
 }
