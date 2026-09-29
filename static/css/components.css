@@ -618,6 +618,12 @@
     position: relative;
     display: flex;
     align-items: center;
+    /* The avatar has a larger optical inset (28px in a 36px box = 4px) than the
+     * icon buttons (20px = 8px, 18px = 9px), so hexagon<->avatar reads narrower
+     * than "+"<->hexagon. Nudging the menu left equalizes the two visible gaps:
+     * 9 + 8(gap) + 3.5 + 4 ~= 8 + 8 + 9 = 25. The dropdown is absolutely
+     * positioned with right:0 to this box, so it stays anchored. */
+    margin-left: 0.25rem;
 }
 
 .user-menu-btn {
@@ -3165,8 +3171,8 @@ body.drawer-open {
 }
 
 /* --- Chip containers (flexbox layout) --- */
-.chips,
-.tracking-card-genres {
+/* media_detail: chips wrap freely across as many lines as needed. */
+.chips {
     display: flex;
     flex-wrap: wrap;
     gap: 0.3rem;
@@ -3174,18 +3180,38 @@ body.drawer-open {
     margin-bottom: 0.5rem;
 }
 
-/* Search/home media cards: keep genres on ONE line (clipped) so card
- * heights stay uniform. `.chips` (media_detail) and
- * `.tracking-card-genres` intentionally keep wrapping. */
-.media-card-genres {
+/* Home tracking cards (.tracking-card, templates/partials/tracking_card.html):
+ * show only the chips that fit on ONE row; a chip that would wrap to a second
+ * row is hidden whole (no clipping, no fade). `.chip-sm` is 21.9px tall and the
+ * second row starts at 21.9 + 4.2 (0.3rem gap) = 26.1px, so a 22px box shows
+ * exactly row 1 and hides row 2. The template already caps at take(2); the cap
+ * guards against a long genre pushing the row over the edge. */
+.tracking-card-genres {
     display: flex;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
+    align-content: flex-start;
     overflow: hidden;
+    height: 22px;
     gap: 0.3rem;
     margin-top: 0.35rem;
     margin-bottom: 0.5rem;
-    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 1.5rem), transparent);
-    mask-image: linear-gradient(to right, #000 calc(100% - 1.5rem), transparent);
+}
+
+/* Search media cards (templates/search.html): show only the chips that fully
+ * fit on ONE row so card heights stay uniform. A chip that would wrap to a
+ * second row is hidden whole instead of being clipped or faded. `.chip-sm` is
+ * 21.9px tall and the second row starts at 21.9 + 4.2 (0.3rem gap) = 26.1px,
+ * so a 22px box shows exactly row 1 and hides row 2. `.chips` (media_detail)
+ * still wraps freely. */
+.media-card-genres {
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    overflow: hidden;
+    height: 22px;
+    gap: 0.3rem;
+    margin-top: 0.35rem;
+    margin-bottom: 0.5rem;
 }
 
 /* Override browser autofill glow (chrome/safari/edge apply their own
