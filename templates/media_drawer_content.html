@@ -63,10 +63,21 @@
             <span class="drawer-rating-value">{{ rating_display }}/10</span>
         </div>
         {% endif %}
+
+        {# Progress row moved here from the sticky block: last element of the
+           right column. Gated on BOTH tracking_id and has_progress — the row's
+           buttons POST to /tracking/{tid}/... so it must never render for an
+           untracked item (has_progress alone is not enough: an untracked
+           anime/manga still reports has_progress = true). #}
+        {% if let Some(tid) = tracking_id %}
+        {% if has_progress %}
+        {% include "partials/_progress_row.html" %}
+        {% endif %}
+        {% endif %}
     </div>
 </div>
 
-{# === 2. PROGRESS (sticky, right under hero) === #}
+{# === 2. STICKY STATUS (status chips only) === #}
 {% if let Some(tid) = tracking_id %}
 <div class="drawer-progress-sticky">
     <div class="drawer-status-chips">
@@ -99,13 +110,40 @@
             Брошено
         </button>
     </div>
-    {% if has_progress %}
-    {% include "partials/_progress_row.html" %}
-    {% endif %}
 </div>
 {% endif %}
 
-{# === EPISODES (anime only) === #}
+{# === 3. INFO === #}
+<div class="drawer-divider"></div>
+<div class="drawer-section">
+    <div class="drawer-section-label">Информация</div>
+    <div class="drawer-info-list">
+        {% if !item.genres.is_empty() %}
+        <div class="drawer-chips drawer-chips--inline" style="margin-top: 0;">
+            {% for g in item.genres.iter().take(6) %}<span class="chip chip-genre chip-sm">{{ g }}</span>{% endfor %}
+        </div>
+        {% endif %}
+        {% if !item.authors.is_empty() %}<div class="drawer-info-row"><span class="label">Авторы:</span><span>{{ item.authors.join(", ") }}</span></div>{% endif %}
+        {% if !item.publishers.is_empty() %}<div class="drawer-info-row"><span class="label">Издатели:</span><span>{{ item.publishers.join(", ") }}</span></div>{% endif %}
+        {% if let Some(mu) = mu_url %}<a class="drawer-mu-link" href="{{ mu }}" target="_blank" rel="noopener">Открыть на MangaUpdates ↗</a>{% endif %}
+    </div>
+</div>
+
+{# === 4. DESCRIPTION === #}
+{% if description_clean.is_some() || !translations.is_empty() || original_novel.is_some() || original_webtoon.is_some() %}
+<div class="drawer-divider"></div>
+<details class="drawer-section drawer-description-details">
+    <summary class="drawer-section-toggle">Описание <span class="drawer-section-arrow">▾</span></summary>
+    {% if let Some(c) = description_clean %}<p class="drawer-description-clean">{{ c }}</p>{% endif %}
+    <div class="drawer-struct-list">
+        {% if let Some(on) = original_novel %}<span><b>Original Novel:</b> {{ on }}</span>{% endif %}
+        {% if let Some(ow) = original_webtoon %}<span><b>Original Webtoon:</b> {{ ow }}</span>{% endif %}
+        {% if !translations.is_empty() %}<span><b>Переводы:</b> {{ translations.join(", ") }}</span>{% endif %}
+    </div>
+</details>
+{% endif %}
+
+{# === 5. EPISODES (anime only) === #}
 {% if item.provider != "manual" %}
 {% if item.media_type == "anime" %}
 <div class="drawer-divider"></div>
@@ -124,7 +162,7 @@
 {% endif %}
 {% endif %}
 
-{# === TMDB SEASONS (series/cartoons/dramas) === #}
+{# === 6. TMDB SEASONS (series/cartoons/dramas) === #}
 {% if item.provider != "manual" %}
 {% if item.media_type == "series" || item.media_type == "cartoons" || item.media_type == "dramas" %}
 <div class="drawer-divider"></div>
@@ -144,7 +182,7 @@
 {% endif %}
 {% endif %}
 
-{# === 3. CHAPTERS (manga-like, windowed server-side) === #}
+{# === 7. CHAPTERS (manga-like, windowed server-side) === #}
 {% if item.provider != "manual" %}
 {% if item.media_type == "manga" || item.media_type == "manhwa" || item.media_type == "manhua" || item.media_type == "novel" || item.media_type == "other-comics" %}
 <div class="drawer-divider"></div>
@@ -160,7 +198,7 @@
 {% endif %}
 {% endif %}
 
-{# === GAME ADDITIONS (games only) === #}
+{# === 8. GAME ADDITIONS (games only) === #}
 {% if item.provider != "manual" %}
 {% if item.media_type == "game" %}
 <div class="drawer-divider"></div>
@@ -179,37 +217,7 @@
 {% endif %}
 {% endif %}
 
-{# === 4. INFO === #}
-<div class="drawer-divider"></div>
-<div class="drawer-section">
-    <div class="drawer-section-label">Информация</div>
-    <div class="drawer-info-list">
-        {% if !item.genres.is_empty() %}
-        <div class="drawer-chips drawer-chips--inline" style="margin-top: 0;">
-            {% for g in item.genres.iter().take(6) %}<span class="chip chip-genre chip-sm">{{ g }}</span>{% endfor %}
-        </div>
-        {% endif %}
-        {% if !item.authors.is_empty() %}<div class="drawer-info-row"><span class="label">Авторы:</span><span>{{ item.authors.join(", ") }}</span></div>{% endif %}
-        {% if !item.publishers.is_empty() %}<div class="drawer-info-row"><span class="label">Издатели:</span><span>{{ item.publishers.join(", ") }}</span></div>{% endif %}
-        {% if let Some(mu) = mu_url %}<a class="drawer-mu-link" href="{{ mu }}" target="_blank" rel="noopener">Открыть на MangaUpdates ↗</a>{% endif %}
-    </div>
-</div>
-
-{# === 5. DESCRIPTION === #}
-{% if description_clean.is_some() || !translations.is_empty() || original_novel.is_some() || original_webtoon.is_some() %}
-<div class="drawer-divider"></div>
-<details class="drawer-section drawer-description-details">
-    <summary class="drawer-section-toggle">Описание <span class="drawer-section-arrow">▾</span></summary>
-    {% if let Some(c) = description_clean %}<p class="drawer-description-clean">{{ c }}</p>{% endif %}
-    <div class="drawer-struct-list">
-        {% if let Some(on) = original_novel %}<span><b>Original Novel:</b> {{ on }}</span>{% endif %}
-        {% if let Some(ow) = original_webtoon %}<span><b>Original Webtoon:</b> {{ ow }}</span>{% endif %}
-        {% if !translations.is_empty() %}<span><b>Переводы:</b> {{ translations.join(", ") }}</span>{% endif %}
-    </div>
-</details>
-{% endif %}
-
-{# === ADD TO TRACKING (only if NOT tracked) === #}
+{# === ADD TO TRACKING (only if NOT tracked; always last) === #}
 {% if tracking_id.is_none() %}
 <div class="drawer-divider"></div>
 <div class="drawer-section">
