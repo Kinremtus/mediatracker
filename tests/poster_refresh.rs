@@ -126,3 +126,73 @@ async fn update_item_handles_poster_refresh_cases() {
         "all-None update must not touch the poster"
     );
 }
+
+async fn genres_of(pool: &PgPool, id: Uuid) -> Vec<String> {
+    sqlx::query_scalar("SELECT genres FROM media_items WHERE id = $1")
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .expect("genres")
+}
+
+#[tokio::test]
+async fn update_item_self_heals_empty_genres() {
+    let ctx = common::TestContext::new().await;
+    let user_id = seed_user(&ctx.pool, "poster_refresh_genres_user").await;
+
+    let item = CreateMediaItem {
+        provider: "manual".to_string(),
+        external_id: Uuid::new_v4().to_string(),
+        media_type: "movie".to_string(),
+        title: "Genre Heal Movie".to_string(),
+        ..Default::default()
+    };
+    ctx.state
+        .tracking
+        .add_to_list(user_id, &item, "planned")
+        .await
+        .expect("seed manual row");
+
+    let row = load_row(&ctx.pool, &item.external_id).await;
+    assert!(genres_of(&ctx.pool, row.id).await.is_empty());
+
+    // (a) empty genres + provider genres -> self-heal.
+    let updated = update_item(
+        &ctx.pool,
+        &row,
+        &CreateMediaItem {
+            genres: vec!["Action".to_string(), "Drama".to_string()],
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("update_item (a)");
+    assert!(updated, "empty genres must be repopulated");
+    assert_eq!(
+        genres_of(&ctx.pool, row.id).await,
+        vec!["Action".to_string(), "Drama".to_string()]
+    );
+
+    // (b) non-empty genres must NEVER be overwritten (respect manual edits).
+    let updated = update_item(
+        &ctx.pool,
+        &row,
+        &CreateMediaItem {
+            genres: vec!["Comedy".to_string()],
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("update_item (b)");
+    assert!(!updated, "existing genres must not be overwritten");
+    assert_eq!(
+        genres_of(&ctx.pool, row.id).await,
+        vec!["Action".to_string(), "Drama".to_string()]
+    );
+
+    // (c) empty genres + empty provider genres -> no-op.
+    let updated = update_item(&ctx.pool, &row, &CreateMediaItem::default())
+        .await
+        .expect("update_item (c)");
+    assert!(!updated, "empty -> empty genres must be a no-op");
+}

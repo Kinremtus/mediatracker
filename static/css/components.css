@@ -568,6 +568,21 @@
     background: var(--secondary);
 }
 
+/* Global "add manually" header icon button (mirrors .theme-toggle-btn sizing). */
+.header-icon-btn {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius);
+    transition: background 0.15s ease;
+}
+
+.header-icon-btn:hover {
+    background: var(--secondary);
+}
+
 .theme-dropdown {
     position: absolute;
     top: 100%;
@@ -2202,6 +2217,24 @@ body.drawer-open {
     margin-top: 0.5rem;
 }
 
+/* Drawer genres: up to 6 render inline; 7+ collapse behind a native
+ * <details> (no JS). Threshold lives in media_drawer_content.html. */
+.drawer-genres-collapse {
+    margin-top: 0;
+}
+
+.drawer-genres-summary {
+    cursor: pointer;
+    list-style: none;
+    color: var(--muted-foreground);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.drawer-genres-summary::-webkit-details-marker {
+    display: none;
+}
+
 .drawer-divider {
     border-top: 1px solid var(--border);
     margin: 0.75rem 0;
@@ -2366,6 +2399,7 @@ body.drawer-open {
  * The row is re-rendered by HTMX into the same parent, so a descendant
  * selector keeps applying after the `outerHTML` swap. */
 .drawer-hero-info .drawer-progress-row {
+    margin-top: 0.5rem;
     margin-bottom: 0.25rem;
 }
 
@@ -3128,10 +3162,21 @@ body.drawer-open {
 
 /* --- Chip containers (flexbox layout) --- */
 .chips,
-.tracking-card-genres,
-.media-card-genres {
+.tracking-card-genres {
     display: flex;
     flex-wrap: wrap;
+    gap: 0.3rem;
+    margin-top: 0.35rem;
+    margin-bottom: 0.5rem;
+}
+
+/* Search/home media cards: keep genres on ONE line (clipped) so card
+ * heights stay uniform. `.chips` (media_detail) and
+ * `.tracking-card-genres` intentionally keep wrapping. */
+.media-card-genres {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow: hidden;
     gap: 0.3rem;
     margin-top: 0.35rem;
     margin-bottom: 0.5rem;

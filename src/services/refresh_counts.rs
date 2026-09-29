@@ -259,6 +259,10 @@ pub async fn update_item(
                 WHEN cardinality($11) > 0 THEN $11
                 ELSE associated_titles
             END,
+            genres = CASE
+                WHEN cardinality(genres) = 0 AND cardinality($12) > 0 THEN $12
+                ELSE genres
+            END,
             updated_at = now()
         WHERE id = $1
           AND (
@@ -272,6 +276,7 @@ pub async fn update_item(
             OR ($9 IS NOT NULL AND score IS DISTINCT FROM $9)
             OR (NULLIF($10, '') IS NOT NULL AND poster_url IS DISTINCT FROM $10)
             OR (cardinality($11) > 0 AND associated_titles IS DISTINCT FROM $11)
+            OR (cardinality(genres) = 0 AND cardinality($12) > 0)
           )
         "#,
     )
@@ -286,6 +291,7 @@ pub async fn update_item(
     .bind(new.score)
     .bind(new.poster_url.as_deref().unwrap_or(""))
     .bind(&new.associated_titles)
+    .bind(&new.genres)
     .execute(db)
     .await?;
 

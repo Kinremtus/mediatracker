@@ -30,6 +30,8 @@ const PROGRESS_ROW_HTML: &str = "templates/partials/_progress_row.html";
 const DETAIL_HTML: &str = "templates/media_detail.html";
 const CHAPTER_LIST_HTML: &str = "templates/partials/_chapter_list.html";
 const EPISODE_LIST_HTML: &str = "templates/partials/_episode_list.html";
+const APP_SHELL_HTML: &str = "templates/app_shell.html";
+const TRACKING_LIST_HTML: &str = "templates/tracking_list.html";
 
 /// Walk the source tracking brace/paren/bracket depth and string/
 /// comment state. Returns `(open_braces, close_braces,
@@ -687,4 +689,62 @@ fn alt_titles_summary_has_chevron_everywhere() {
             "{path}: alt-titles `<summary>` must render the chip + chevron"
         );
     }
+}
+
+/// Global "+ add manually" must live in the shared header (all pages inherit
+/// `app_shell.html`), before the theme toggle, as a 36x36 icon button.
+#[test]
+fn header_has_global_add_manually_button() {
+    let src = read_root(APP_SHELL_HTML);
+
+    let btn = src.find("href=\"/tracking/manual\"").unwrap_or_else(|| {
+        panic!("{APP_SHELL_HTML}: global add-manually link to /tracking/manual not found")
+    });
+    assert!(
+        src.contains("class=\"header-icon-btn\""),
+        "{APP_SHELL_HTML}: add-manually button must use `.header-icon-btn`"
+    );
+    assert!(
+        src.contains("title=\"Добавление медиа\""),
+        "{APP_SHELL_HTML}: add-manually button must carry a native title tooltip"
+    );
+    let theme = src
+        .find("class=\"theme-toggle\"")
+        .unwrap_or_else(|| panic!("{APP_SHELL_HTML}: theme toggle not found"));
+    assert!(
+        btn < theme,
+        "{APP_SHELL_HTML}: add-manually button must appear before the theme toggle \
+         (button at byte {btn}, theme at byte {theme})"
+    );
+}
+
+/// The old per-page "+ Добавить вручную" link is redundant now that the
+/// header button is global.
+#[test]
+fn tracking_list_has_no_redundant_add_link() {
+    let src = read_root(TRACKING_LIST_HTML);
+    assert!(
+        !src.contains("href=\"/tracking/manual\""),
+        "{TRACKING_LIST_HTML}: the redundant add-manually link must be removed \
+         (the header button is global now)"
+    );
+}
+
+/// Drawer genres: render ALL genres, but collapse behind a native <details>
+/// when the list is long enough to overflow the hero column.
+#[test]
+fn drawer_genres_show_all_and_collapse_when_long() {
+    let src = read_root(DRAWER_CONTENT_HTML);
+    assert!(
+        !src.contains("item.genres.iter().take(6)"),
+        "{DRAWER_CONTENT_HTML}: genres must no longer be capped with take(6)"
+    );
+    assert!(
+        src.contains("item.genres.len() > 6"),
+        "{DRAWER_CONTENT_HTML}: missing the collapse flag (genres.len() > 6)"
+    );
+    assert!(
+        src.contains("drawer-genres-collapse"),
+        "{DRAWER_CONTENT_HTML}: long genre lists must collapse via `.drawer-genres-collapse`"
+    );
 }

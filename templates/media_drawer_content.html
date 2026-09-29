@@ -121,9 +121,21 @@
     <div class="drawer-section-label">Информация</div>
     <div class="drawer-info-list">
         {% if !item.genres.is_empty() %}
+        {# Show ALL genres. Up to 6 fit inline; 7+ collapse behind a native
+           <details> (no JS). Threshold mirrors the old `take(6)` cap so the
+           common case is visually unchanged. #}
+        {% if item.genres.len() > 6 %}
+        <details class="drawer-genres-collapse">
+            <summary class="drawer-genres-summary">Все жанры ({{ item.genres.len() }}) <span class="drawer-section-arrow">▾</span></summary>
+            <div class="drawer-chips drawer-chips--inline" style="margin-top: 0.35rem;">
+                {% for g in item.genres.iter() %}<span class="chip chip-genre chip-sm">{{ g }}</span>{% endfor %}
+            </div>
+        </details>
+        {% else %}
         <div class="drawer-chips drawer-chips--inline" style="margin-top: 0;">
-            {% for g in item.genres.iter().take(6) %}<span class="chip chip-genre chip-sm">{{ g }}</span>{% endfor %}
+            {% for g in item.genres.iter() %}<span class="chip chip-genre chip-sm">{{ g }}</span>{% endfor %}
         </div>
+        {% endif %}
         {% endif %}
         {% if !item.authors.is_empty() %}<div class="drawer-info-row"><span class="label">Авторы:</span><span>{{ item.authors.join(", ") }}</span></div>{% endif %}
         {% if !item.publishers.is_empty() %}<div class="drawer-info-row"><span class="label">Издатели:</span><span>{{ item.publishers.join(", ") }}</span></div>{% endif %}
