@@ -625,8 +625,11 @@
     border: none;
     cursor: pointer;
     padding: 0;
+    width: 36px;
+    height: 36px;
     display: flex;
     align-items: center;
+    justify-content: center;
 }
 
 .user-dropdown {
@@ -1656,9 +1659,9 @@
 .tracking-search-form button {
     height: 40px;
     padding: 0 1.25rem;
-    background: var(--primary);
-    color: var(--primary-foreground);
-    border: none;
+    background: var(--secondary);
+    color: var(--secondary-foreground);
+    border: 1px solid var(--border);
     border-radius: var(--radius);
     font-size: 14px;
     font-weight: 500;
@@ -1666,6 +1669,7 @@
 }
 
 .tracking-search-form button:hover {
+    background: var(--muted);
     opacity: 0.9;
 }
 
@@ -3180,6 +3184,8 @@ body.drawer-open {
     gap: 0.3rem;
     margin-top: 0.35rem;
     margin-bottom: 0.5rem;
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 1.5rem), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 1.5rem), transparent);
 }
 
 /* Override browser autofill glow (chrome/safari/edge apply their own
