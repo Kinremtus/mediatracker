@@ -2,7 +2,7 @@ mod common;
 
 use mediatracker::services::episodes::{
     count_watched, get_episode, get_episode_states, get_episodes, set_watched,
-    update_progress_from_watched,
+    sync_watched_from_progress, update_progress_from_watched,
 };
 use uuid::Uuid;
 
@@ -364,4 +364,119 @@ async fn update_progress_from_watched_without_tracking_returns_none() {
         .await
         .expect("update without tracking entry");
     assert_eq!(progress, None);
+}
+
+#[tokio::test]
+async fn sync_from_progress_mirrors_counter_onto_checkboxes() {
+    let (ctx, user_id) = setup().await;
+    for n in 1..=5 {
+        insert_episode(&ctx, n).await;
+    }
+
+    // Start from "all 1..=5 watched", as if the user had checked ep 5.
+    set_watched(&ctx.pool, user_id, "mal", &mal_str(), MAL_ID, 5, true)
+        .await
+        .expect("seed watched");
+
+    // Decrease the card counter to 2 -> episodes 3..=5 must uncheck.
+    sync_watched_from_progress(&ctx.pool, user_id, "mal", &mal_str(), MAL_ID, 2)
+        .await
+        .expect("sync to 2");
+    assert_eq!(
+        get_episode_states(&ctx.pool, user_id, "mal", &mal_str(), MAL_ID)
+            .await
+            .expect("states"),
+        vec![(1, true), (2, true), (3, false), (4, false), (5, false)],
+        "decreasing the counter must uncheck every episode above it"
+    );
+
+    // Idempotent: the same value a second time changes nothing.
+    sync_watched_from_progress(&ctx.pool, user_id, "mal", &mal_str(), MAL_ID, 2)
+        .await
+        .expect("sync to 2 again");
+    assert_eq!(
+        get_episode_states(&ctx.pool, user_id, "mal", &mal_str(), MAL_ID)
+            .await
+            .expect("states"),
+        vec![(1, true), (2, true), (3, false), (4, false), (5, false)],
+        "repeat sync must be idempotent"
+    );
+
+    // Increase 2 -> 4 checks the gap and refills below.
+    sync_watched_from_progress(&ctx.pool, user_id, "mal", &mal_str(), MAL_ID, 4)
+        .await
+        .expect("sync to 4");
+    assert_eq!(
+        get_episode_states(&ctx.pool, user_id, "mal", &mal_str(), MAL_ID)
+            .await
+            .expect("states"),
+        vec![(1, true), (2, true), (3, true), (4, true), (5, false)],
+        "increasing the counter must check every episode up to it"
+    );
+
+    // Zero unwatches everything.
+    sync_watched_from_progress(&ctx.pool, user_id, "mal", &mal_str(), MAL_ID, 0)
+        .await
+        .expect("sync to 0");
+    assert_eq!(
+        get_episode_states(&ctx.pool, user_id, "mal", &mal_str(), MAL_ID)
+            .await
+            .expect("states"),
+        vec![(1, false), (2, false), (3, false), (4, false), (5, false)],
+        "progress 0 must unwatch every episode"
+    );
+}
+
+#[tokio::test]
+async fn sync_from_progress_is_noop_on_empty_catalog() {
+    let (ctx, user_id) = setup().await;
+
+    sync_watched_from_progress(&ctx.pool, user_id, "mal", &mal_str(), MAL_ID, 3)
+        .await
+        .expect("sync with no catalog must not error");
+
+    let (rows,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*)::bigint FROM user_episode_progress WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_one(&ctx.pool)
+            .await
+            .expect("count progress rows");
+    assert_eq!(rows, 0, "empty catalog must not create progress rows");
+}
+
+#[tokio::test]
+async fn sync_from_progress_uses_the_card_provider_key() {
+    let (ctx, user_id) = setup().await;
+    for n in 1..=3 {
+        insert_episode(&ctx, n).await;
+    }
+
+    // Catalog lives under ('mal', MAL_ID); the card is a shikimori one.
+    sync_watched_from_progress(&ctx.pool, user_id, "shikimori", "999999881", MAL_ID, 2)
+        .await
+        .expect("sync via shikimori key");
+
+    let (shiki_watched,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*)::bigint FROM user_episode_progress \
+         WHERE user_id = $1 AND provider = 'shikimori' \
+           AND external_id = '999999881' AND watched = TRUE",
+    )
+    .bind(user_id)
+    .fetch_one(&ctx.pool)
+    .await
+    .expect("count shikimori watched");
+    assert_eq!(shiki_watched, 2, "sync must write under the card's key");
+
+    let (mal_rows,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*)::bigint FROM user_episode_progress \
+         WHERE user_id = $1 AND provider = 'mal'",
+    )
+    .bind(user_id)
+    .fetch_one(&ctx.pool)
+    .await
+    .expect("count mal rows");
+    assert_eq!(
+        mal_rows, 0,
+        "sync must not write under a different provider key"
+    );
 }

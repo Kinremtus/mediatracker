@@ -2,6 +2,7 @@ mod common;
 
 use mediatracker::models::media_item::CreateMediaItem;
 use mediatracker::models::tracking_entry::UpdateTracking;
+use mediatracker::services::episodes::{get_episode_states, set_watched};
 use mediatracker::services::tracking::TrackingService;
 use uuid::Uuid;
 
@@ -203,4 +204,122 @@ async fn update_entry_with_null_rating_succeeds() {
     assert_eq!(returned.progress, 5);
     assert_eq!(returned.rating, None);
     assert_eq!(returned.status, "in_progress");
+}
+
+#[tokio::test]
+async fn update_entry_decrease_unchecks_anime_episodes_above_new_progress() {
+    let (ctx, user_id) = setup().await;
+    let svc = TrackingService::new(ctx.pool.clone());
+
+    // One Piece-ish shape: catalog covers 901..=910, watched up to 908.
+    for n in 901..=910 {
+        sqlx::query(
+            "INSERT INTO anime_episodes (provider, external_id, episode_number, title_en) \
+             VALUES ('mal', '21', $1, $2) ON CONFLICT DO NOTHING",
+        )
+        .bind(n)
+        .bind(format!("Episode {n}"))
+        .execute(&ctx.pool)
+        .await
+        .expect("insert episode");
+    }
+    set_watched(&ctx.pool, user_id, "mal", "21", 21, 908, true)
+        .await
+        .expect("seed watched to 908");
+
+    svc.add_to_list(user_id, &fixture_mal_anime(), "in_progress")
+        .await
+        .expect("add_to_list");
+    let entry_id: Uuid = sqlx::query_scalar("SELECT id FROM tracking_entries WHERE user_id = $1")
+        .bind(user_id)
+        .fetch_one(&ctx.pool)
+        .await
+        .expect("entry exists");
+    sqlx::query("UPDATE tracking_entries SET progress = 908 WHERE id = $1")
+        .bind(entry_id)
+        .execute(&ctx.pool)
+        .await
+        .expect("seed progress");
+
+    let update = UpdateTracking {
+        status: None,
+        rating: None,
+        progress: Some(906),
+    };
+    svc.update_entry(entry_id, user_id, &update)
+        .await
+        .expect("update_entry");
+
+    let states = get_episode_states(&ctx.pool, user_id, "mal", "21", 21)
+        .await
+        .expect("episode states");
+    let watched_above: Vec<i32> = states
+        .iter()
+        .filter(|(n, w)| *n > 906 && *w)
+        .map(|(n, _)| *n)
+        .collect();
+    assert!(
+        watched_above.is_empty(),
+        "episodes above the new counter must be unchecked, still watched: {watched_above:?}"
+    );
+    let watched_at_or_below = states.iter().filter(|(n, w)| *n <= 906 && *w).count();
+    assert_eq!(
+        watched_at_or_below, 6,
+        "episodes 901..=906 must stay watched"
+    );
+}
+
+#[tokio::test]
+async fn update_entry_on_non_anime_does_not_touch_anime_progress() {
+    let (ctx, user_id) = setup().await;
+    let svc = TrackingService::new(ctx.pool.clone());
+
+    for n in 1..=3 {
+        sqlx::query(
+            "INSERT INTO anime_episodes (provider, external_id, episode_number, title_en) \
+             VALUES ('mal', '777', $1, $2) ON CONFLICT DO NOTHING",
+        )
+        .bind(n)
+        .bind(format!("Episode {n}"))
+        .execute(&ctx.pool)
+        .await
+        .expect("insert episode");
+    }
+    set_watched(&ctx.pool, user_id, "mal", "777", 777, 2, true)
+        .await
+        .expect("seed anime watched");
+
+    let media = CreateMediaItem {
+        provider: "mangaupdates".to_string(),
+        external_id: "manga-1".to_string(),
+        media_type: "manga".to_string(),
+        title: "Unrelated Manga".to_string(),
+        ..Default::default()
+    };
+    svc.add_to_list(user_id, &media, "in_progress")
+        .await
+        .expect("add_to_list");
+    let entry_id: Uuid = sqlx::query_scalar("SELECT id FROM tracking_entries WHERE user_id = $1")
+        .bind(user_id)
+        .fetch_one(&ctx.pool)
+        .await
+        .expect("entry exists");
+
+    let update = UpdateTracking {
+        status: None,
+        rating: None,
+        progress: Some(0),
+    };
+    svc.update_entry(entry_id, user_id, &update)
+        .await
+        .expect("update_entry");
+
+    let states = get_episode_states(&ctx.pool, user_id, "mal", "777", 777)
+        .await
+        .expect("episode states");
+    assert_eq!(
+        states,
+        vec![(1, true), (2, true), (3, false)],
+        "a non-anime progress update must not touch anime episode state"
+    );
 }

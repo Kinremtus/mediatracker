@@ -3,6 +3,7 @@ use uuid::Uuid;
 
 use crate::models::media_item::{CreateMediaItem, MediaItem};
 use crate::models::tracking_entry::{TrackingEntry, TrackingEntryWithMedia, UpdateTracking};
+use crate::services::episodes;
 use crate::services::tmdb_episodes;
 
 #[derive(Clone)]
@@ -197,26 +198,64 @@ impl TrackingService {
 
         tx.commit().await?;
 
-        // Best-effort: mirror the new progress onto this user's own TMDB
-        // episode rows so the TV drawer checkboxes stay consistent with the
-        // tracking form (the reverse of set_progress_greatest/direct). Logged,
-        // never fatal — the tracking update is already committed.
+        // Best-effort: mirror the new progress onto this user's own per-episode
+        // rows so the drawer checkboxes stay consistent with the tracking
+        // card/form (the reverse of set_watched + update_progress_from_watched).
+        // TMDB rows live in user_tmdb_episode_progress; anime rows live in
+        // user_episode_progress under the card's own (provider, external_id)
+        // key. Logged, never fatal — the tracking update is already committed.
         if let Some(progress) = data.progress {
-            match sqlx::query_scalar::<_, String>(
-                "SELECT external_id FROM media_items WHERE id = $1 AND provider = 'tmdb'",
+            match sqlx::query_as::<_, (String, String, String, Option<i64>)>(
+                "SELECT provider, external_id, media_type, mal_id \
+                 FROM media_items WHERE id = $1",
             )
             .bind(entry.media_id)
             .fetch_optional(&self.db)
             .await
             {
-                Ok(Some(ext_id)) => {
-                    if let Err(e) = tmdb_episodes::sync_tmdb_episodes_from_progress(
-                        &self.db, user_id, &ext_id, progress,
-                    )
-                    .await
+                Ok(Some((provider, external_id, media_type, mal_id))) => {
+                    if media_type == "anime" {
+                        // Prefer the dedicated mal_id; MAL-sourced cards also
+                        // store the MAL id as external_id, so fall back to it
+                        // when the column is empty. Skip when neither is
+                        // available — the catalog cannot be located.
+                        let resolved_mal_id = mal_id.or_else(|| {
+                            if provider == "mal" {
+                                external_id.parse::<i64>().ok()
+                            } else {
+                                None
+                            }
+                        });
+                        if let Some(mal_id) = resolved_mal_id
+                            && let Err(e) = episodes::sync_watched_from_progress(
+                                &self.db,
+                                user_id,
+                                &provider,
+                                &external_id,
+                                mal_id,
+                                progress,
+                            )
+                            .await
+                        {
+                            tracing::warn!(
+                                provider = %provider,
+                                external_id = %external_id,
+                                mal_id,
+                                error = %e,
+                                "anime progress sync failed"
+                            );
+                        }
+                    } else if provider == "tmdb"
+                        && let Err(e) = tmdb_episodes::sync_tmdb_episodes_from_progress(
+                            &self.db,
+                            user_id,
+                            &external_id,
+                            progress,
+                        )
+                        .await
                     {
                         tracing::warn!(
-                            external_id = %ext_id,
+                            external_id = %external_id,
                             error = %e,
                             "tmdb progress sync failed"
                         );
@@ -227,7 +266,7 @@ impl TrackingService {
                     tracing::warn!(
                         media_id = %entry.media_id,
                         error = %e,
-                        "tmdb media lookup failed"
+                        "media lookup for progress sync failed"
                     );
                 }
             }

@@ -471,6 +471,64 @@ pub async fn update_progress_from_watched(
     Ok(row.map(|(progress,)| progress))
 }
 
+/// Mirror a user's flat tracking `progress` count onto their own anime
+/// episode rows: every catalog episode with `episode_number <= progress`
+/// becomes watched, everything above becomes unwatched.
+///
+/// This is the tracking-card/form -> drawer direction and the anime
+/// counterpart of `tmdb_episodes::sync_tmdb_episodes_from_progress`
+/// (the drawer -> form direction is `set_watched` + `update_progress_from_watched`).
+///
+/// `progress` is interpreted as the *highest watched episode number*, not as
+/// a count of episodes: that is exactly how `set_watched` (bulk-fill
+/// `<= N`) and `count_watched` (`MAX(episode_number)`) already treat it, so
+/// both directions stay symmetric. TMDB needs `ROW_NUMBER()` because its
+/// seasons contain specials and gaps; the MAL catalog is numbered per series,
+/// so a plain `episode_number` comparison is correct here.
+///
+/// `progress_provider`/`progress_external_id` are the tracking card's key --
+/// the same pair `set_watched` writes and `get_episode_states` reads --
+/// because a Shikimori-sourced card stores its checkboxes under
+/// `('shikimori', shiki_id)`, not `('mal', mal_id)`. `mal_id` only locates the
+/// shared `anime_episodes` catalog, which is always stored under
+/// `provider = 'mal'`.
+///
+/// Idempotent (upserts through the composite PK). Safe with a partially
+/// populated catalog (only existing episode rows are touched) and a no-op
+/// when the catalog is empty (`INSERT ... SELECT` inserts nothing).
+pub async fn sync_watched_from_progress(
+    pool: &PgPool,
+    user_id: Uuid,
+    progress_provider: &str,
+    progress_external_id: &str,
+    mal_id: i64,
+    progress: i32,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        INSERT INTO user_episode_progress
+            (user_id, provider, external_id, episode_number, watched, watched_at)
+        SELECT $1, $2, $3, ae.episode_number,
+               (ae.episode_number <= $5::int),
+               CASE WHEN ae.episode_number <= $5::int THEN NOW() ELSE NULL END
+        FROM anime_episodes ae
+        WHERE ae.provider = 'mal'
+          AND ae.external_id = $4
+        ON CONFLICT (user_id, provider, external_id, episode_number) DO UPDATE
+        SET watched = EXCLUDED.watched,
+            watched_at = EXCLUDED.watched_at
+        "#,
+    )
+    .bind(user_id)
+    .bind(progress_provider)
+    .bind(progress_external_id)
+    .bind(mal_id.to_string())
+    .bind(progress)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 /// Read a single episode by (mal_id, episode_number) with this user's
 /// own `watched` flag. Returns `None` if the catalog row doesn't exist.
 /// Used by the toggle endpoint to render the updated row HTML.
