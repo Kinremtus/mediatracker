@@ -3212,3 +3212,64 @@ input:-webkit-autofill:active {
     transition: background-color 9999s ease-in-out 0s;
 }
 
+/* === Redesign: alt titles / sticky progress / info list / chapter window === */
+.drawer-alt-titles {
+    margin-top: 0.35rem;
+}
+.drawer-alt-titles summary {
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--muted-foreground);
+    list-style: none;
+}
+.drawer-alt-titles summary::-webkit-details-marker { display: none; }
+.drawer-alt-titles[open] summary { margin-bottom: 0.25rem; }
+.drawer-alt-title-list { display: flex; flex-direction: column; gap: 0.1rem; }
+.drawer-alt-title-list span { font-size: 12px; color: var(--muted-foreground); }
+
+.drawer-progress-sticky {
+    position: sticky;
+    top: 0;
+    z-index: 6;
+    background: var(--background);
+    padding: 0.5rem 0 0.35rem;
+    margin: 0.5rem 0 0.75rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.drawer-info-list { display: flex; flex-direction: column; gap: 0.35rem; }
+.drawer-info-row { display: flex; gap: 0.5rem; font-size: 13px; }
+.drawer-info-row .label { color: var(--muted-foreground); flex-shrink: 0; }
+.drawer-mu-link { font-size: 13px; color: var(--in_progress); text-decoration: underline; }
+.drawer-mu-link:hover { color: var(--foreground); }
+
+.drawer-description-clean {
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--muted-foreground);
+    overflow-wrap: anywhere;
+}
+.drawer-struct-list { margin-top: 0.35rem; display: flex; flex-direction: column; gap: 0.15rem; }
+.drawer-struct-list span { font-size: 12px; color: var(--muted-foreground); }
+
+.chapter-list-more {
+    display: block;
+    width: 100%;
+    margin-top: 0.5rem;
+    padding: 0.5rem;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted-foreground);
+    background: var(--secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+}
+.chapter-list-more:hover { color: var(--foreground); border-color: var(--ring); }
+
+/* Detail structure */
+.detail-section { margin-bottom: 1.25rem; }
+.detail-section h3 { font-size: 15px; font-weight: 600; margin-bottom: 0.5rem; }
+.detail-info-list { display: flex; flex-direction: column; gap: 0.3rem; }
+.detail-info-row { display: flex; gap: 0.5rem; font-size: 14px; }
+.detail-info-row .label { color: var(--muted-foreground); min-width: 130px; flex-shrink: 0; }

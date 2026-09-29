@@ -1,3 +1,4 @@
+<div class="chapter-list-wrapper">
 {% if chapters.is_empty() %}
 <div class="chapter-list-empty">Главы не загружены</div>
 {% else %}
@@ -6,4 +7,13 @@
     {% include "partials/_chapter_item.html" %}
     {% endfor %}
 </div>
+{% if windowed %}
+<button type="button" class="chapter-list-more"
+        hx-get="/api/manga/{{ provider }}/{{ external_id }}/chapters?all=true"
+        hx-target="closest .chapter-list-wrapper"
+        hx-swap="outerHTML">
+    Все главы ({{ total }})
+</button>
 {% endif %}
+{% endif %}
+</div>
