@@ -10,7 +10,9 @@ use uuid::Uuid;
 use super::home::{SidebarStats, get_sidebar_stats};
 use crate::app_state::AppState;
 use crate::middleware::CurrentUser;
-use crate::models::media_item::CreateMediaItem;
+use crate::models::media_item::{
+    CreateMediaItem, derived_status_class, derived_status_label, parse_description,
+};
 use crate::services::external::dispatch::{Provider, ProviderClients};
 use crate::services::external::is_not_found;
 
@@ -39,6 +41,14 @@ struct MediaDrawerTemplate {
     status_display: String,
     from_cache: bool,
     fallback_notice: String,
+    alt_titles: Vec<String>,
+    status_label: Option<&'static str>,
+    status_class: &'static str,
+    description_clean: Option<String>,
+    translations: Vec<String>,
+    original_novel: Option<String>,
+    original_webtoon: Option<String>,
+    mu_url: Option<String>,
 }
 
 impl MediaDrawerTemplate {
@@ -74,6 +84,14 @@ struct MediaDetailTemplate {
     from_cache: bool,
     fallback_notice: String,
     mal_id: Option<i64>,
+    alt_titles: Vec<String>,
+    status_label: Option<&'static str>,
+    status_class: &'static str,
+    description_clean: Option<String>,
+    translations: Vec<String>,
+    original_novel: Option<String>,
+    original_webtoon: Option<String>,
+    mu_url: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -90,6 +108,13 @@ pub struct EpisodesQuery {
     /// Клиентский hint на общее число эпизодов. Используется только как
     /// fallback для синтеза строк, когда каталог провайдера пуст.
     episodes: Option<i32>,
+}
+
+#[derive(Deserialize)]
+pub struct ChaptersQuery {
+    /// `?all=true` returns the full list instead of the latest window.
+    #[serde(default)]
+    all: Option<bool>,
 }
 
 /// Why a card is rendering from stored data (or not).
@@ -164,6 +189,14 @@ async fn resolve_card_data(
     }
 }
 
+const CHAPTER_WINDOW: usize = 5;
+const MU_WEB_BASE: &str = "https://www.mangaupdates.com";
+
+fn mu_web_url(item: &CreateMediaItem) -> Option<String> {
+    (item.provider == "mangaupdates")
+        .then(|| format!("{MU_WEB_BASE}/series.html?id={}", item.external_id))
+}
+
 pub async fn get_media_detail(
     user: CurrentUser,
     State(state): State<AppState>,
@@ -198,6 +231,12 @@ pub async fn get_media_detail(
                 })
                 .unwrap_or_default();
 
+            let parsed = parse_description(item.description.as_deref());
+            let status_label = derived_status_label(item.status.as_deref(), item.completed);
+            let status_class = status_label.map(derived_status_class).unwrap_or("");
+            let alt_titles = item.associated_titles.clone();
+            let mu_url = mu_web_url(&item);
+
             Html(
                 MediaDetailTemplate {
                     username: user.username,
@@ -210,6 +249,14 @@ pub async fn get_media_detail(
                     from_cache,
                     fallback_notice,
                     mal_id,
+                    alt_titles,
+                    status_label,
+                    status_class,
+                    description_clean: parsed.clean,
+                    translations: parsed.translations,
+                    original_novel: parsed.original_novel,
+                    original_webtoon: parsed.original_webtoon,
+                    mu_url,
                 }
                 .render()
                 .unwrap_or_else(|e| {
@@ -272,6 +319,11 @@ pub async fn get_media_drawer_content(
             let total_display = progress_row.total_display.clone();
             let can_increment = progress_row.can_increment;
             let can_decrement = progress_row.can_decrement;
+            let parsed = parse_description(item.description.as_deref());
+            let status_label = derived_status_label(item.status.as_deref(), item.completed);
+            let status_class = status_label.map(derived_status_class).unwrap_or("");
+            let alt_titles = item.associated_titles.clone();
+            let mu_url = mu_web_url(&item);
             Html(
                 MediaDrawerTemplate {
                     item,
@@ -293,6 +345,14 @@ pub async fn get_media_drawer_content(
                     from_cache,
                     fallback_notice,
                     mal_id,
+                    alt_titles,
+                    status_label,
+                    status_class,
+                    description_clean: parsed.clean,
+                    translations: parsed.translations,
+                    original_novel: parsed.original_novel,
+                    original_webtoon: parsed.original_webtoon,
+                    mu_url,
                 }
                 .render()
                 .unwrap_or_else(|e| {
@@ -676,6 +736,8 @@ struct ChapterListPartial {
     chapters: Vec<crate::services::chapters::StoredChapter>,
     provider: String,
     external_id: String,
+    windowed: bool,
+    total: usize,
 }
 
 #[derive(Template)]
@@ -711,6 +773,7 @@ pub async fn get_chapters(
     user: CurrentUser,
     State(state): State<AppState>,
     Path((provider, external_id)): Path<(String, String)>,
+    Query(query): Query<ChaptersQuery>,
 ) -> impl IntoResponse {
     // For mangaupdates the storage key is (provider, external_id) as-is.
     // For other sources we'd need a lookup — for now handle mangaupdates directly.
@@ -796,10 +859,21 @@ pub async fn get_chapters(
         });
     }
 
+    let all = query.all.unwrap_or(false);
+    let total = chapters.len();
+    let (chapters, windowed) = if !all && total > CHAPTER_WINDOW {
+        let start = total - CHAPTER_WINDOW;
+        (chapters.into_iter().skip(start).collect::<Vec<_>>(), true)
+    } else {
+        (chapters, false)
+    };
+
     let html = ChapterListPartial {
         chapters,
         provider: mu_provider.to_string(),
         external_id: mu_id.to_string(),
+        windowed,
+        total,
     }
     .render()
     .unwrap_or_else(|e| {
