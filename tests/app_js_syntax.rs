@@ -497,3 +497,77 @@ fn detail_page_redesign_markers() {
         "detail: raw provider status must not be rendered as a badge"
     );
 }
+
+/// Redesign follow-up: content lists must sit *below* the description section.
+/// This assertion is red before the layout change and must be green after it.
+#[test]
+fn drawer_content_lists_below_description() {
+    let src = read_root(DRAWER_CONTENT_HTML);
+
+    let description_pos = src.find("drawer-description-details").unwrap_or_else(|| {
+        panic!(
+            "{DRAWER_CONTENT_HTML}: description section (`drawer-description-details`) not found"
+        )
+    });
+    let chapters_pos = src.find("/chapters\"").unwrap_or_else(|| {
+        panic!("{DRAWER_CONTENT_HTML}: chapters content-list endpoint (`/chapters\"`) not found")
+    });
+    assert!(
+        chapters_pos > description_pos,
+        "{DRAWER_CONTENT_HTML}: content lists must appear AFTER the description \
+         section (description at byte {description_pos}, chapters at byte {chapters_pos}). \
+         Metadata and description are primary; episode/season/chapter/addition lists are secondary."
+    );
+}
+
+/// Redesign follow-up: the shared progress row must move into the hero, i.e.
+/// its `{% include %}` must appear BEFORE the sticky status block. The sticky
+/// wrapper itself (`drawer-progress-sticky`) stays and still renders the status
+/// chips; only the progress row leaves it.
+#[test]
+fn drawer_content_progress_row_in_hero() {
+    let src = read_root(DRAWER_CONTENT_HTML);
+
+    let include_pos = src
+        .find("{% include \"partials/_progress_row.html\" %}")
+        .unwrap_or_else(|| {
+            panic!("{DRAWER_CONTENT_HTML}: `partials/_progress_row.html` include not found")
+        });
+    let sticky_pos = src.find("drawer-progress-sticky").unwrap_or_else(|| {
+        panic!("{DRAWER_CONTENT_HTML}: sticky status block (`drawer-progress-sticky`) not found")
+    });
+    assert!(
+        include_pos < sticky_pos,
+        "{DRAWER_CONTENT_HTML}: the progress-row include must appear BEFORE the \
+         sticky status block — i.e. inside `.drawer-hero-info` (include at byte \
+         {include_pos}, sticky at byte {sticky_pos})."
+    );
+}
+
+/// The progress include is gated on `has_progress`, which is derived from the
+/// media type only (`supports_progress`) — an *untracked* anime/manga also has
+/// `has_progress == true`. The include must therefore sit behind a
+/// `tracking_id` guard too, or its buttons POST to `Uuid::nil`.
+#[test]
+fn drawer_content_progress_row_requires_tracking_id() {
+    let src = read_root(DRAWER_CONTENT_HTML);
+
+    let include_pos = src
+        .find("{% include \"partials/_progress_row.html\" %}")
+        .unwrap_or_else(|| {
+            panic!("{DRAWER_CONTENT_HTML}: `partials/_progress_row.html` include not found")
+        });
+    // Nearest preceding `{% if let Some( ... ) = tracking_id %}` guard.
+    let guard_pos = src[..include_pos]
+        .rfind("= tracking_id %}")
+        .unwrap_or_else(|| {
+            panic!(
+                "{DRAWER_CONTENT_HTML}: no `tracking_id` guard before the progress include; \
+                 untracked items would render the row with Uuid::nil and POST to a nil id"
+            )
+        });
+    assert!(
+        guard_pos < include_pos,
+        "{DRAWER_CONTENT_HTML}: progress include must be wrapped in a `tracking_id` guard"
+    );
+}
