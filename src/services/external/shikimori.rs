@@ -224,6 +224,7 @@ fn map_anime(r: ShikimoriSearchResult) -> CreateMediaItem {
         themes,
         demographics,
         categories: Vec::new(),
+        associated_titles: Vec::new(),
     }
 }
 
@@ -305,6 +306,7 @@ fn map_manga(m: ShikimoriManga) -> CreateMediaItem {
         themes,
         demographics,
         categories: Vec::new(),
+        associated_titles: Vec::new(),
     }
 }
 

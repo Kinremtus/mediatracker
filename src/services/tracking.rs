@@ -42,7 +42,7 @@ impl TrackingService {
                 authors, artists, studios, producers, licensors, publishers,
                 serialized_in, networks, platforms,
                 genres, themes, demographics, categories,
-                mal_id, shikimori_id
+                mal_id, shikimori_id, associated_titles
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7,
                 $8, $9, $10, $11, $12,
@@ -54,7 +54,7 @@ impl TrackingService {
                 $32, $33, $34, $35, $36, $37,
                 $38, $39, $40,
                 $41, $42, $43, $44,
-                $45, $46
+                $45, $46, $47
             )
             ON CONFLICT (provider, external_id) DO UPDATE
             SET updated_at = NOW()
@@ -107,6 +107,7 @@ impl TrackingService {
         .bind(&media.categories)
         .bind(media.mal_id)
         .bind(media.shikimori_id)
+        .bind(&media.associated_titles)
         .fetch_one(&mut *tx)
         .await?;
 
@@ -380,7 +381,8 @@ impl TrackingService {
                 year, aired_from, aired_to, premiered_season, premiered_year, broadcast,
                 completed, licensed, source, duration, rating, rating_votes,
                 authors, artists, studios, producers, licensors, publishers,
-                serialized_in, networks, platforms, genres, themes, demographics, categories
+                serialized_in, networks, platforms, genres, themes, demographics, categories,
+                associated_titles
             FROM media_items
             WHERE provider = $1 AND external_id = $2
             "#,

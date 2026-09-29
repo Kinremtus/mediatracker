@@ -255,6 +255,10 @@ pub async fn update_item(
             status = COALESCE($8, status),
             score = COALESCE($9, score),
             poster_url = COALESCE(NULLIF($10, ''), poster_url),
+            associated_titles = CASE
+                WHEN cardinality($11) > 0 THEN $11
+                ELSE associated_titles
+            END,
             updated_at = now()
         WHERE id = $1
           AND (
@@ -267,6 +271,7 @@ pub async fn update_item(
             OR ($8 IS NOT NULL AND status IS DISTINCT FROM $8)
             OR ($9 IS NOT NULL AND score IS DISTINCT FROM $9)
             OR (NULLIF($10, '') IS NOT NULL AND poster_url IS DISTINCT FROM $10)
+            OR (cardinality($11) > 0 AND associated_titles IS DISTINCT FROM $11)
           )
         "#,
     )
@@ -280,6 +285,7 @@ pub async fn update_item(
     .bind(&new.status)
     .bind(new.score)
     .bind(new.poster_url.as_deref().unwrap_or(""))
+    .bind(&new.associated_titles)
     .execute(db)
     .await?;
 

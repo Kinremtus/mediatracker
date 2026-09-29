@@ -156,6 +156,7 @@ fn map_item(r: GoogleBooksItem) -> CreateMediaItem {
         themes: Vec::new(),
         demographics: Vec::new(),
         categories: Vec::new(),
+        associated_titles: Vec::new(),
     }
 }
 

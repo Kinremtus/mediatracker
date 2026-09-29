@@ -584,6 +584,7 @@ pub async fn post_add_to_tracking(
         themes: form.themes,
         demographics: form.demographics,
         categories: form.categories,
+        associated_titles: Vec::new(),
     };
 
     let status = if form.tracking_status.is_empty() {

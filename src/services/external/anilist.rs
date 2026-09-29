@@ -138,6 +138,7 @@ fn map_media(m: AniListMedia, media_type: &str) -> CreateMediaItem {
         themes: Vec::new(),
         demographics: Vec::new(),
         categories: Vec::new(),
+        associated_titles: Vec::new(),
     }
 }
 
