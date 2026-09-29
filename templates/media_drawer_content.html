@@ -14,7 +14,7 @@
 <div class="drawer-meta-line" style="color: var(--muted, #888);">{{ fallback_notice }}</div>
 {% endif %}
 
-{# === HERO ZONE === #}
+{# === 1. HERO === #}
 <div class="drawer-hero">
     <div class="drawer-hero-poster">
         {% if item.poster_url.is_some() %}
@@ -25,26 +25,28 @@
     </div>
     <div class="drawer-hero-info">
         <h1>{{ item.title }}</h1>
-        {% if item.title_english.is_some() && item.title_english.as_ref().unwrap().as_str() != item.title.as_str() %}
-        <p class="drawer-alt-title">{{ item.title_english.as_ref().unwrap() }}</p>
+
+        {% if !alt_titles.is_empty() || (item.title_english.is_some() && item.title_english.as_ref().unwrap().as_str() != item.title.as_str()) || (item.title_native.is_some() && item.title_native.as_ref().unwrap().as_str() != item.title.as_str()) || (item.title_russian.is_some() && item.title_russian.as_ref().unwrap().as_str() != item.title.as_str()) %}
+        <details class="drawer-alt-titles">
+            <summary>Альтернативные названия</summary>
+            <div class="drawer-alt-title-list">
+                {% if let Some(en) = item.title_english %}{% if en.as_str() != item.title.as_str() %}<span>{{ en }}</span>{% endif %}{% endif %}
+                {% if let Some(nt) = item.title_native %}{% if nt.as_str() != item.title.as_str() %}<span>{{ nt }}</span>{% endif %}{% endif %}
+                {% if let Some(ru) = item.title_russian %}{% if ru.as_str() != item.title.as_str() %}<span>{{ ru }}</span>{% endif %}{% endif %}
+                {% for alt in alt_titles.iter() %}<span>{{ alt }}</span>{% endfor %}
+            </div>
+        </details>
         {% endif %}
-        {% if item.title_native.is_some() && item.title_native.as_ref().unwrap().as_str() != item.title.as_str() %}
-        <p class="drawer-alt-title">{{ item.title_native.as_ref().unwrap() }}</p>
-        {% endif %}
-        {% if let Some(score) = item.score %}
-        <span class="drawer-external-rating">★ {{ "{:.2}"|format(score) }} ({{ item.provider }})</span>
-        {% endif %}
-        <div class="drawer-meta-line">
-            {{ item.primary_label() }}{% if let Some(tc) = total_count %} · {{ tc }} {{ progress_unit }}{% endif %}{% if let Some(s) = item.seasons %} · {{ s }} сез.{% endif %}{% if let Some(y) = item.display_year() %} · {{ y }}{% endif %}{% if item.status.is_some() %} · <span class="drawer-meta-badge {{ item.status_class() }}">{{ item.status.as_ref().unwrap() }}</span>{% endif %}
-        </div>
-        <div class="drawer-meta-line">
-            {% if !item.studios.is_empty() %}{{ item.studios[0] }}{% endif %}{% if !item.authors.is_empty() %}{% if !item.studios.is_empty() %} · {% endif %}{{ item.authors[0] }}{% endif %}{% if !item.publishers.is_empty() %}{% if !item.studios.is_empty() || !item.authors.is_empty() %} · {% endif %}{{ item.publishers[0] }}{% endif %}{% if !item.platforms.is_empty() %}{% if !item.studios.is_empty() || !item.authors.is_empty() || !item.publishers.is_empty() %} · {% endif %}{{ item.platforms[0] }}{% endif %}
+
+        <div class="drawer-chips drawer-chips--inline" style="margin-top: 0.35rem;">
+            {% if let Some(sl) = status_label %}<span class="drawer-meta-badge {{ status_class }}">{{ sl }}</span>{% endif %}
+            <span class="drawer-meta-badge">{{ item.primary_label() }}</span>
+            {% if let Some(y) = item.display_year() %}<span class="drawer-meta-badge">{{ y }}</span>{% endif %}
+            {% if let Some(tc) = total_count %}<span class="drawer-meta-badge">{{ tc }} {{ progress_unit }}</span>{% endif %}
         </div>
 
-        {% if !item.genres.is_empty() %}
-        <div class="drawer-chips drawer-chips--inline">
-            {% for g in item.genres.iter().take(5) %}<span class="chip chip-genre chip-sm">{{ g }}</span>{% endfor %}
-        </div>
+        {% if item.score.is_some() %}
+        <div class="drawer-external-rating" style="margin-top: 0.4rem;">★ {{ "{:.2}"|format(item.score.unwrap()) }} MU{% if let Some(rv) = item.rating_votes %} · {{ rv }} голосов{% endif %}</div>
         {% endif %}
 
         {% if let Some(tid) = tracking_id %}
@@ -64,17 +66,42 @@
     </div>
 </div>
 
-{# === DESCRIPTION (above episodes, collapsible — same arrow style as episodes) === #}
-{% if item.description.is_some() %}
-<div class="drawer-divider"></div>
-<div class="drawer-section drawer-section--collapsible" x-data="{ open: false }">
-    <button class="drawer-section-toggle" @click="open = !open" type="button">
-        Описание
-        <span class="drawer-section-arrow" :class="{ 'rotated': open }">▾</span>
-    </button>
-    <div class="drawer-description-content" :class="{ 'expanded': open }">
-        <p>{{ item.description.as_ref().unwrap() }}</p>
+{# === 2. PROGRESS (sticky, right under hero) === #}
+{% if let Some(tid) = tracking_id %}
+<div class="drawer-progress-sticky">
+    <div class="drawer-status-chips">
+        <button class="drawer-status-chip planned {% if current_status.as_deref() == Some("planned") %}active{% endif %}"
+                hx-post="/tracking/{{ tid }}/htmx"
+                hx-vals='{"status":"planned","progress":{{ progress_display }}}'
+                hx-swap="none"
+                hx-on:htmx:after-request="if(event.detail.successful) afterStatusChange(this, 'planned')">
+            Запланировано
+        </button>
+        <button class="drawer-status-chip in_progress {% if current_status.as_deref() == Some("in_progress") %}active{% endif %}"
+                hx-post="/tracking/{{ tid }}/htmx"
+                hx-vals='{"status":"in_progress","progress":{{ progress_display }}}'
+                hx-swap="none"
+                hx-on:htmx:after-request="if(event.detail.successful) afterStatusChange(this, 'in_progress')">
+            В процессе
+        </button>
+        <button class="drawer-status-chip completed {% if current_status.as_deref() == Some("completed") %}active{% endif %}"
+                hx-post="/tracking/{{ tid }}/htmx"
+                hx-vals='{"status":"completed","progress":{{ progress_display }}}'
+                hx-swap="none"
+                hx-on:htmx:after-request="if(event.detail.successful) afterStatusChange(this, 'completed')">
+            Завершено
+        </button>
+        <button class="drawer-status-chip dropped {% if current_status.as_deref() == Some("dropped") %}active{% endif %}"
+                hx-post="/tracking/{{ tid }}/htmx"
+                hx-vals='{"status":"dropped","progress":{{ progress_display }}}'
+                hx-swap="none"
+                hx-on:htmx:after-request="if(event.detail.successful) afterStatusChange(this, 'dropped')">
+            Брошено
+        </button>
     </div>
+    {% if has_progress %}
+    {% include "partials/_progress_row.html" %}
+    {% endif %}
 </div>
 {% endif %}
 
@@ -117,16 +144,13 @@
 {% endif %}
 {% endif %}
 
-{# === CHAPTERS (manga-like types) === #}
+{# === 3. CHAPTERS (manga-like, windowed server-side) === #}
 {% if item.provider != "manual" %}
 {% if item.media_type == "manga" || item.media_type == "manhwa" || item.media_type == "manhua" || item.media_type == "novel" || item.media_type == "other-comics" %}
 <div class="drawer-divider"></div>
-<div class="drawer-section drawer-section--collapsible" x-data="{ open: true }">
-    <button class="drawer-section-toggle" @click="open = !open" type="button">
-        Главы
-        <span class="drawer-section-arrow" :class="{ 'rotated': open }">▾</span>
-    </button>
-    <div class="drawer-chapters" x-show="open" x-cloak
+<div class="drawer-section">
+    <div class="drawer-section-label">Главы{% if let Some(tc) = total_count %} · {{ tc }}{% endif %}</div>
+    <div class="drawer-chapters"
          hx-get="/api/manga/{{ item.provider }}/{{ item.external_id }}/chapters"
          hx-trigger="revealed once"
          hx-swap="innerHTML">
@@ -153,6 +177,36 @@
     </div>
 </div>
 {% endif %}
+{% endif %}
+
+{# === 4. INFO === #}
+<div class="drawer-divider"></div>
+<div class="drawer-section">
+    <div class="drawer-section-label">Информация</div>
+    <div class="drawer-info-list">
+        {% if !item.genres.is_empty() %}
+        <div class="drawer-chips drawer-chips--inline" style="margin-top: 0;">
+            {% for g in item.genres.iter().take(6) %}<span class="chip chip-genre chip-sm">{{ g }}</span>{% endfor %}
+        </div>
+        {% endif %}
+        {% if !item.authors.is_empty() %}<div class="drawer-info-row"><span class="label">Авторы:</span><span>{{ item.authors.join(", ") }}</span></div>{% endif %}
+        {% if !item.publishers.is_empty() %}<div class="drawer-info-row"><span class="label">Издатели:</span><span>{{ item.publishers.join(", ") }}</span></div>{% endif %}
+        {% if let Some(mu) = mu_url %}<a class="drawer-mu-link" href="{{ mu }}" target="_blank" rel="noopener">Открыть на MangaUpdates ↗</a>{% endif %}
+    </div>
+</div>
+
+{# === 5. DESCRIPTION === #}
+{% if description_clean.is_some() || !translations.is_empty() || original_novel.is_some() || original_webtoon.is_some() %}
+<div class="drawer-divider"></div>
+<details class="drawer-section drawer-description-details">
+    <summary class="drawer-section-toggle">Описание <span class="drawer-section-arrow">▾</span></summary>
+    {% if let Some(c) = description_clean %}<p class="drawer-description-clean">{{ c }}</p>{% endif %}
+    <div class="drawer-struct-list">
+        {% if let Some(on) = original_novel %}<span><b>Original Novel:</b> {{ on }}</span>{% endif %}
+        {% if let Some(ow) = original_webtoon %}<span><b>Original Webtoon:</b> {{ ow }}</span>{% endif %}
+        {% if !translations.is_empty() %}<span><b>Переводы:</b> {{ translations.join(", ") }}</span>{% endif %}
+    </div>
+</details>
 {% endif %}
 
 {# === ADD TO TRACKING (only if NOT tracked) === #}
@@ -210,48 +264,5 @@
             <button type="submit" name="tracking_status" value="dropped" class="drawer-add-chip" data-status="dropped">✕ Брошено</button>
         </div>
     </form>
-</div>
-{% endif %}
-
-{# === PROGRESS ZONE (only if tracked) — rating moved to hero === #}
-{% if let Some(tid) = tracking_id %}
-<div class="drawer-divider"></div>
-<div class="drawer-progress">
-    <div class="drawer-section-label">Мой прогресс</div>
-
-    <div class="drawer-status-chips">
-        <button class="drawer-status-chip planned {% if current_status.as_deref() == Some("planned") %}active{% endif %}"
-                hx-post="/tracking/{{ tid }}/htmx"
-                hx-vals='{"status":"planned","progress":{{ progress_display }}}'
-                hx-swap="none"
-                hx-on:htmx:after-request="if(event.detail.successful) afterStatusChange(this, 'planned')">
-            Запланировано
-        </button>
-        <button class="drawer-status-chip in_progress {% if current_status.as_deref() == Some("in_progress") %}active{% endif %}"
-                hx-post="/tracking/{{ tid }}/htmx"
-                hx-vals='{"status":"in_progress","progress":{{ progress_display }}}'
-                hx-swap="none"
-                hx-on:htmx:after-request="if(event.detail.successful) afterStatusChange(this, 'in_progress')">
-            В процессе
-        </button>
-        <button class="drawer-status-chip completed {% if current_status.as_deref() == Some("completed") %}active{% endif %}"
-                hx-post="/tracking/{{ tid }}/htmx"
-                hx-vals='{"status":"completed","progress":{{ progress_display }}}'
-                hx-swap="none"
-                hx-on:htmx:after-request="if(event.detail.successful) afterStatusChange(this, 'completed')">
-            Завершено
-        </button>
-        <button class="drawer-status-chip dropped {% if current_status.as_deref() == Some("dropped") %}active{% endif %}"
-                hx-post="/tracking/{{ tid }}/htmx"
-                hx-vals='{"status":"dropped","progress":{{ progress_display }}}'
-                hx-swap="none"
-                hx-on:htmx:after-request="if(event.detail.successful) afterStatusChange(this, 'dropped')">
-            Брошено
-        </button>
-    </div>
-
-    {% if has_progress %}
-    {% include "partials/_progress_row.html" %}
-    {% endif %}
 </div>
 {% endif %}

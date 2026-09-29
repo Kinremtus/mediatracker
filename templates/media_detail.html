@@ -11,6 +11,7 @@
     <div class="badge badge-status" style="margin-bottom: 0.5rem;">{{ fallback_notice }}</div>
     {% endif %}
 
+    {# === HERO === #}
     <div class="media-detail-poster">
         {% if item.poster_url.is_some() %}
         <img src="{{ item.poster_url.as_ref().unwrap() }}" alt="{{ item.title }}">
@@ -21,130 +22,102 @@
 
     <div class="media-detail-info">
         <h1>{{ item.title }}</h1>
-        {% if item.title_english.is_some() && item.title_english.as_ref().unwrap().as_str() != item.title.as_str() %}
-        <p class="media-detail-alt-title">{{ item.title_english.as_ref().unwrap() }}</p>
-        {% endif %}
-        {% if item.title_native.is_some() && item.title_native.as_ref().unwrap().as_str() != item.title.as_str() %}
-        <p class="media-detail-alt-title">{{ item.title_native.as_ref().unwrap() }}</p>
-        {% endif %}
-        {% if item.title_russian.is_some() && item.title_russian.as_ref().unwrap().as_str() != item.title.as_str() %}
-        <p class="media-detail-alt-title">{{ item.title_russian.as_ref().unwrap() }}</p>
+
+        {% if !alt_titles.is_empty() || (item.title_english.is_some() && item.title_english.as_ref().unwrap().as_str() != item.title.as_str()) || (item.title_native.is_some() && item.title_native.as_ref().unwrap().as_str() != item.title.as_str()) || (item.title_russian.is_some() && item.title_russian.as_ref().unwrap().as_str() != item.title.as_str()) %}
+        <details class="drawer-alt-titles">
+            <summary>Альтернативные названия</summary>
+            <div class="drawer-alt-title-list">
+                {% if let Some(en) = item.title_english %}{% if en.as_str() != item.title.as_str() %}<span>{{ en }}</span>{% endif %}{% endif %}
+                {% if let Some(nt) = item.title_native %}{% if nt.as_str() != item.title.as_str() %}<span>{{ nt }}</span>{% endif %}{% endif %}
+                {% if let Some(ru) = item.title_russian %}{% if ru.as_str() != item.title.as_str() %}<span>{{ ru }}</span>{% endif %}{% endif %}
+                {% for alt in alt_titles.iter() %}<span>{{ alt }}</span>{% endfor %}
+            </div>
+        </details>
         {% endif %}
 
         <div class="media-detail-badges">
+            {% if let Some(sl) = status_label %}<span class="badge badge-status {{ status_class }}">{{ sl }}</span>{% endif %}
             <span class="badge badge-format">{{ item.primary_label() }}</span>
-            {% if item.status.is_some() %}
-            <span class="badge badge-status {{ item.status_class() }}">{{ item.status.as_ref().unwrap() }}</span>
-            {% endif %}
-            {% if item.rating.is_some() %}
-            <span class="badge badge-rating">{{ item.rating.as_ref().unwrap() }}</span>
-            {% endif %}
+            {% if let Some(y) = item.display_year() %}<span class="badge badge-rating">{{ y }}</span>{% endif %}
+            {% if item.score.is_some() %}<span class="badge badge-rating">★ {{ "{:.2}"|format(item.score.unwrap()) }}{% if let Some(rv) = item.rating_votes %} · {{ rv }}{% endif %}</span>{% endif %}
         </div>
 
-        <div class="meta-grid">
-            <div class="meta-item">
-                <div class="meta-item-label">Тип</div>
-                <div class="meta-item-value">{{ item.media_type_display() }}</div>
+        {# === ИНФОРМАЦИЯ === #}
+        <div class="detail-section">
+            <h3>Информация</h3>
+            <div class="detail-info-list">
+                <div class="detail-info-row"><span class="label">Тип</span><span>{{ item.media_type_display() }}</span></div>
+                {% if let Some(ch) = item.chapters %}<div class="detail-info-row"><span class="label">{% if item.media_type == "comic" %}Выпуски{% else %}Главы{% endif %}</span><span>{{ ch }}</span></div>{% endif %}
+                {% if let Some(ep) = item.episodes %}<div class="detail-info-row"><span class="label">Эпизоды</span><span>{{ ep }}</span></div>{% endif %}
+                {% if let Some(v) = item.volumes %}<div class="detail-info-row"><span class="label">Тома</span><span>{{ v }}</span></div>{% endif %}
+                {% if let Some(y) = item.display_year() %}<div class="detail-info-row"><span class="label">Год</span><span>{{ y }}</span></div>{% endif %}
+                {% if let Some(sl) = status_label %}<div class="detail-info-row"><span class="label">Статус</span><span class="drawer-meta-badge {{ status_class }}">{{ sl }}</span></div>{% endif %}
+                {% if let Some(l) = item.licensed %}<div class="detail-info-row"><span class="label">Лицензировано</span><span>{% if l %}Да{% else %}Нет{% endif %}</span></div>{% endif %}
+                {% if let Some(c) = item.completed %}<div class="detail-info-row"><span class="label">Завершено</span><span>{% if c %}Да{% else %}Нет{% endif %}</span></div>{% endif %}
+                {% if let Some(rv) = item.rating_votes %}<div class="detail-info-row"><span class="label">Голосов</span><span>{{ rv }}</span></div>{% endif %}
             </div>
-
-            {% if let Some(ep) = item.episodes %}
-            <div class="meta-item">
-                <div class="meta-item-label">Эпизоды</div>
-                <div class="meta-item-value">{{ ep }}</div>
-            </div>
-            {% endif %}
-            {% if let Some(ch) = item.chapters %}
-            <div class="meta-item">
-                <div class="meta-item-label">{% if item.media_type == "comic" %}Выпуски{% else %}Главы{% endif %}</div>
-                <div class="meta-item-value">{{ ch }}</div>
-            </div>
-            {% endif %}
-            {% if let Some(v) = item.volumes %}
-            <div class="meta-item">
-                <div class="meta-item-label">Тома</div>
-                <div class="meta-item-value">{{ v }}</div>
-            </div>
-            {% endif %}
-            {% if let Some(p) = item.pages %}
-            <div class="meta-item">
-                <div class="meta-item-label">Страницы</div>
-                <div class="meta-item-value">{{ p }}</div>
-            </div>
-            {% endif %}
-            {% if let Some(rt) = item.runtime_minutes %}
-            <div class="meta-item">
-                <div class="meta-item-label">Длительность</div>
-                <div class="meta-item-value">{{ item.runtime_human() }}</div>
-            </div>
-            {% endif %}
-            {% if let Some(pt) = item.playtime_hours %}
-            <div class="meta-item">
-                <div class="meta-item-label">Время игры</div>
-                <div class="meta-item-value">{{ pt }} ч</div>
-            </div>
-            {% endif %}
-
-            {% if let Some(y) = item.year %}
-            <div class="meta-item">
-                <div class="meta-item-label">Год</div>
-                <div class="meta-item-value">{{ y }}</div>
-            </div>
-            {% endif %}
-            {% if item.aired_from.is_some() %}
-            <div class="meta-item">
-                <div class="meta-item-label">Дата выхода</div>
-                <div class="meta-item-value">
-                    {{ item.aired_from.as_ref().unwrap() }}
-                    {% if item.aired_to.is_some() %} — {{ item.aired_to.as_ref().unwrap() }}{% endif %}
-                </div>
-            </div>
-            {% endif %}
-            {% if item.premiered_season.is_some() && item.premiered_year.is_some() %}
-            <div class="meta-item">
-                <div class="meta-item-label">Премьера</div>
-                <div class="meta-item-value">{{ item.premiered_season.as_ref().unwrap() }} {{ item.premiered_year.unwrap() }}</div>
-            </div>
-            {% endif %}
-            {% if item.broadcast.is_some() %}
-            <div class="meta-item">
-                <div class="meta-item-label">Эфир</div>
-                <div class="meta-item-value">{{ item.broadcast.as_ref().unwrap() }}</div>
-            </div>
-            {% endif %}
-
-            {% if let Some(src) = item.source %}
-            <div class="meta-item">
-                <div class="meta-item-label">Источник</div>
-                <div class="meta-item-value">{{ src }}</div>
-            </div>
-            {% endif %}
-            {% if let Some(c) = item.completed %}
-            <div class="meta-item">
-                <div class="meta-item-label">Завершено</div>
-                <div class="meta-item-value">{% if c %}Да{% else %}Нет{% endif %}</div>
-            </div>
-            {% endif %}
-            {% if let Some(l) = item.licensed %}
-            <div class="meta-item">
-                <div class="meta-item-label">Лицензировано</div>
-                <div class="meta-item-value">{% if l %}Да{% else %}Нет{% endif %}</div>
-            </div>
-            {% endif %}
-
-            {% if item.score.is_some() %}
-            <div class="meta-item">
-                <div class="meta-item-label">Оценка</div>
-                <div class="meta-item-value {{ item.score_class() }}">{{ "{:.2}"|format(item.score.unwrap()) }}</div>
-            </div>
-            {% endif %}
-            {% if let Some(rv) = item.rating_votes %}
-            <div class="meta-item">
-                <div class="meta-item-label">Голосов</div>
-                <div class="meta-item-value">{{ rv }}</div>
-            </div>
-            {% endif %}
         </div>
 
+        {# === ИЗДАНИЕ === #}
+        {% if !item.publishers.is_empty() || !item.serialized_in.is_empty() %}
+        <div class="detail-section">
+            <h3>Издание</h3>
+            {% if !item.publishers.is_empty() %}
+            <div class="chips">{% for s in item.publishers %}<span class="chip">{{ s }}</span>{% endfor %}</div>
+            {% endif %}
+            {% if !item.serialized_in.is_empty() %}
+            <div class="chips" style="margin-top: 0.35rem;">{% for s in item.serialized_in %}<span class="chip chip-theme">{{ s }}</span>{% endfor %}</div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        {# === ПЕРЕВОДЫ === #}
+        {% if !translations.is_empty() %}
+        <div class="detail-section">
+            <h3>Переводы</h3>
+            <div class="chips">{% for t in translations.iter() %}<span class="chip chip-demo">{{ t }}</span>{% endfor %}</div>
+        </div>
+        {% endif %}
+
+        {# === ЖАНРЫ === #}
+        {% if !item.genres.is_empty() || !item.themes.is_empty() || !item.demographics.is_empty() %}
+        <div class="detail-section">
+            <h3>Жанры</h3>
+            {% if !item.genres.is_empty() %}
+            <div class="chips">{% for g in item.genres %}<span class="chip chip-genre">{{ g }}</span>{% endfor %}</div>
+            {% endif %}
+            {% if !item.themes.is_empty() %}
+            <div class="chips" style="margin-top: 0.35rem;">{% for t in item.themes %}<span class="chip chip-theme">{{ t }}</span>{% endfor %}</div>
+            {% endif %}
+            {% if !item.demographics.is_empty() %}
+            <div class="chips" style="margin-top: 0.35rem;">{% for d in item.demographics %}<span class="chip chip-demo">{{ d }}</span>{% endfor %}</div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        {# === АВТОРЫ / СТУДИИ (сохранены из старой страницы) === #}
+        {% if !item.authors.is_empty() || !item.artists.is_empty() || !item.studios.is_empty() || !item.producers.is_empty() || !item.licensors.is_empty() %}
+        <div class="detail-section">
+            <h3>Создатели</h3>
+            <div class="detail-info-list">
+                {% if !item.authors.is_empty() %}<div class="detail-info-row"><span class="label">Авторы</span><span>{{ item.authors.join(", ") }}</span></div>{% endif %}
+                {% if !item.artists.is_empty() %}<div class="detail-info-row"><span class="label">Художники</span><span>{{ item.artists.join(", ") }}</span></div>{% endif %}
+                {% if !item.studios.is_empty() %}<div class="detail-info-row"><span class="label">Студии</span><span>{{ item.studios.join(", ") }}</span></div>{% endif %}
+                {% if !item.producers.is_empty() %}<div class="detail-info-row"><span class="label">Продюсеры</span><span>{{ item.producers.join(", ") }}</span></div>{% endif %}
+                {% if !item.licensors.is_empty() %}<div class="detail-info-row"><span class="label">Лицензиаты</span><span>{{ item.licensors.join(", ") }}</span></div>{% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+        {# === ОПИСАНИЕ === #}
+        {% if description_clean.is_some() %}
+        <div class="detail-section">
+            <h3>Описание</h3>
+            <p class="drawer-description-clean">{{ description_clean.as_ref().unwrap() }}</p>
+        </div>
+        {% endif %}
+
+        {# === ЭПИЗОДЫ (anime, сохранено) === #}
         {% if item.provider != "manual" && item.media_type == "anime" %}
         <div class="media-detail-section" x-data="{ episodesOpen: true }">
             <button class="media-detail-section-toggle" @click="episodesOpen = !episodesOpen" type="button">
@@ -160,94 +133,7 @@
         </div>
         {% endif %}
 
-        {% if !item.genres.is_empty() || !item.themes.is_empty() || !item.demographics.is_empty() %}
-        <div class="media-detail-section">
-            {% if !item.genres.is_empty() %}
-            <h3>Жанры</h3>
-            <div class="chips">
-                {% for g in item.genres %}<span class="chip chip-genre">{{ g }}</span>{% endfor %}
-            </div>
-            {% endif %}
-            {% if !item.themes.is_empty() %}
-            <h3>Темы</h3>
-            <div class="chips">
-                {% for t in item.themes %}<span class="chip chip-theme">{{ t }}</span>{% endfor %}
-            </div>
-            {% endif %}
-            {% if !item.demographics.is_empty() %}
-            <h3>Демография</h3>
-            <div class="chips">
-                {% for d in item.demographics %}<span class="chip chip-demo">{{ d }}</span>{% endfor %}
-            </div>
-            {% endif %}
-        </div>
-        {% endif %}
-
-        {% if !item.studios.is_empty() || !item.producers.is_empty() || !item.licensors.is_empty() %}
-        <div class="media-detail-section">
-            {% if !item.studios.is_empty() %}
-            <h3>Студии</h3>
-            <p>{% for s in item.studios %}<span class="text-item">{{ s }}</span>{% if !loop.last %}, {% endif %}{% endfor %}</p>
-            {% endif %}
-            {% if !item.producers.is_empty() %}
-            <h3>Продюсеры</h3>
-            <p>{% for s in item.producers %}<span class="text-item">{{ s }}</span>{% if !loop.last %}, {% endif %}{% endfor %}</p>
-            {% endif %}
-            {% if !item.licensors.is_empty() %}
-            <h3>Лицензиаты</h3>
-            <p>{% for s in item.licensors %}<span class="text-item">{{ s }}</span>{% if !loop.last %}, {% endif %}{% endfor %}</p>
-            {% endif %}
-        </div>
-        {% endif %}
-
-        {% if !item.authors.is_empty() || !item.artists.is_empty() %}
-        <div class="media-detail-section">
-            {% if !item.authors.is_empty() %}
-            <h3>Авторы</h3>
-            <p>{% for a in item.authors %}<span class="text-item">{{ a }}</span>{% if !loop.last %}, {% endif %}{% endfor %}</p>
-            {% endif %}
-            {% if !item.artists.is_empty() %}
-            <h3>Художники</h3>
-            <p>{% for a in item.artists %}<span class="text-item">{{ a }}</span>{% if !loop.last %}, {% endif %}{% endfor %}</p>
-            {% endif %}
-        </div>
-        {% endif %}
-
-        {% if !item.publishers.is_empty() || !item.serialized_in.is_empty() %}
-        <div class="media-detail-section">
-            {% if !item.publishers.is_empty() %}
-            <h3>Издатели</h3>
-            <p>{% for s in item.publishers %}<span class="text-item">{{ s }}</span>{% if !loop.last %}, {% endif %}{% endfor %}</p>
-            {% endif %}
-            {% if !item.serialized_in.is_empty() %}
-            <h3>Публиковалось в</h3>
-            <p>{% for s in item.serialized_in %}<span class="text-item">{{ s }}</span>{% if !loop.last %}, {% endif %}{% endfor %}</p>
-            {% endif %}
-        </div>
-        {% endif %}
-
-        {% if !item.networks.is_empty() || !item.platforms.is_empty() %}
-        <div class="media-detail-section">
-            {% if !item.networks.is_empty() %}
-            <h3>Сети</h3>
-            <p>{% for s in item.networks %}<span class="text-item">{{ s }}</span>{% if !loop.last %}, {% endif %}{% endfor %}</p>
-            {% endif %}
-            {% if !item.platforms.is_empty() %}
-            <h3>Платформы</h3>
-            <div class="chips">
-                {% for p in item.platforms %}<span class="chip chip-platform">{{ p }}</span>{% endfor %}
-            </div>
-            {% endif %}
-        </div>
-        {% endif %}
-
-        {% if item.description.is_some() %}
-        <div class="media-detail-description">
-            <h3>Описание</h3>
-            <p>{{ item.description.as_ref().unwrap() }}</p>
-        </div>
-        {% endif %}
-
+        {# === ДЕЙСТВИЯ === #}
         <div class="media-detail-actions">
             {% if item.is_tracked %}
             <div class="btn btn-primary" style="cursor: default; opacity: 0.6;">✓ Уже в списке</div>
@@ -295,6 +181,9 @@
                 <input type="hidden" name="redirect_to" value="/media/{{ item.provider }}/{{ item.external_id }}">
                 <button type="submit" class="btn btn-primary">+ В список</button>
             </form>
+            {% endif %}
+            {% if let Some(mu) = mu_url %}
+            <a href="{{ mu }}" target="_blank" rel="noopener" class="btn btn-secondary">Открыть на MangaUpdates ↗</a>
             {% endif %}
             <a href="/search" class="btn btn-secondary">← Назад к поиску</a>
         </div>
