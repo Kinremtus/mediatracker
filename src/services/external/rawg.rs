@@ -142,6 +142,7 @@ fn map_details(r: RawgDetails) -> CreateMediaItem {
         themes: Vec::new(),
         demographics: Vec::new(),
         categories: Vec::new(),
+        associated_titles: Vec::new(),
     }
 }
 
@@ -196,6 +197,7 @@ fn map_search(r: &RawgSearchResult) -> CreateMediaItem {
         themes: Vec::new(),
         demographics: Vec::new(),
         categories: Vec::new(),
+        associated_titles: Vec::new(),
     }
 }
 

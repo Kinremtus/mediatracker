@@ -146,6 +146,7 @@ fn map_search_doc(doc: OpenLibrarySearchDoc) -> Option<CreateMediaItem> {
         themes: Vec::new(),
         demographics: Vec::new(),
         categories: Vec::new(),
+        associated_titles: Vec::new(),
     })
 }
 
@@ -223,6 +224,7 @@ fn map_work(id: &str, work: OpenLibraryWork) -> Result<CreateMediaItem, anyhow::
         themes,
         demographics: Vec::new(),
         categories,
+        associated_titles: Vec::new(),
     })
 }
 

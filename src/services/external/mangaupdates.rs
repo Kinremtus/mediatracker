@@ -50,7 +50,6 @@ struct MangaUpdatesSeries {
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
-#[expect(dead_code)]
 struct MangaUpdatesAssociated {
     title: String,
 }
@@ -240,6 +239,15 @@ fn map_series(series: MangaUpdatesSeries) -> CreateMediaItem {
         );
     }
 
+    let associated_titles: Vec<String> = series
+        .associated
+        .clone()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|a| a.title)
+        .filter(|t| !t.trim().is_empty() && t != &series.title)
+        .collect();
+
     CreateMediaItem {
         provider: "mangaupdates".to_string(),
         external_id: series.series_id.to_string(),
@@ -294,6 +302,7 @@ fn map_series(series: MangaUpdatesSeries) -> CreateMediaItem {
         themes: Vec::new(),
         demographics: Vec::new(),
         categories,
+        associated_titles,
     }
 }
 
@@ -435,6 +444,19 @@ mod tests {
             details.get("anime_start_chapter").and_then(|v| v.as_str()),
             Some("Vol 1, Chap 1")
         );
+    }
+
+    #[test]
+    fn maps_associated_titles_from_series() {
+        let json = r#"{
+            "series_id": 7,
+            "title": "Main Title",
+            "type": "Manhwa",
+            "associated": [{"title": "Alt Title"}, {"title": "Main Title"}, {"title": "  "}]
+        }"#;
+        let series: MangaUpdatesSeries = serde_json::from_str(json).unwrap();
+        let item = map_series(series);
+        assert_eq!(item.associated_titles, vec!["Alt Title".to_string()]);
     }
 
     #[test]

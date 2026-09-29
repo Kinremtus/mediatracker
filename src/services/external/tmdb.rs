@@ -206,6 +206,7 @@ fn map_details(r: TmdbDetails, media_type: &str) -> CreateMediaItem {
         themes: Vec::new(),
         demographics: Vec::new(),
         categories: Vec::new(),
+        associated_titles: Vec::new(),
     }
 }
 
@@ -273,6 +274,7 @@ fn map_search_result(r: &serde_json::Value, media_type: &str) -> Option<CreateMe
         themes: Vec::new(),
         demographics: Vec::new(),
         categories: Vec::new(),
+        associated_titles: Vec::new(),
     })
 }
 

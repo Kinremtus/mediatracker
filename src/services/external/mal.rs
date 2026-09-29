@@ -383,6 +383,7 @@ fn map_full(anime: MalAnimeFull) -> CreateMediaItem {
         themes: extract_names(&anime.themes),
         demographics: extract_names(&anime.demographics),
         categories: Vec::new(),
+        associated_titles: Vec::new(),
     }
 }
 
@@ -441,6 +442,7 @@ fn map_search(item: MalAnimeSearchItem) -> CreateMediaItem {
         themes: extract_names(&item.themes),
         demographics: extract_names(&item.demographics),
         categories: Vec::new(),
+        associated_titles: Vec::new(),
     }
 }
 
@@ -500,6 +502,7 @@ fn map_manga_search(manga: MalManga) -> CreateMediaItem {
         themes: extract_names(&manga.themes),
         demographics: extract_names(&manga.demographics),
         categories: Vec::new(),
+        associated_titles: Vec::new(),
     }
 }
 
@@ -574,6 +577,7 @@ fn map_manga_full(manga: MalMangaFull) -> CreateMediaItem {
         themes: extract_names(&manga.themes),
         demographics: extract_names(&manga.demographics),
         categories: Vec::new(),
+        associated_titles: Vec::new(),
     }
 }
 

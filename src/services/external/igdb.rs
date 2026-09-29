@@ -236,6 +236,7 @@ fn map_game(g: IgdbGame) -> CreateMediaItem {
         themes,
         demographics: Vec::new(),
         categories: Vec::new(),
+        associated_titles: Vec::new(),
     }
 }
 
