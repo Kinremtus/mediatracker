@@ -88,7 +88,7 @@
         <span class="drawer-section-arrow" :class="{ 'rotated': open }">▾</span>
     </button>
     <div class="drawer-episodes" x-show="open" x-cloak
-         hx-get="/api/anime/{{ item.provider }}/{{ item.external_id }}/episodes{% if let Some(m) = mal_id %}?mal_id={{ m }}{% endif %}"
+         hx-get="/api/anime/{{ item.provider }}/{{ item.external_id }}/episodes{% if let Some(m) = mal_id %}?mal_id={{ m }}{% if let Some(tc) = total_count %}&episodes={{ tc }}{% endif %}{% else if let Some(tc) = total_count %}?episodes={{ tc }}{% endif %}"
          hx-trigger="revealed once"
          hx-swap="innerHTML">
         <div class="drawer-episodes-loading">Загрузка эпизодов…</div>
