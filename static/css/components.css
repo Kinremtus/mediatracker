@@ -2431,6 +2431,16 @@ body.drawer-open {
     margin-bottom: 0.75rem;
 }
 
+/* Follow-up redesign: the progress row now lives inside `.drawer-hero-info`
+ * (last item of the right column) instead of the sticky block. Keep the
+ * default flex-start alignment (matches the hero text), but drop the
+ * block-era bottom margin so the sticky status bar is not pushed away.
+ * The row is re-rendered by HTMX into the same parent, so a descendant
+ * selector keeps applying after the `outerHTML` swap. */
+.drawer-hero-info .drawer-progress-row {
+    margin-bottom: 0.25rem;
+}
+
 .drawer-progress-text {
     font-size: 14px;
     font-weight: 500;
