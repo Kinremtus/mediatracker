@@ -29,6 +29,7 @@ const DRAWER_CONTENT_HTML: &str = "templates/media_drawer_content.html";
 const PROGRESS_ROW_HTML: &str = "templates/partials/_progress_row.html";
 const DETAIL_HTML: &str = "templates/media_detail.html";
 const CHAPTER_LIST_HTML: &str = "templates/partials/_chapter_list.html";
+const EPISODE_LIST_HTML: &str = "templates/partials/_episode_list.html";
 
 /// Walk the source tracking brace/paren/bracket depth and string/
 /// comment state. Returns `(open_braces, close_braces,
@@ -570,4 +571,120 @@ fn drawer_content_progress_row_requires_tracking_id() {
         guard_pos < include_pos,
         "{DRAWER_CONTENT_HTML}: progress include must be wrapped in a `tracking_id` guard"
     );
+}
+
+/// Episode list must be server-windowed and expose the HTMX "Все эпизоды"
+/// toggle, mirroring the chapter list contract.
+#[test]
+fn episode_list_is_windowed_with_htmx_toggle() {
+    let src = read_root(EPISODE_LIST_HTML);
+    assert!(
+        src.contains("episode-list-wrapper"),
+        "{EPISODE_LIST_HTML}: wrapper for outerHTML swap missing"
+    );
+    assert!(
+        src.contains("?all=true"),
+        "{EPISODE_LIST_HTML}: full-list HTMX toggle missing"
+    );
+    assert!(
+        src.contains("closest .episode-list-wrapper"),
+        "{EPISODE_LIST_HTML}: toggle must target the wrapper"
+    );
+    assert!(
+        src.contains("Все эпизоды ({{ total }})"),
+        "{EPISODE_LIST_HTML}: toggle must carry the total count label"
+    );
+}
+
+/// The episodes section is rendered statically (no Alpine toggle); the season
+/// accordion lives in its own partial, not in the shared drawer. Scoped to the
+/// episodes section so an unrelated Alpine use elsewhere cannot satisfy it.
+#[test]
+fn drawer_episodes_section_has_no_alpine_toggle() {
+    let src = read_root(DRAWER_CONTENT_HTML);
+    let start = src
+        .find("{# === 5. EPISODES")
+        .expect("episodes section marker missing");
+    let end = src
+        .find("{# === 6.")
+        .expect("seasons section marker missing");
+    let section = &src[start..end];
+    assert!(
+        !section.contains("x-data"),
+        "the episodes section must not declare Alpine `x-data`"
+    );
+    assert!(
+        !section.contains("x-show"),
+        "the episodes section must not use Alpine `x-show`"
+    );
+}
+
+/// The INFO divider must render only for untracked items — a tracked item
+/// already gets its line from the sticky status block's `border-bottom`.
+#[test]
+fn drawer_info_divider_only_for_untracked() {
+    let src = read_root(DRAWER_CONTENT_HTML);
+    let guard = src
+        .find("tracking_id.is_none()")
+        .expect("no `tracking_id.is_none()` guard in the drawer template");
+    let block_end = src[guard..]
+        .find("{% endif %}")
+        .expect("no `{% endif %}` after the `tracking_id.is_none()` guard")
+        + guard;
+    let divider = src
+        .find("<div class=\"drawer-divider\"></div>")
+        .expect("no `drawer-divider` in the drawer template");
+    assert!(
+        guard < divider && divider < block_end,
+        "the INFO divider must be INSIDE the `tracking_id.is_none()` block \
+         (guard at byte {guard}, divider at byte {divider}, block ends at byte {block_end})"
+    );
+}
+
+/// Western comics track chapters, so the CHAPTERS section condition must
+/// include `comic`. Scoped to section 7: the hero poster placeholder also
+/// mentions `other-comics`/`comic`, so a bare `contains` would be fooled.
+#[test]
+fn drawer_chapters_include_comic() {
+    let src = read_root(DRAWER_CONTENT_HTML);
+    let start = src
+        .find("{# === 7. CHAPTERS")
+        .expect("chapters section marker missing");
+    let end = src
+        .find("{# === 8.")
+        .expect("game additions section marker missing");
+    let section = &src[start..end];
+    assert!(
+        section.contains("item.media_type == \"comic\""),
+        "the chapters section condition must include `comic` \
+         (Comic Vine items track chapters too)"
+    );
+}
+
+/// Section labels carry the tracked-unit count where the data exists at
+/// render time (`total_count`).
+#[test]
+fn drawer_labels_carry_counts() {
+    let src = read_root(DRAWER_CONTENT_HTML);
+    assert!(
+        src.contains("Эпизоды{% if let Some(tc) = total_count %} · {{ tc }}{% endif %}"),
+        "the episodes label must carry the `total_count` counter"
+    );
+    assert!(
+        src.contains("Главы{% if let Some(tc) = total_count %} · {{ tc }}{% endif %}"),
+        "the chapters label must carry the `total_count` counter"
+    );
+}
+
+/// «Альтернативные названия» renders as a chip with a chevron in both the
+/// drawer and the detail page.
+#[test]
+fn alt_titles_summary_has_chevron_everywhere() {
+    let needle = "Альтернативные названия <span class=\"drawer-section-arrow\">▾</span>";
+    for path in [DRAWER_CONTENT_HTML, DETAIL_HTML] {
+        assert!(
+            read_root(path).contains(needle),
+            "{path}: alt-titles `<summary>` must render the chip + chevron"
+        );
+    }
 }
