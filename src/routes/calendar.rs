@@ -1,7 +1,8 @@
 use askama::Template;
 use axum::{
     extract::{Query, State},
-    response::{Html, IntoResponse},
+    http::HeaderMap,
+    response::{Html, IntoResponse, Response},
 };
 use chrono::{Datelike, Duration, NaiveDate, Utc};
 use serde::Deserialize;
@@ -9,7 +10,7 @@ use serde::Deserialize;
 use super::home::{SidebarStats, get_sidebar_stats};
 use crate::app_state::AppState;
 use crate::middleware::CurrentUser;
-use crate::models::schedule::{CalendarDay, ReleaseEntry};
+use crate::models::schedule::{CalendarEvent, CalendarMonthView, FamilyTab, WeekGroup};
 
 const MONTHS_RU: &[&str] = &[
     "Январь",
@@ -36,37 +37,97 @@ struct CalendarTemplate {
     active_page: String,
     current_status: String,
     year: i32,
-    month: u32,
     month_name: String,
-    weeks: Vec<Vec<CalendarDay>>,
+    family_tabs: Vec<FamilyTab>,
+    weeks: Vec<WeekGroup>,
+    year_section: Vec<CalendarEvent>,
+    year_section_title: String,
+    is_empty: bool,
     prev_month_url: String,
     next_month_url: String,
+}
+
+/// Rendered alone for `HX-Request` swaps into `#calendar-content`.
+#[derive(Template)]
+#[template(path = "partials/calendar_weeks.html")]
+struct CalendarWeeksPartial {
+    family_tabs: Vec<FamilyTab>,
+    weeks: Vec<WeekGroup>,
+    year_section: Vec<CalendarEvent>,
+    year_section_title: String,
+    is_empty: bool,
 }
 
 #[derive(Deserialize)]
 pub struct CalendarQuery {
     year: Option<i32>,
     month: Option<u32>,
+    family: Option<String>,
 }
 
 pub async fn get_calendar(
     user: CurrentUser,
     State(state): State<AppState>,
     Query(params): Query<CalendarQuery>,
-) -> axum::response::Response {
+    headers: HeaderMap,
+) -> Response {
     let now = Utc::now();
     let year = params.year.unwrap_or_else(|| now.year());
     let month = params.month.unwrap_or_else(|| now.month());
 
     // Reject nonsense month/year before any date math: `?month=13` used to panic
     // inside `NaiveDate::from_ymd_opt(..).expect(..)` (500 / DoS).
-    let Some((first, last)) = month_bounds(year, month) else {
+    if month_bounds(year, month).is_none() {
         return super::bad_request("calendar: year/month out of range");
+    }
+
+    // Unknown family is ignored -> "Все".
+    let requested_family = params.family.unwrap_or_default();
+    let family = if requested_family.is_empty()
+        || crate::services::search_families::family(&requested_family).is_some()
+    {
+        requested_family
+    } else {
+        String::new()
     };
 
-    let stats = get_sidebar_stats(&state, &user).await;
+    let is_htmx = headers
+        .get("HX-Request")
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v == "true")
+        .unwrap_or(false);
 
     let _ = state.release_schedule.ensure_fresh(&state.shikimori).await;
+
+    let view = match state
+        .release_schedule
+        .get_calendar_month(user.id, year, month, &family)
+        .await
+    {
+        Ok(view) => view,
+        Err(e) => {
+            // Degrade gracefully: an empty feed rather than a 500.
+            tracing::error!("Failed to load calendar: {}", e);
+            CalendarMonthView::default()
+        }
+    };
+
+    if is_htmx {
+        let rendered = CalendarWeeksPartial {
+            family_tabs: view.family_tabs,
+            weeks: view.weeks,
+            year_section: view.year_section,
+            year_section_title: view.year_section_title,
+            is_empty: view.is_empty,
+        }
+        .render();
+        return match rendered {
+            Ok(html) => Html(html).into_response(),
+            Err(e) => super::internal_error("calendar: partial render", e),
+        };
+    }
+
+    let stats = get_sidebar_stats(&state, &user).await;
 
     let month_name = MONTHS_RU
         .get((month as usize).saturating_sub(1))
@@ -74,66 +135,6 @@ pub async fn get_calendar(
         .unwrap_or("")
         .to_string();
 
-    // Start from Monday of the week containing the 1st
-    let start = first - Duration::days(first.weekday().num_days_from_monday() as i64);
-    let end = last + Duration::days((6 - last.weekday().num_days_from_monday()) as i64);
-
-    // Fetch releases for the range
-    let from = chrono::NaiveDateTime::new(start, chrono::NaiveTime::from_hms_opt(0, 0, 0).unwrap())
-        .and_utc();
-    let to = chrono::NaiveDateTime::new(
-        end + Duration::days(1),
-        chrono::NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
-    )
-    .and_utc();
-
-    let releases = match state
-        .release_schedule
-        .get_by_date_range(user.id, from, to)
-        .await
-    {
-        Ok(releases) => releases,
-        Err(e) => {
-            tracing::error!("Failed to load calendar releases: {}", e);
-            Vec::new()
-        }
-    };
-
-    // Build release map: date -> Vec<ReleaseEntry>
-    let mut release_map: std::collections::HashMap<NaiveDate, Vec<ReleaseEntry>> =
-        std::collections::HashMap::new();
-    for r in releases {
-        let date = r.air_date.date_naive();
-        release_map.entry(date).or_default().push(r);
-    }
-
-    let today = Utc::now().date_naive();
-
-    let mut weeks: Vec<Vec<CalendarDay>> = Vec::new();
-    let mut current_week: Vec<CalendarDay> = Vec::new();
-    let mut d = start;
-    while d <= end {
-        let day = CalendarDay {
-            date: d,
-            day_num: d.day(),
-            is_current_month: d.month() == month,
-            is_today: d == today,
-            releases: release_map.remove(&d).unwrap_or_default(),
-        };
-        current_week.push(day);
-
-        if current_week.len() == 7 {
-            weeks.push(current_week);
-            current_week = Vec::new();
-        }
-
-        d += Duration::days(1);
-    }
-    if !current_week.is_empty() {
-        weeks.push(current_week);
-    }
-
-    // Prev/next month URLs
     let (prev_year, prev_month) = if month == 1 {
         (year - 1, 12)
     } else {
@@ -144,9 +145,19 @@ pub async fn get_calendar(
     } else {
         (year, month + 1)
     };
-
-    let prev_month_url = format!("/calendar?year={}&month={}", prev_year, prev_month);
-    let next_month_url = format!("/calendar?year={}&month={}", next_year, next_month);
+    let family_qs = if family.is_empty() {
+        String::new()
+    } else {
+        format!("&family={}", family)
+    };
+    let prev_month_url = format!(
+        "/calendar?year={}&month={}{}",
+        prev_year, prev_month, family_qs
+    );
+    let next_month_url = format!(
+        "/calendar?year={}&month={}{}",
+        next_year, next_month, family_qs
+    );
 
     let rendered = CalendarTemplate {
         username: user.username,
@@ -155,13 +166,17 @@ pub async fn get_calendar(
         active_page: "calendar".to_string(),
         current_status: String::new(),
         year,
-        month,
         month_name,
-        weeks,
+        family_tabs: view.family_tabs,
+        weeks: view.weeks,
+        year_section: view.year_section,
+        year_section_title: view.year_section_title,
+        is_empty: view.is_empty,
         prev_month_url,
         next_month_url,
     }
     .render();
+
     match rendered {
         Ok(html) => Html(html).into_response(),
         Err(e) => super::internal_error("calendar: template render", e),
