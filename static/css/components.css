@@ -3385,3 +3385,108 @@ input:-webkit-autofill:active {
 .detail-info-list { display: flex; flex-direction: column; gap: 0.3rem; }
 .detail-info-row { display: flex; gap: 0.5rem; font-size: 14px; }
 .detail-info-row .label { color: var(--muted-foreground); min-width: 130px; flex-shrink: 0; }
+
+/* --- Tracked release calendar (StopGame style) --- */
+.calendar-today {
+    font-size: 13px;
+    color: var(--muted-foreground);
+    text-decoration: none;
+    padding: 0.25rem 0.6rem;
+    border-radius: 6px;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.calendar-today:hover {
+    background: var(--accent);
+    color: var(--foreground);
+}
+
+.week-group {
+    margin-bottom: 1.75rem;
+}
+
+.week-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--foreground);
+    margin: 0 0 0.75rem;
+    padding-bottom: 0.35rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.week-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 0.75rem;
+}
+
+.calendar-card {
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+    padding: 0.5rem;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.calendar-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--primary);
+}
+
+.calendar-card.is-past {
+    opacity: 0.6;
+}
+
+.calendar-card-poster {
+    width: 40px;
+    height: 56px;
+    object-fit: cover;
+    border-radius: 4px;
+    flex-shrink: 0;
+    background: var(--secondary);
+}
+
+.calendar-card-body {
+    min-width: 0;
+}
+
+.calendar-card-title {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--foreground);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+.calendar-card-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-top: 0.25rem;
+}
+
+.calendar-card-date {
+    font-size: 0.72rem;
+    color: var(--muted-foreground);
+}
+
+.badge-episode {
+    background: color-mix(in srgb, var(--in_progress) 25%, transparent);
+}
+
+.badge-premiere {
+    background: color-mix(in srgb, var(--planned) 25%, transparent);
+}
+
+.calendar-year-section {
+    margin-top: 2rem;
+    padding-top: 1rem;
+    border-top: 1px dashed var(--border);
+}
