@@ -122,3 +122,62 @@ async fn calendar_page_renders_empty_month_without_network() {
         StatusCode::OK
     );
 }
+
+#[tokio::test]
+async fn calendar_rejects_invalid_month_with_400() {
+    let ctx = common::TestContext::new().await;
+    let app = Router::new()
+        .route("/calendar", get(calendar::get_calendar))
+        .layer(Extension(current_user()))
+        .with_state(ctx.state.clone());
+
+    assert_eq!(
+        get_page(app, "/calendar?year=2026&month=13").await,
+        StatusCode::BAD_REQUEST
+    );
+}
+
+#[tokio::test]
+async fn calendar_hx_request_returns_partial_not_full_page() {
+    let ctx = common::TestContext::new().await;
+
+    // Fresh row so `ensure_fresh()` skips the network.
+    sqlx::query(
+        "INSERT INTO release_schedule (provider, external_id, episode_number, air_date, title)
+         VALUES ('shikimori', 'hx-test', 1, NOW(), 'Test Anime')",
+    )
+    .execute(&ctx.pool)
+    .await
+    .expect("seed release_schedule");
+
+    let app = Router::new()
+        .route("/calendar", get(calendar::get_calendar))
+        .layer(Extension(current_user()))
+        .with_state(ctx.state.clone());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/calendar?year=2026&month=9")
+                .header("HX-Request", "true")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("read body");
+    let html = String::from_utf8(bytes.to_vec()).expect("utf8");
+
+    assert!(
+        html.contains("filter-tabs"),
+        "partial must contain family tabs"
+    );
+    assert!(
+        !html.contains("app-shell"),
+        "partial must not include the app shell"
+    );
+}
