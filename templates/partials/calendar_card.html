@@ -1,0 +1,16 @@
+<article class="calendar-card{% if event.is_past() %} is-past{% endif %}"
+         onclick="openMediaDrawer('{{ event.provider }}', '{{ event.external_id }}', '{{ event.media_type }}')">
+  <img class="calendar-card-poster"
+       src="{{ event.poster_or_placeholder() }}"
+       alt=""
+       loading="lazy">
+  <div class="calendar-card-body">
+    <div class="calendar-card-title">{{ event.title }}</div>
+    <div class="calendar-card-meta">
+      <span class="badge {% if event.is_episode() %}badge-episode{% else %}badge-premiere{% endif %}">{{ event.label() }}</span>
+      {% if event.has_date() %}
+        <span class="calendar-card-date">{{ event.date_ru() }}</span>
+      {% endif %}
+    </div>
+  </div>
+</article>
