@@ -285,7 +285,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 0.375rem 0.75rem;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -329,8 +329,8 @@
 }
 
 .search-dropdown-poster {
-    width: 28px;
-    height: 40px;
+    width: 32px;
+    height: 46px;
     object-fit: cover;
     border-radius: 4px;
     flex-shrink: 0;
@@ -343,7 +343,7 @@
 }
 
 .search-dropdown-item-title {
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 500;
     white-space: nowrap;
     overflow: hidden;
@@ -355,7 +355,7 @@
     align-items: center;
     gap: 0.375rem;
     margin-top: 2px;
-    font-size: 11px;
+    font-size: 12px;
     color: var(--muted-foreground);
 }
 
@@ -364,7 +364,7 @@
     padding: 1px 4px;
     border-radius: 3px;
     background: var(--secondary);
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
 }
@@ -380,7 +380,7 @@
 
 .search-dropdown-empty {
     padding: 1rem 0.75rem;
-    font-size: 13px;
+    font-size: 14px;
     color: var(--muted-foreground);
     text-align: center;
 }
@@ -411,7 +411,7 @@
 .search-dropdown-advanced {
     display: block;
     padding: 0.5rem 0.75rem;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
     color: var(--primary);
     text-decoration: none;
@@ -432,7 +432,7 @@
     display: flex;
     align-items: flex-start;
     justify-content: center;
-    padding-top: 16vh;
+    padding-top: 12vh;
 }
 
 .search-overlay-card {
@@ -440,8 +440,8 @@
     border: 1px solid var(--border);
     border-radius: var(--radius);
     width: 90vw;
-    max-width: 500px;
-    max-height: 60vh;
+    max-width: 720px;
+    max-height: 70vh;
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -495,15 +495,15 @@
     gap: 0.25rem;
     padding: 0.5rem 0.75rem;
     border-bottom: 1px solid var(--border);
-    overflow-x: auto;
+    flex-wrap: wrap;
     flex-shrink: 0;
 }
 
 .quick-search-tab {
-    padding: 0.25rem 0.625rem;
+    padding: 0.3rem 0.7rem;
     border: none;
     border-radius: 999px;
-    font-size: 12px;
+    font-size: 13px;
     background: var(--secondary);
     color: var(--foreground);
     white-space: nowrap;
@@ -626,19 +626,17 @@
 }
 
 /* Global "add manually" header icon button (mirrors .theme-toggle-btn sizing).
- * The "+" glyph is 20px inside a 36px box (8px optical inset), narrower than
- * the avatar (28px/36px = 4px) while the theme hexagon (18px/36px = 9px) sits
- * between them. A 0.5rem flex gap alone makes "+"<->hexagon read wider than
- * hexagon<->avatar, so this 3.5px margin nudges the pair. It is the mirror of
- * `.user-menu`'s `margin-left: 0.25rem` below; together they equalize the two
- * center-to-center gaps at 46.5px. */
+ * The `-0.5rem` margin-right cancels the `.header-actions` 0.5rem flex gap, so
+ * the "+" 36x36 hitbox abuts the theme-toggle hitbox and the two action buttons
+ * read as one tight cluster. The avatar side is untouched -- `.user-menu` keeps
+ * its own `margin-left: 0.25rem` below. */
 .header-icon-btn {
     width: 36px;
     height: 36px;
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-right: 0.25rem;
+    margin-right: -0.5rem;
     border-radius: var(--radius);
     transition: background 0.15s ease;
 }
