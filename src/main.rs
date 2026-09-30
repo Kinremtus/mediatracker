@@ -127,6 +127,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "/api/search/suggestions",
             get(search::get_search_suggestions),
         )
+        .route("/api/search/panel", get(search::get_search_panel))
         .route(
             "/api/tmdb/{external_id}/seasons",
             get(tmdb_episodes::get_tmdb_seasons),

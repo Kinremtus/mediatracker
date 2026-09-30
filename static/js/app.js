@@ -517,12 +517,11 @@ function saveRecentMediaFromElement(el) {
 
 // --- Search Overlay (Alpine component) ---
 // Listens for 'open-search' custom event dispatched from header triggers.
+// Fetching/grouping/tabs are now server-rendered via GET /api/search/panel (HTMX).
 function searchOverlay() {
     return {
         open: false,
         query: '',
-        results: [],
-        loading: false,
         recentMedia: JSON.parse(localStorage.getItem('recentMedia') || '[]'),
 
         init() {
@@ -540,25 +539,10 @@ function searchOverlay() {
         closeSearch() {
             this.open = false;
             this.query = '';
-            this.results = [];
-        },
-
-        async search() {
-            if (this.query.length < 2) {
-                this.results = [];
-                return;
-            }
-            this.loading = true;
-            try {
-                const resp = await fetch('/api/search/suggestions?q=' + encodeURIComponent(this.query));
-                if (resp.ok) {
-                    this.results = await resp.json();
-                }
-            } catch (e) {
-                this.results = [];
-            } finally {
-                this.loading = false;
-            }
+            // Clear stale server-rendered results so reopening never
+            // flashes the previous query's list.
+            const r = document.getElementById('quick-search-results');
+            if (r) r.innerHTML = '';
         },
 
         submitSearch() {

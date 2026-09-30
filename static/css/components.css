@@ -489,6 +489,63 @@
     background: var(--muted);
 }
 
+/* --- Quick search panel (server-rendered HTMX fragment) --- */
+.quick-search-tabs {
+    display: flex;
+    gap: 0.25rem;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    flex-shrink: 0;
+}
+
+.quick-search-tab {
+    padding: 0.25rem 0.625rem;
+    border: none;
+    border-radius: 999px;
+    font-size: 12px;
+    background: var(--secondary);
+    color: var(--foreground);
+    white-space: nowrap;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.quick-search-tab:hover {
+    background: var(--muted);
+}
+
+.quick-search-tab.active {
+    background: var(--primary);
+    color: var(--primary-foreground);
+}
+
+.quick-search-section + .quick-search-section {
+    border-top: 1px solid var(--border);
+}
+
+.quick-search-section-items {
+    display: block;
+}
+
+.quick-search-more {
+    display: block;
+    width: 100%;
+    padding: 0.625rem 0.75rem;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--primary);
+    background: none;
+    border: none;
+    cursor: pointer;
+    transition: background 0.1s ease;
+}
+
+.quick-search-more:hover {
+    background: var(--muted);
+}
+
 .search-overlay-results {
     overflow-y: auto;
     flex: 1;
@@ -568,13 +625,20 @@
     background: var(--secondary);
 }
 
-/* Global "add manually" header icon button (mirrors .theme-toggle-btn sizing). */
+/* Global "add manually" header icon button (mirrors .theme-toggle-btn sizing).
+ * The "+" glyph is 20px inside a 36px box (8px optical inset), narrower than
+ * the avatar (28px/36px = 4px) while the theme hexagon (18px/36px = 9px) sits
+ * between them. A 0.5rem flex gap alone makes "+"<->hexagon read wider than
+ * hexagon<->avatar, so this 3.5px margin nudges the pair. It is the mirror of
+ * `.user-menu`'s `margin-left: 0.25rem` below; together they equalize the two
+ * center-to-center gaps at 46.5px. */
 .header-icon-btn {
     width: 36px;
     height: 36px;
     display: flex;
     align-items: center;
     justify-content: center;
+    margin-right: 0.25rem;
     border-radius: var(--radius);
     transition: background 0.15s ease;
 }

@@ -1,0 +1,66 @@
+{% if tabs_visible %}
+<nav class="quick-search-tabs">
+    <button type="button" class="quick-search-tab{% if active_family.is_empty() %} active{% endif %}"
+            hx-get="/api/search/panel"
+            hx-vals='{"family":""}'
+            hx-include="#quick-search-input"
+            hx-target="#quick-search-results"
+            hx-swap="innerHTML">Все</button>
+    {% for f in families %}
+    <button type="button" class="quick-search-tab{% if active_family == f.key %} active{% endif %}"
+            hx-get="/api/search/panel"
+            hx-vals='{"family":"{{ f.key }}"}'
+            hx-include="#quick-search-input"
+            hx-target="#quick-search-results"
+            hx-swap="innerHTML">{{ f.icon }} {{ f.label }}</button>
+    {% endfor %}
+</nav>
+{% endif %}
+
+<a class="search-dropdown-advanced" href="/search?q={{ query|urlencode }}">Продвинутый поиск по «{{ query }}»</a>
+
+{% if too_short %}
+<div class="search-dropdown-empty">Введите минимум 2 символа</div>
+{% else if sections.is_empty() %}
+<div class="search-dropdown-empty">Ничего не найдено</div>
+{% endif %}
+
+{% for s in sections %}
+<div class="quick-search-section" data-type="{{ s.media_type }}">
+    <div class="search-dropdown-title"><span>{{ s.icon }} {{ s.label }}</span></div>
+    <div class="quick-search-section-items">
+        {% for item in s.items %}
+        <a href="#" class="search-dropdown-item"
+           data-provider="{{ item.provider }}"
+           data-external-id="{{ item.external_id }}"
+           data-media-type="{{ item.media_type }}"
+           data-title="{{ item.title }}"
+           data-poster-url="{{ item.poster_url.as_ref().unwrap_or(&String::new()) }}"
+           data-score="{{ item.score.unwrap_or(0.0) }}"
+           data-year="{{ item.year.unwrap_or(0) }}"
+           @click.prevent="openMediaDrawer($el.dataset.provider, $el.dataset.externalId, $el.dataset.mediaType); saveRecentMediaFromElement($el); closeSearch()">
+            {% if item.poster_url.is_some() %}
+            <img src="{{ item.poster_url.as_ref().unwrap() }}" class="search-dropdown-poster" alt="" loading="lazy">
+            {% endif %}
+            <div class="search-dropdown-item-body">
+                <div class="search-dropdown-item-title">{{ item.title }}</div>
+                <div class="search-dropdown-item-meta">
+                    <span class="search-dropdown-badge">{{ item.media_type_label }}</span>
+                    {% if let Some(y) = item.year %}<span>{{ y }}</span>{% endif %}
+                    {% if let Some(sc) = item.score %}<span class="search-dropdown-score">★ {{ sc }}</span>{% endif %}
+                    {% if item.is_tracked %}<span class="search-dropdown-tracked">✓ В списке</span>{% endif %}
+                </div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+    {% if s.has_more %}
+    <button type="button" class="quick-search-more"
+            hx-get="/api/search/panel"
+            hx-include="#quick-search-input"
+            hx-vals='{"type":"{{ s.media_type }}","limit":"{{ s.next_limit }}"}'
+            hx-target="closest .quick-search-section"
+            hx-swap="outerHTML">Показать ещё {{ s.remaining }}</button>
+    {% endif %}
+</div>
+{% endfor %}
