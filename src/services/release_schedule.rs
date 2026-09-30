@@ -6,11 +6,11 @@ use chrono::{DateTime, NaiveDate, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::models::schedule::ReleaseEntry;
 use crate::models::schedule::{
     CalendarEvent, CalendarEventKind, CalendarMonthView, FamilyTab, canonical_key,
     filter_by_family, group_into_weeks, merge_and_dedup,
 };
-use crate::models::schedule::ReleaseEntry;
 use crate::services::anime_identity;
 use crate::services::external::shikimori::ShikimoriService;
 use crate::services::external::tmdb::TmdbService;
@@ -397,7 +397,10 @@ impl ReleaseScheduleService {
         }
         .ok_or_else(|| anyhow::anyhow!("invalid month {month}"))?;
         let from = first.and_hms_opt(0, 0, 0).expect("valid time").and_utc();
-        let to = first_next.and_hms_opt(0, 0, 0).expect("valid time").and_utc();
+        let to = first_next
+            .and_hms_opt(0, 0, 0)
+            .expect("valid time")
+            .and_utc();
         let today = Utc::now().date_naive();
 
         // --- Episodes -------------------------------------------------------
@@ -464,11 +467,7 @@ impl ReleaseScheduleService {
                         provider: m_provider,
                         external_id: m_external_id,
                         family: search_families::family_of(&media_type),
-                        canonical_key: canonical_key(
-                            shikimori_id,
-                            &r_provider,
-                            &r_external_id,
-                        ),
+                        canonical_key: canonical_key(shikimori_id, &r_provider, &r_external_id),
                         title: m_title,
                         poster_url: r_poster,
                         date: Some(date),
@@ -484,7 +483,15 @@ impl ReleaseScheduleService {
             .collect();
 
         // --- Premieres ------------------------------------------------------
-        type PremiereRow = (String, String, String, String, Option<String>, NaiveDate, Option<i64>);
+        type PremiereRow = (
+            String,
+            String,
+            String,
+            String,
+            Option<String>,
+            NaiveDate,
+            Option<i64>,
+        );
         #[allow(clippy::type_complexity)]
         let premiere_rows: Vec<PremiereRow> = sqlx::query_as(
             r#"
@@ -510,7 +517,15 @@ impl ReleaseScheduleService {
         let premieres: Vec<CalendarEvent> = premiere_rows
             .into_iter()
             .map(
-                |(provider, external_id, media_type, title, poster_url, aired_from, shikimori_id)| {
+                |(
+                    provider,
+                    external_id,
+                    media_type,
+                    title,
+                    poster_url,
+                    aired_from,
+                    shikimori_id,
+                )| {
                     CalendarEvent {
                         family: search_families::family_of(&media_type),
                         canonical_key: canonical_key(shikimori_id, &provider, &external_id),
@@ -559,20 +574,22 @@ impl ReleaseScheduleService {
 
         let year_all: Vec<CalendarEvent> = year_rows
             .into_iter()
-            .map(|(provider, external_id, media_type, title, poster_url, shikimori_id)| {
-                CalendarEvent {
-                    family: search_families::family_of(&media_type),
-                    canonical_key: canonical_key(shikimori_id, &provider, &external_id),
-                    provider,
-                    external_id,
-                    media_type,
-                    title,
-                    poster_url,
-                    date: None,
-                    kind: CalendarEventKind::Premiere,
-                    is_past: false,
-                }
-            })
+            .map(
+                |(provider, external_id, media_type, title, poster_url, shikimori_id)| {
+                    CalendarEvent {
+                        family: search_families::family_of(&media_type),
+                        canonical_key: canonical_key(shikimori_id, &provider, &external_id),
+                        provider,
+                        external_id,
+                        media_type,
+                        title,
+                        poster_url,
+                        date: None,
+                        kind: CalendarEventKind::Premiere,
+                        is_past: false,
+                    }
+                },
+            )
             .collect();
 
         // --- Counts (whole month, before family filtering) ------------------

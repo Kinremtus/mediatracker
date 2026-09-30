@@ -109,13 +109,49 @@ async fn dropped_is_excluded_and_paused_is_included() {
     let ctx = common::TestContext::new().await;
     let user = seed_user(&ctx).await;
 
-    let dropped = seed_media(&ctx, "shikimori", "cal-drop", "anime", "Dropped", None, None, None).await;
+    let dropped = seed_media(
+        &ctx,
+        "shikimori",
+        "cal-drop",
+        "anime",
+        "Dropped",
+        None,
+        None,
+        None,
+    )
+    .await;
     track(&ctx, user, dropped, "dropped").await;
-    seed_release(&ctx, "shikimori", "cal-drop", 0, 2, NaiveDate::from_ymd_opt(2026, 10, 2).unwrap()).await;
+    seed_release(
+        &ctx,
+        "shikimori",
+        "cal-drop",
+        0,
+        2,
+        NaiveDate::from_ymd_opt(2026, 10, 2).unwrap(),
+    )
+    .await;
 
-    let paused = seed_media(&ctx, "shikimori", "cal-pause", "anime", "Paused", None, None, None).await;
+    let paused = seed_media(
+        &ctx,
+        "shikimori",
+        "cal-pause",
+        "anime",
+        "Paused",
+        None,
+        None,
+        None,
+    )
+    .await;
     track(&ctx, user, paused, "paused").await;
-    seed_release(&ctx, "shikimori", "cal-pause", 0, 3, NaiveDate::from_ymd_opt(2026, 10, 2).unwrap()).await;
+    seed_release(
+        &ctx,
+        "shikimori",
+        "cal-pause",
+        0,
+        3,
+        NaiveDate::from_ymd_opt(2026, 10, 2).unwrap(),
+    )
+    .await;
 
     let service = ReleaseScheduleService::new(ctx.pool.clone());
     let view = service
@@ -180,7 +216,10 @@ async fn family_filter_limits_events_but_counts_all() {
     let games = view.family_tabs.iter().find(|t| t.key == "games").unwrap();
     let movies = view.family_tabs.iter().find(|t| t.key == "movies").unwrap();
     assert_eq!(games.count, 1);
-    assert_eq!(movies.count, 1, "counts cover all families, not just selected");
+    assert_eq!(
+        movies.count, 1,
+        "counts cover all families, not just selected"
+    );
     assert!(games.active);
     assert!(!movies.active);
 }
@@ -191,16 +230,54 @@ async fn year_only_planned_media_lands_in_year_section() {
     let user = seed_user(&ctx).await;
 
     // planned, year set, no exact date -> year section
-    let manga = seed_media(&ctx, "mangaupdates", "cal-manga", "manga", "Manga", None, Some(2026), None).await;
+    let manga = seed_media(
+        &ctx,
+        "mangaupdates",
+        "cal-manga",
+        "manga",
+        "Manga",
+        None,
+        Some(2026),
+        None,
+    )
+    .await;
     track(&ctx, user, manga, "planned").await;
 
     // planned, no exact date, but has a release_schedule row -> excluded
-    let manga2 = seed_media(&ctx, "mangaupdates", "cal-manga2", "manga", "Manga2", None, Some(2026), None).await;
+    let manga2 = seed_media(
+        &ctx,
+        "mangaupdates",
+        "cal-manga2",
+        "manga",
+        "Manga2",
+        None,
+        Some(2026),
+        None,
+    )
+    .await;
     track(&ctx, user, manga2, "planned").await;
-    seed_release(&ctx, "mangaupdates", "cal-manga2", 0, 1, NaiveDate::from_ymd_opt(2026, 10, 5).unwrap()).await;
+    seed_release(
+        &ctx,
+        "mangaupdates",
+        "cal-manga2",
+        0,
+        1,
+        NaiveDate::from_ymd_opt(2026, 10, 5).unwrap(),
+    )
+    .await;
 
     // in_progress with year -> excluded (year section is planned-only)
-    let game = seed_media(&ctx, "rawg", "cal-game2", "game", "Game", None, Some(2026), None).await;
+    let game = seed_media(
+        &ctx,
+        "rawg",
+        "cal-game2",
+        "game",
+        "Game",
+        None,
+        Some(2026),
+        None,
+    )
+    .await;
     track(&ctx, user, game, "in_progress").await;
 
     let service = ReleaseScheduleService::new(ctx.pool.clone());
@@ -243,6 +320,9 @@ async fn episode_wins_over_same_day_premiere_for_mal_tracked_anime() {
     let events: Vec<_> = view.weeks.iter().flat_map(|w| w.events.iter()).collect();
     assert_eq!(events.len(), 1, "premiere deduped against episode");
     assert!(events[0].is_episode());
-    assert_eq!(events[0].provider, "mal", "drawer targets tracked media_items");
+    assert_eq!(
+        events[0].provider, "mal",
+        "drawer targets tracked media_items"
+    );
     assert_eq!(events[0].canonical_key, "shikimori:21");
 }

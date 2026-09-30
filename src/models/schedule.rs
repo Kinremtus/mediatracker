@@ -212,11 +212,7 @@ pub fn group_into_weeks(events: Vec<CalendarEvent>) -> Vec<WeekGroup> {
     buckets
         .into_iter()
         .map(|(monday, mut bucket)| {
-            bucket.sort_by(|a, b| {
-                a.date
-                    .cmp(&b.date)
-                    .then_with(|| a.title.cmp(&b.title))
-            });
+            bucket.sort_by(|a, b| a.date.cmp(&b.date).then_with(|| a.title.cmp(&b.title)));
             let end = bucket.iter().filter_map(|e| e.date).max().unwrap_or(monday);
             WeekGroup {
                 label: week_label(monday, end),
@@ -316,10 +312,7 @@ mod tests {
 
     #[test]
     fn canonical_key_prefers_shikimori_id() {
-        assert_eq!(
-            canonical_key(Some(21), "mal", "mal-1"),
-            "shikimori:21"
-        );
+        assert_eq!(canonical_key(Some(21), "mal", "mal-1"), "shikimori:21");
         assert_eq!(canonical_key(None, "tmdb", "99"), "tmdb:99");
     }
 
@@ -366,8 +359,20 @@ mod tests {
     #[test]
     fn filter_by_family_selects_matching_and_all() {
         let day = NaiveDate::from_ymd_opt(2026, 10, 5).unwrap();
-        let a = event(CalendarEventKind::Premiere, "A", Some(day), "games", "rawg:a");
-        let b = event(CalendarEventKind::Premiere, "B", Some(day), "movies", "tmdb:b");
+        let a = event(
+            CalendarEventKind::Premiere,
+            "A",
+            Some(day),
+            "games",
+            "rawg:a",
+        );
+        let b = event(
+            CalendarEventKind::Premiere,
+            "B",
+            Some(day),
+            "movies",
+            "tmdb:b",
+        );
         let all = vec![a.clone(), b.clone()];
         assert_eq!(filter_by_family(&all, "").len(), 2);
         assert_eq!(filter_by_family(&all, "games").len(), 1);
