@@ -72,15 +72,22 @@ async fn track_media(ctx: &common::TestContext, user_id: Uuid, status: &str) {
     .expect("upsert tracking entry");
 }
 
-async fn insert_release(ctx: &common::TestContext, air_date: chrono::DateTime<Utc>, episode: i32) {
+async fn insert_release(
+    ctx: &common::TestContext,
+    air_date: chrono::DateTime<Utc>,
+    episode: i32,
+    season: i32,
+) {
     sqlx::query(
-        "INSERT INTO release_schedule (provider, external_id, episode_number, air_date, title) \
-         VALUES ($1, $2, $3, $4, 'Regression Anime') \
-         ON CONFLICT (provider, external_id, episode_number) \
+        "INSERT INTO release_schedule \
+             (provider, external_id, season_number, episode_number, air_date, title) \
+         VALUES ($1, $2, $3, $4, $5, 'Regression Anime') \
+         ON CONFLICT (provider, external_id, season_number, episode_number) \
          DO UPDATE SET air_date = EXCLUDED.air_date",
     )
     .bind(PROVIDER)
     .bind(EXTERNAL_ID)
+    .bind(season)
     .bind(episode)
     .bind(air_date)
     .execute(&ctx.pool)
@@ -120,7 +127,7 @@ async fn upcoming_releases_query_returns_row_without_distinct_on_error() {
     let ctx = common::TestContext::new().await;
     let user = create_user(&ctx, None).await;
     track_media(&ctx, user, "in_progress").await;
-    insert_release(&ctx, Utc::now() + Duration::days(1), 12).await;
+    insert_release(&ctx, Utc::now() + Duration::days(1), 12, 0).await;
 
     let service = ReleaseScheduleService::new(ctx.pool.clone());
     let rows = service
@@ -141,7 +148,7 @@ async fn releases_by_date_range_returns_row() {
 
     let from = Utc::now();
     let to = from + Duration::days(7);
-    insert_release(&ctx, from + Duration::days(2), 3).await;
+    insert_release(&ctx, from + Duration::days(2), 3, 0).await;
 
     let service = ReleaseScheduleService::new(ctx.pool.clone());
     let rows = service
@@ -159,7 +166,7 @@ async fn notify_new_episodes_claims_notification_atomically() {
     let user = create_user(&ctx, Some("123456")).await;
     track_media(&ctx, user, "in_progress").await;
     // Aired one hour ago: inside the "last 2 hours" notification window.
-    insert_release(&ctx, Utc::now() - Duration::hours(1), 12).await;
+    insert_release(&ctx, Utc::now() - Duration::hours(1), 12, 0).await;
 
     let addr = spawn_stub_telegram();
     let notifier =
@@ -190,4 +197,125 @@ async fn notify_new_episodes_claims_notification_atomically() {
     .expect("count notification_log rows");
 
     assert_eq!(count, 1, "exactly one notification_log row expected");
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn track_media_item(
+    ctx: &common::TestContext,
+    user_id: Uuid,
+    provider: &str,
+    external_id: &str,
+    media_type: &str,
+    mal_id: Option<i64>,
+    shikimori_id: Option<i64>,
+    status: &str,
+) -> Uuid {
+    let media_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO media_items (provider, external_id, media_type, title, mal_id, shikimori_id) \
+         VALUES ($1, $2, $3, 'Title', $4, $5) \
+         ON CONFLICT (provider, external_id) DO UPDATE SET title = EXCLUDED.title, \
+             mal_id = EXCLUDED.mal_id, shikimori_id = EXCLUDED.shikimori_id \
+         RETURNING id",
+    )
+    .bind(provider)
+    .bind(external_id)
+    .bind(media_type)
+    .bind(mal_id)
+    .bind(shikimori_id)
+    .fetch_one(&ctx.pool)
+    .await
+    .expect("upsert media item");
+
+    sqlx::query(
+        "INSERT INTO tracking_entries (user_id, media_id, status) VALUES ($1, $2, $3) \
+         ON CONFLICT (user_id, media_id) DO UPDATE SET status = EXCLUDED.status",
+    )
+    .bind(user_id)
+    .bind(media_id)
+    .bind(status)
+    .execute(&ctx.pool)
+    .await
+    .expect("upsert tracking entry");
+
+    media_id
+}
+
+/// MAL-tracked anime with a resolved `shikimori_id` must match Shikimori
+/// releases through the OR-arm.
+#[tokio::test]
+async fn mal_anime_matches_shikimori_release_via_shikimori_id() {
+    let ctx = common::TestContext::new().await;
+    let user = create_user(&ctx, None).await;
+    track_media_item(
+        &ctx,
+        user,
+        "mal",
+        "mal-match-001",
+        "anime",
+        Some(21),
+        Some(21),
+        "in_progress",
+    )
+    .await;
+
+    sqlx::query(
+        "INSERT INTO release_schedule \
+             (provider, external_id, season_number, episode_number, air_date, title) \
+         VALUES ('shikimori', '21', 0, 5, $1, 'Matched Anime')",
+    )
+    .bind(Utc::now() + Duration::days(1))
+    .execute(&ctx.pool)
+    .await
+    .expect("insert shikimori release");
+
+    let service = ReleaseScheduleService::new(ctx.pool.clone());
+    let rows = service
+        .get_upcoming_for_user(user, 7)
+        .await
+        .expect("query must not fail");
+
+    assert_eq!(rows.len(), 1, "MAL anime must match its Shikimori release");
+    assert_eq!(rows[0].episode_number, 5);
+    assert_eq!(rows[0].season_number, 0);
+}
+
+/// TMDB series rows must expose their season number.
+#[tokio::test]
+async fn tmdb_season_row_returns_season_number() {
+    let ctx = common::TestContext::new().await;
+    let user = create_user(&ctx, None).await;
+    track_media_item(
+        &ctx,
+        user,
+        "tmdb",
+        "tv-season-001",
+        "series",
+        None,
+        None,
+        "planned",
+    )
+    .await;
+
+    sqlx::query(
+        "INSERT INTO release_schedule \
+             (provider, external_id, season_number, episode_number, air_date, title) \
+         VALUES ('tmdb', 'tv-season-001', 2, 5, $1, 'Seasoned Show')",
+    )
+    .bind(Utc::now() + Duration::days(3))
+    .execute(&ctx.pool)
+    .await
+    .expect("insert tmdb release");
+
+    let from = Utc::now();
+    let to = from + Duration::days(7);
+    let service = ReleaseScheduleService::new(ctx.pool.clone());
+    let rows = service
+        .get_by_date_range(user, from, to)
+        .await
+        .expect("date-range query must not fail");
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].season_number, 2);
+    assert_eq!(rows[0].episode_number, 5);
+    assert_eq!(rows[0].episode_label(), "S2 E5");
 }

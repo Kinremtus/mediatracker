@@ -888,3 +888,26 @@ fn header_icon_btn_has_optical_margin() {
         "rule missing optical margin:\n{rule}"
     );
 }
+
+/// The sidebar must not expose a `/search` item anymore: search is reachable
+/// from the header/overlay and `/search` still exists for those entry points.
+/// The check is scoped strictly to the `<aside>...</aside>` block so the
+/// search overlay markup (which legitimately references `/api/search/panel`)
+/// is unaffected.
+#[test]
+fn sidebar_has_no_search_item() {
+    let html = read_root(APP_SHELL_HTML);
+    let start = html
+        .find("<aside")
+        .expect("app_shell: <aside class=\"sidebar\"> block present");
+    let end = html[start..]
+        .find("</aside>")
+        .map(|i| start + i)
+        .expect("app_shell: closing </aside> present");
+    let aside = &html[start..end];
+    assert!(
+        !aside.contains("href=\"/search\""),
+        "{APP_SHELL_HTML}: the sidebar must not link to /search anymore \
+         (search lives in the header/overlay)"
+    );
+}

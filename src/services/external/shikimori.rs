@@ -72,6 +72,55 @@ pub struct ShikiCalendarAnime {
     pub image: ShikimoriImage,
 }
 
+/// One `(shikimori_id, mal_id)` pair from the Shikimori GraphQL API.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShikimoriIdCandidate {
+    pub shikimori_id: i64,
+    pub mal_id: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ShikimoriGraphqlEnvelope {
+    data: Option<ShikimoriGraphqlData>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ShikimoriGraphqlData {
+    #[serde(default)]
+    animes: Vec<ShikimoriGraphqlAnime>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ShikimoriGraphqlAnime {
+    id: String,
+    #[serde(rename = "malId", default)]
+    mal_id: Option<String>,
+}
+
+/// Pure: parse a Shikimori GraphQL `animes` response. GraphQL delivers
+/// `id`/`malId` as JSON *strings*, so we parse them to `i64` here.
+/// Unparseable ids are skipped; null/absent `malId` becomes `None`.
+/// Malformed JSON yields an empty list.
+pub fn parse_graphql_animes(json: &str) -> Vec<ShikimoriIdCandidate> {
+    let Ok(envelope) = serde_json::from_str::<ShikimoriGraphqlEnvelope>(json) else {
+        return Vec::new();
+    };
+    let Some(data) = envelope.data else {
+        return Vec::new();
+    };
+    data.animes
+        .into_iter()
+        .filter_map(|a| {
+            let shikimori_id = a.id.parse::<i64>().ok()?;
+            let mal_id = a.mal_id.and_then(|m| m.parse::<i64>().ok());
+            Some(ShikimoriIdCandidate {
+                shikimori_id,
+                mal_id,
+            })
+        })
+        .collect()
+}
+
 #[derive(Debug, Deserialize)]
 struct ShikimoriStudio {
     name: String,
@@ -348,6 +397,46 @@ impl ShikimoriService {
         Ok(entries)
     }
 
+    /// GET a single Shikimori anime and return its MAL id, reusing the pure
+    /// parser from `services::backfill`. A 404 is `Ok(None)` (the probe id is
+    /// not a Shikimori id at all); other non-2xx are errors.
+    pub async fn fetch_mal_id_by_shikimori_id(
+        &self,
+        shikimori_id: i64,
+    ) -> Result<Option<i64>, anyhow::Error> {
+        let url = format!("{}/animes/{}", BASE_URL, shikimori_id);
+        let response = self.client.get(&url).send().await?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        if !response.status().is_success() {
+            anyhow::bail!("Shikimori single anime failed: {}", response.status());
+        }
+        let body = response.text().await?;
+        Ok(crate::services::backfill::mal_id_from_shikimori_anime_response(&body))
+    }
+
+    /// POST to the Shikimori GraphQL API and return `(shikimori_id, malId)`
+    /// candidates by title. The response is parsed by the pure
+    /// [`parse_graphql_animes`].
+    pub async fn graphql_search_with_mal(
+        &self,
+        query: &str,
+        limit: i32,
+    ) -> Result<Vec<ShikimoriIdCandidate>, anyhow::Error> {
+        let url = format!("{}/graphql", BASE_URL);
+        let body = serde_json::json!({
+            "query": "query($search: String, $limit: Int) { animes(search: $search, limit: $limit) { id malId } }",
+            "variables": { "search": query, "limit": limit },
+        });
+        let response = self.client.post(&url).json(&body).send().await?;
+        if !response.status().is_success() {
+            anyhow::bail!("Shikimori GraphQL failed: {}", response.status());
+        }
+        let text = response.text().await?;
+        Ok(parse_graphql_animes(&text))
+    }
+
     pub async fn get_details(&self, id: &str) -> Result<CreateMediaItem, anyhow::Error> {
         let url = format!("{}/animes/{}", BASE_URL, id);
         let response = self.client.get(&url).send().await?;
@@ -516,5 +605,43 @@ mod tests {
         assert!(item.genres.contains(&"Action".to_string()));
         assert!(item.themes.contains(&"Super Power".to_string()));
         assert!(item.demographics.contains(&"Shounen".to_string()));
+    }
+
+    #[test]
+    fn parses_graphql_animes_with_string_ids() {
+        let json = r#"{"data":{"animes":[{"id":"20","malId":"21"},{"id":"30","malId":null}]}}"#;
+        let parsed = parse_graphql_animes(json);
+        assert_eq!(
+            parsed,
+            vec![
+                ShikimoriIdCandidate {
+                    shikimori_id: 20,
+                    mal_id: Some(21)
+                },
+                ShikimoriIdCandidate {
+                    shikimori_id: 30,
+                    mal_id: None
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_graphql_animes_skips_unparseable_ids() {
+        let json =
+            r#"{"data":{"animes":[{"id":"not-a-number","malId":"21"},{"id":"31","malId":"x"}]}}"#;
+        let parsed = parse_graphql_animes(json);
+        assert_eq!(
+            parsed,
+            vec![ShikimoriIdCandidate {
+                shikimori_id: 31,
+                mal_id: None
+            }]
+        );
+    }
+
+    #[test]
+    fn parses_graphql_animes_handles_malformed_json() {
+        assert!(parse_graphql_animes("not json").is_empty());
     }
 }

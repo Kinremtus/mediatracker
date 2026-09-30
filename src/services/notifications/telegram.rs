@@ -59,9 +59,15 @@ impl TelegramNotifier {
         &self,
         chat_id: &str,
         title: &str,
+        season: i32,
         episode: i32,
     ) -> Result<(), anyhow::Error> {
-        let text = format!("🎬 <b>Новая серия!</b>\n\n{} — серия {}", title, episode);
+        let label = if season > 0 {
+            format!("S{season} E{episode}")
+        } else {
+            format!("серия {episode}")
+        };
+        let text = format!("🎬 <b>Новая серия!</b>\n\n{} — {}", title, label);
         self.send_message(chat_id, &text).await
     }
 

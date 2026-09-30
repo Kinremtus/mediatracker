@@ -5,7 +5,9 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::models::schedule::ReleaseEntry;
+use crate::services::anime_identity;
 use crate::services::external::shikimori::ShikimoriService;
+use crate::services::external::tmdb::TmdbService;
 use crate::services::notifications::TelegramNotifier;
 
 /// Advisory-lock key guarding release-schedule refreshes across replicas,
@@ -79,12 +81,24 @@ where
 pub async fn refresh_release_schedule(
     service: &ReleaseScheduleService,
     shikimori: &ShikimoriService,
+    tmdb: &TmdbService,
     telegram: &TelegramNotifier,
 ) {
     // `ensure_fresh` only hits the provider when the stored rows are stale, so
     // a frequent schedule here does not hammer Shikimori.
     if let Err(error) = service.ensure_fresh(shikimori).await {
         tracing::error!(error = %error, "release_schedule: calendar refresh failed");
+    }
+
+    // Phase 2: write TMDB next-episode rows. Best effort.
+    if let Err(error) = service.refresh_from_tmdb(tmdb).await {
+        tracing::error!(error = %error, "release_schedule: tmdb refresh failed");
+    }
+
+    // Phase 1: fill in shikimori_id for tracked MAL anime so the OR-arm below
+    // can match their releases. Best effort, no-op when nothing is unresolved.
+    if let Err(error) = anime_identity::resolve_tracked_anime(service.pool(), shikimori).await {
+        tracing::error!(error = %error, "release_schedule: anime identity resolution failed");
     }
 
     if let Err(error) = service.notify_new_episodes(telegram).await {
@@ -100,6 +114,12 @@ pub struct ReleaseScheduleService {
 impl ReleaseScheduleService {
     pub fn new(db: PgPool) -> Self {
         Self { db }
+    }
+
+    /// Read-only access to the pool for collaborators that run their own SQL
+    /// (the anime identity resolver).
+    pub fn pool(&self) -> &PgPool {
+        &self.db
     }
 
     pub async fn refresh_from_shikimori(
@@ -119,9 +139,10 @@ impl ReleaseScheduleService {
 
             sqlx::query(
                 r#"
-                INSERT INTO release_schedule (provider, external_id, episode_number, air_date, title, poster_url, fetched_at)
-                VALUES ($1, $2, $3, $4, $5, $6, NOW())
-                ON CONFLICT (provider, external_id, episode_number)
+                INSERT INTO release_schedule
+                    (provider, external_id, season_number, episode_number, air_date, title, poster_url, fetched_at)
+                VALUES ($1, $2, 0, $3, $4, $5, $6, NOW())
+                ON CONFLICT (provider, external_id, season_number, episode_number)
                 DO UPDATE SET air_date = $4, title = $5, poster_url = $6, fetched_at = NOW()
                 "#,
             )
@@ -133,6 +154,86 @@ impl ReleaseScheduleService {
             .bind(poster)
             .execute(&self.db)
             .await?;
+        }
+
+        Ok(())
+    }
+
+    /// Phase 2: write `next_episode_to_air` rows for tracked TMDB series.
+    ///
+    /// Best effort per series: a TMDB failure is logged and skipped. Rows are
+    /// stored at 12:00 UTC of the air date (TMDB only supplies a date). The
+    /// title/poster come from the tracked `media_items` row, so no metadata is
+    /// re-fetched and `CreateMediaItem` is untouched.
+    pub async fn refresh_from_tmdb(&self, tmdb: &TmdbService) -> Result<(), anyhow::Error> {
+        let candidates: Vec<(String, String, Option<String>)> = sqlx::query_as(
+            r#"
+            SELECT DISTINCT m.external_id, m.title, m.poster_url
+            FROM media_items m
+            JOIN tracking_entries t ON t.media_id = m.id
+            WHERE m.provider = 'tmdb'
+              AND m.media_type IN ('series', 'dramas', 'cartoons')
+              AND t.status IN ('in_progress', 'planned')
+            LIMIT 50
+            "#,
+        )
+        .fetch_all(&self.db)
+        .await?;
+
+        for (external_id, title, poster) in &candidates {
+            match tmdb.fetch_next_episode(external_id).await {
+                Ok(Some(next)) => {
+                    let Some(air_date) = next
+                        .air_date
+                        .as_deref()
+                        .and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+                    else {
+                        continue;
+                    };
+                    let air_ts = air_date
+                        .and_hms_opt(12, 0, 0)
+                        .expect("12:00 is a valid time")
+                        .and_utc();
+
+                    if let Err(error) = sqlx::query(
+                        r#"
+                        INSERT INTO release_schedule
+                            (provider, external_id, season_number, episode_number, air_date, title, poster_url, fetched_at)
+                        VALUES ('tmdb', $1, $2, $3, $4, $5, $6, NOW())
+                        ON CONFLICT (provider, external_id, season_number, episode_number)
+                        DO UPDATE SET air_date = EXCLUDED.air_date,
+                                      title = EXCLUDED.title,
+                                      poster_url = EXCLUDED.poster_url,
+                                      fetched_at = NOW()
+                        "#,
+                    )
+                    .bind(external_id)
+                    .bind(next.season_number)
+                    .bind(next.episode_number)
+                    .bind(air_ts)
+                    .bind(title)
+                    .bind(poster)
+                    .execute(&self.db)
+                    .await
+                    {
+                        tracing::warn!(
+                            external_id,
+                            error = %error,
+                            "release_schedule: failed to upsert tmdb episode"
+                        );
+                    }
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    tracing::warn!(
+                        external_id,
+                        error = %error,
+                        "release_schedule: tmdb next episode fetch failed"
+                    );
+                }
+            }
+
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         }
 
         Ok(())
@@ -157,18 +258,30 @@ impl ReleaseScheduleService {
         user_id: Uuid,
         limit: i64,
     ) -> Result<Vec<ReleaseEntry>, anyhow::Error> {
-        type Row = (String, String, String, Option<String>, i32, DateTime<Utc>);
+        type Row = (
+            String,
+            String,
+            String,
+            Option<String>,
+            i32,
+            i32,
+            DateTime<Utc>,
+        );
         #[allow(clippy::type_complexity)]
         let rows: Vec<Row> = sqlx::query_as(
             r#"
-            SELECT
+            SELECT DISTINCT
                 r.provider, r.external_id, r.title, r.poster_url,
-                r.episode_number, r.air_date
+                r.season_number, r.episode_number, r.air_date
             FROM release_schedule r
             JOIN tracking_entries t ON t.user_id = $1
             JOIN media_items m ON m.id = t.media_id
-                AND m.provider = r.provider
-                AND m.external_id = r.external_id
+                AND (
+                    (m.provider = r.provider AND m.external_id = r.external_id)
+                    OR (r.provider = 'shikimori'
+                        AND m.shikimori_id IS NOT NULL
+                        AND m.shikimori_id::text = r.external_id)
+                )
             WHERE t.status IN ('in_progress', 'planned')
               AND r.air_date >= NOW()
             ORDER BY r.air_date ASC
@@ -182,11 +295,12 @@ impl ReleaseScheduleService {
 
         Ok(rows
             .into_iter()
-            .map(|(p, eid, title, poster, ep, date)| ReleaseEntry {
+            .map(|(p, eid, title, poster, season, ep, date)| ReleaseEntry {
                 provider: p,
                 external_id: eid,
                 title,
                 poster_url: poster,
+                season_number: season,
                 episode_number: ep,
                 air_date: date,
             })
@@ -199,18 +313,30 @@ impl ReleaseScheduleService {
         from: DateTime<Utc>,
         to: DateTime<Utc>,
     ) -> Result<Vec<ReleaseEntry>, anyhow::Error> {
-        type Row = (String, String, String, Option<String>, i32, DateTime<Utc>);
+        type Row = (
+            String,
+            String,
+            String,
+            Option<String>,
+            i32,
+            i32,
+            DateTime<Utc>,
+        );
         #[allow(clippy::type_complexity)]
         let rows: Vec<Row> = sqlx::query_as(
             r#"
-            SELECT
+            SELECT DISTINCT
                 r.provider, r.external_id, r.title, r.poster_url,
-                r.episode_number, r.air_date
+                r.season_number, r.episode_number, r.air_date
             FROM release_schedule r
             JOIN tracking_entries t ON t.user_id = $1
             JOIN media_items m ON m.id = t.media_id
-                AND m.provider = r.provider
-                AND m.external_id = r.external_id
+                AND (
+                    (m.provider = r.provider AND m.external_id = r.external_id)
+                    OR (r.provider = 'shikimori'
+                        AND m.shikimori_id IS NOT NULL
+                        AND m.shikimori_id::text = r.external_id)
+                )
             WHERE t.status IN ('in_progress', 'planned')
               AND r.air_date >= $2
               AND r.air_date < $3
@@ -225,11 +351,12 @@ impl ReleaseScheduleService {
 
         Ok(rows
             .into_iter()
-            .map(|(p, eid, title, poster, ep, date)| ReleaseEntry {
+            .map(|(p, eid, title, poster, season, ep, date)| ReleaseEntry {
                 provider: p,
                 external_id: eid,
                 title,
                 poster_url: poster,
+                season_number: season,
                 episode_number: ep,
                 air_date: date,
             })
@@ -266,16 +393,23 @@ impl ReleaseScheduleService {
 
         for (user_id, chat_id) in &users {
             // Episodes that aired in the last 2 hours for media the user is
-            // currently watching. Dedup is enforced by the atomic claim below,
-            // not by a NOT EXISTS check, so this stays race-safe.
-            let recent: Vec<(String, String, i32, String)> = sqlx::query_as(
+            // currently watching. DISTINCT collapses rows duplicated when the
+            // same title is tracked through both MAL and Shikimori. Dedup
+            // across passes is still enforced by the atomic claim below, whose
+            // key stays (user, provider, external_id, episode_number).
+            let recent: Vec<(String, String, i32, i32, String)> = sqlx::query_as(
                 r#"
-                SELECT r.provider, r.title, r.episode_number, r.external_id
+                SELECT DISTINCT
+                    r.provider, r.title, r.season_number, r.episode_number, r.external_id
                 FROM release_schedule r
                 JOIN tracking_entries t ON t.user_id = $1
                 JOIN media_items m ON m.id = t.media_id
-                    AND m.provider = r.provider
-                    AND m.external_id = r.external_id
+                    AND (
+                        (m.provider = r.provider AND m.external_id = r.external_id)
+                        OR (r.provider = 'shikimori'
+                            AND m.shikimori_id IS NOT NULL
+                            AND m.shikimori_id::text = r.external_id)
+                    )
                 WHERE t.status = 'in_progress'
                   AND r.air_date >= NOW() - INTERVAL '2 hours'
                   AND r.air_date < NOW()
@@ -285,7 +419,7 @@ impl ReleaseScheduleService {
             .fetch_all(&self.db)
             .await?;
 
-            for (provider, title, episode, external_id) in &recent {
+            for (provider, title, season, episode, external_id) in &recent {
                 // Atomic claim: only the first writer of the unique
                 // (user, provider, external_id, episode) row proceeds to send.
                 let claimed = sqlx::query(
@@ -308,7 +442,7 @@ impl ReleaseScheduleService {
                 }
 
                 if let Err(e) = telegram
-                    .send_new_episode_notification(chat_id, title, *episode)
+                    .send_new_episode_notification(chat_id, title, *season, *episode)
                     .await
                 {
                     tracing::error!("Failed to send Telegram notification: {}", e);
