@@ -828,6 +828,35 @@ fn quick_search_partial_has_family_tabs() {
 }
 
 #[test]
+fn quick_search_panel_wider_and_scroll_free() {
+    let css = read_root(COMPONENTS_CSS);
+
+    let card = css
+        .find(".search-overlay-card {")
+        .expect("`.search-overlay-card {` rule present");
+    let card_block = &css[card..];
+    let card_rule = &card_block[..card_block.find('}').expect("closing brace")];
+    assert!(
+        card_rule.contains("max-width: 720px;"),
+        "card not widened:\n{card_rule}"
+    );
+
+    let tabs = css
+        .find(".quick-search-tabs {")
+        .expect("`.quick-search-tabs {` rule present");
+    let tabs_block = &css[tabs..];
+    let tabs_rule = &tabs_block[..tabs_block.find('}').expect("closing brace")];
+    assert!(
+        tabs_rule.contains("flex-wrap: wrap;"),
+        "tabs must wrap:\n{tabs_rule}"
+    );
+    assert!(
+        !tabs_rule.contains("overflow-x: auto;"),
+        "tabs must not scroll horizontally:\n{tabs_rule}"
+    );
+}
+
+#[test]
 fn app_js_no_longer_fetches_suggestions_inline() {
     let src = read_root(APP_JS);
     assert!(!src.contains("api/search/suggestions"));
@@ -855,7 +884,7 @@ fn header_icon_btn_has_optical_margin() {
     let end = block.find('}').expect("closing brace");
     let rule = &block[..end];
     assert!(
-        rule.contains("margin-right: 0.25rem;"),
+        rule.contains("margin-right: -0.5rem;"),
         "rule missing optical margin:\n{rule}"
     );
 }
