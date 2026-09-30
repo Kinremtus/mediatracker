@@ -319,3 +319,57 @@ async fn tmdb_season_row_returns_season_number() {
     assert_eq!(rows[0].episode_number, 5);
     assert_eq!(rows[0].episode_label(), "S2 E5");
 }
+
+/// The calendar widened its filter to `status <> 'dropped'`; the home widget
+/// must keep the original `in_progress`/`planned` filter.
+#[tokio::test]
+async fn upcoming_widget_excludes_paused_and_completed() {
+    let ctx = common::TestContext::new().await;
+    let user = create_user(&ctx, None).await;
+
+    // paused + completed should not surface in the widget.
+    for (status, id) in [("paused", "widget-paused"), ("completed", "widget-done")] {
+        track_media_item(&ctx, user, "tmdb", id, "series", None, None, status).await;
+        sqlx::query(
+            "INSERT INTO release_schedule \
+                 (provider, external_id, season_number, episode_number, air_date, title) \
+             VALUES ('tmdb', $1, 1, 1, $2, 'Widget')",
+        )
+        .bind(id)
+        .bind(Utc::now() + Duration::days(1))
+        .execute(&ctx.pool)
+        .await
+        .expect("insert release");
+    }
+
+    // in_progress should surface.
+    track_media_item(
+        &ctx,
+        user,
+        "tmdb",
+        "widget-live",
+        "series",
+        None,
+        None,
+        "in_progress",
+    )
+    .await;
+    sqlx::query(
+        "INSERT INTO release_schedule \
+             (provider, external_id, season_number, episode_number, air_date, title) \
+         VALUES ('tmdb', 'widget-live', 1, 1, $1, 'Widget')",
+    )
+    .bind(Utc::now() + Duration::days(1))
+    .execute(&ctx.pool)
+    .await
+    .expect("insert release");
+
+    let service = ReleaseScheduleService::new(ctx.pool.clone());
+    let rows = service
+        .get_upcoming_for_user(user, 10)
+        .await
+        .expect("upcoming");
+
+    assert_eq!(rows.len(), 1, "only in_progress should appear");
+    assert_eq!(rows[0].external_id, "widget-live");
+}
