@@ -1,0 +1,38 @@
+<nav class="filter-tabs">
+  {% for tab in family_tabs %}
+    <a class="filter-tab{% if tab.active %} active{% endif %}"
+       href="{{ tab.href }}"
+       hx-get="{{ tab.href }}"
+       hx-target="#calendar-content"
+       hx-swap="innerHTML"
+       hx-push-url="true">
+      {{ tab.label }}<span class="filter-tab-count">{{ tab.count }}</span>
+    </a>
+  {% endfor %}
+</nav>
+
+{% if is_empty %}
+  <p class="empty-state">Нет релизов в этом месяце</p>
+{% else %}
+  {% for week in weeks %}
+    <section class="week-group">
+      <h3 class="week-title">{{ week.label }}</h3>
+      <div class="week-grid">
+        {% for event in week.events %}
+          {% include "partials/calendar_card.html" %}
+        {% endfor %}
+      </div>
+    </section>
+  {% endfor %}
+{% endif %}
+
+{% if !year_section.is_empty() %}
+  <section class="calendar-year-section">
+    <h3 class="week-title">{{ year_section_title }}</h3>
+    <div class="week-grid">
+      {% for event in year_section %}
+        {% include "partials/calendar_card.html" %}
+      {% endfor %}
+    </div>
+  </section>
+{% endif %}
