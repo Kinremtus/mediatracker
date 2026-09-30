@@ -1,4 +1,5 @@
 pub mod additions;
+pub mod anime_identity;
 pub mod auth;
 pub mod backfill;
 pub mod chapters;

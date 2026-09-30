@@ -275,6 +275,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if refresh_interval_secs > 0 {
         let schedule = state.release_schedule.clone();
         let shikimori = state.shikimori.clone();
+        let tmdb = state.tmdb.clone();
         let telegram = state.telegram.clone();
         let db = state.db.clone();
         let release_cancel = cancel.clone();
@@ -294,6 +295,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             loop {
                 let schedule = schedule.clone();
                 let shikimori = shikimori.clone();
+                let tmdb = tmdb.clone();
                 let telegram = telegram.clone();
                 let db = db.clone();
 
@@ -302,7 +304,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let pass = tokio::spawn(async move {
                     release_schedule::with_refresh_lock(&db, move || async move {
                         release_schedule::refresh_release_schedule(
-                            &schedule, &shikimori, &telegram,
+                            &schedule, &shikimori, &tmdb, &telegram,
                         )
                         .await;
                         Ok::<(), anyhow::Error>(())

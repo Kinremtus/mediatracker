@@ -28,7 +28,7 @@
           {% for r in day.releases %}
             <a href="/media/{{ r.provider }}/{{ r.external_id }}"
                class="release-dot"
-               title="{{ r.title }} — эп. {{ r.episode_number }}">
+               title="{{ r.title }} — {{ r.episode_label() }}">
               {{ r.title }}
             </a>
           {% endfor %}

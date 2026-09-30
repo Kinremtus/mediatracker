@@ -38,6 +38,22 @@ pub struct TmdbSeasonDetail {
     pub episodes: Vec<TmdbEpisodeInfo>,
 }
 
+/// Narrow DTO for a single upcoming episode. Deliberately separate from
+/// `TmdbDetails`/`CreateMediaItem`: the release-schedule writer only needs the
+/// season/episode/date/name, and must not leak into the metadata mapping layer.
+#[derive(Debug, Clone, Deserialize)]
+pub struct TmdbNextEpisode {
+    pub season_number: i32,
+    pub episode_number: i32,
+    pub air_date: Option<String>,
+    pub name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TmdbNextEpisodeEnvelope {
+    next_episode_to_air: Option<TmdbNextEpisode>,
+}
+
 #[derive(Debug, Deserialize)]
 #[expect(dead_code)]
 struct TmdbCompany {
@@ -434,6 +450,28 @@ impl TmdbService {
         Ok(details.seasons)
     }
 
+    /// Fetch only `next_episode_to_air` for a TV series. Returns `None` when
+    /// TMDB has no scheduled next episode (eg. finished/ended shows).
+    pub async fn fetch_next_episode(
+        &self,
+        id: &str,
+    ) -> Result<Option<TmdbNextEpisode>, anyhow::Error> {
+        let mut url = Url::parse(&format!("{}/tv/{}", BASE_URL, id))?;
+        url.query_pairs_mut()
+            .append_pair("api_key", &self.api_key)
+            .append_pair("language", "ru-RU");
+
+        let response = self.client.get(url.as_str()).send().await?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(crate::services::external::NotFoundError(format!("tmdb tv {id}")).into());
+        }
+        if !response.status().is_success() {
+            anyhow::bail!("TMDB next episode failed: {}", response.status());
+        }
+        let envelope: TmdbNextEpisodeEnvelope = response.json().await?;
+        Ok(envelope.next_episode_to_air)
+    }
+
     pub async fn fetch_season_episodes(
         &self,
         id: &str,
@@ -696,5 +734,30 @@ mod tests {
         let json = r#"{"episodes": []}"#;
         let detail: TmdbSeasonDetail = serde_json::from_str(json).unwrap();
         assert!(detail.episodes.is_empty());
+    }
+
+    #[test]
+    fn parses_next_episode_to_air() {
+        let json = r#"{
+            "id": 1399,
+            "next_episode_to_air": {
+                "season_number": 2,
+                "episode_number": 5,
+                "air_date": "2026-10-12",
+                "name": "The Door"
+            }
+        }"#;
+        let env: TmdbNextEpisodeEnvelope = serde_json::from_str(json).unwrap();
+        let next = env.next_episode_to_air.expect("next episode present");
+        assert_eq!(next.season_number, 2);
+        assert_eq!(next.episode_number, 5);
+        assert_eq!(next.air_date.as_deref(), Some("2026-10-12"));
+    }
+
+    #[test]
+    fn parses_null_next_episode_to_air_as_none() {
+        let json = r#"{ "id": 1, "next_episode_to_air": null }"#;
+        let env: TmdbNextEpisodeEnvelope = serde_json::from_str(json).unwrap();
+        assert!(env.next_episode_to_air.is_none());
     }
 }
