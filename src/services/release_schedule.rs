@@ -1,14 +1,21 @@
 use std::future::Future;
 
-use chrono::{DateTime, Utc};
+use std::collections::BTreeMap;
+
+use chrono::{DateTime, NaiveDate, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::models::schedule::{
+    CalendarEvent, CalendarEventKind, CalendarMonthView, FamilyTab, canonical_key,
+    filter_by_family, group_into_weeks, merge_and_dedup,
+};
 use crate::models::schedule::ReleaseEntry;
 use crate::services::anime_identity;
 use crate::services::external::shikimori::ShikimoriService;
 use crate::services::external::tmdb::TmdbService;
 use crate::services::notifications::TelegramNotifier;
+use crate::services::search_families;
 
 /// Advisory-lock key guarding release-schedule refreshes across replicas,
 /// the in-process periodic worker and `refresh_counts`' notify cycle.
@@ -361,6 +368,252 @@ impl ReleaseScheduleService {
                 air_date: date,
             })
             .collect())
+    }
+
+    /// Unified tracked-release feed for one month.
+    ///
+    /// Merges episodes (`release_schedule`) with premieres
+    /// (`media_items.aired_from`), dedups (episode wins), keeps every tracking
+    /// status except `dropped`, computes per-family counts over the whole month,
+    /// groups visible events into ISO weeks clamped to the month, and appends a
+    /// year section for `planned` media that has a year but no exact date.
+    ///
+    /// This is the ONLY place the calendar status filter is widened; the home
+    /// widget (`get_upcoming_for_user`) and notifications keep their original
+    /// statuses.
+    pub async fn get_calendar_month(
+        &self,
+        user_id: Uuid,
+        year: i32,
+        month: u32,
+        family: &str,
+    ) -> Result<CalendarMonthView, anyhow::Error> {
+        let first = NaiveDate::from_ymd_opt(year, month, 1)
+            .ok_or_else(|| anyhow::anyhow!("invalid year/month {year}-{month}"))?;
+        let first_next = if month == 12 {
+            NaiveDate::from_ymd_opt(year + 1, 1, 1)
+        } else {
+            NaiveDate::from_ymd_opt(year, month + 1, 1)
+        }
+        .ok_or_else(|| anyhow::anyhow!("invalid month {month}"))?;
+        let from = first.and_hms_opt(0, 0, 0).expect("valid time").and_utc();
+        let to = first_next.and_hms_opt(0, 0, 0).expect("valid time").and_utc();
+        let today = Utc::now().date_naive();
+
+        // --- Episodes -------------------------------------------------------
+        type EpisodeRow = (
+            String,
+            String,
+            String,
+            Option<String>,
+            i32,
+            i32,
+            DateTime<Utc>,
+            String,
+            String,
+            Option<i64>,
+            String,
+        );
+        #[allow(clippy::type_complexity)]
+        let episode_rows: Vec<EpisodeRow> = sqlx::query_as(
+            r#"
+            SELECT DISTINCT
+                r.provider, r.external_id, m.title, r.poster_url,
+                r.season_number, r.episode_number, r.air_date,
+                m.provider, m.external_id, m.shikimori_id, m.media_type
+            FROM release_schedule r
+            JOIN tracking_entries t ON t.user_id = $1
+            JOIN media_items m ON m.id = t.media_id
+                AND (
+                    (m.provider = r.provider AND m.external_id = r.external_id)
+                    OR (r.provider = 'shikimori'
+                        AND m.shikimori_id IS NOT NULL
+                        AND m.shikimori_id::text = r.external_id)
+                )
+            WHERE t.status <> 'dropped'
+              AND r.air_date >= $2
+              AND r.air_date < $3
+            ORDER BY r.air_date ASC
+            "#,
+        )
+        .bind(user_id)
+        .bind(from)
+        .bind(to)
+        .fetch_all(&self.db)
+        .await?;
+
+        let episodes: Vec<CalendarEvent> = episode_rows
+            .into_iter()
+            .map(
+                |(
+                    r_provider,
+                    r_external_id,
+                    m_title,
+                    r_poster,
+                    season,
+                    episode,
+                    air_date,
+                    m_provider,
+                    m_external_id,
+                    shikimori_id,
+                    media_type,
+                )| {
+                    let date = air_date.date_naive();
+                    CalendarEvent {
+                        // Drawer must target the tracked media_items row.
+                        provider: m_provider,
+                        external_id: m_external_id,
+                        family: search_families::family_of(&media_type),
+                        canonical_key: canonical_key(
+                            shikimori_id,
+                            &r_provider,
+                            &r_external_id,
+                        ),
+                        title: m_title,
+                        poster_url: r_poster,
+                        date: Some(date),
+                        kind: CalendarEventKind::Episode {
+                            season_number: season,
+                            episode_number: episode,
+                        },
+                        media_type,
+                        is_past: date < today,
+                    }
+                },
+            )
+            .collect();
+
+        // --- Premieres ------------------------------------------------------
+        type PremiereRow = (String, String, String, String, Option<String>, NaiveDate, Option<i64>);
+        #[allow(clippy::type_complexity)]
+        let premiere_rows: Vec<PremiereRow> = sqlx::query_as(
+            r#"
+            SELECT DISTINCT
+                m.provider, m.external_id, m.media_type, m.title,
+                m.poster_url, m.aired_from, m.shikimori_id
+            FROM media_items m
+            JOIN tracking_entries t ON t.media_id = m.id
+            WHERE t.user_id = $1
+              AND t.status <> 'dropped'
+              AND m.aired_from IS NOT NULL
+              AND m.aired_from >= $2
+              AND m.aired_from < $3
+            ORDER BY m.aired_from ASC
+            "#,
+        )
+        .bind(user_id)
+        .bind(first)
+        .bind(first_next)
+        .fetch_all(&self.db)
+        .await?;
+
+        let premieres: Vec<CalendarEvent> = premiere_rows
+            .into_iter()
+            .map(
+                |(provider, external_id, media_type, title, poster_url, aired_from, shikimori_id)| {
+                    CalendarEvent {
+                        family: search_families::family_of(&media_type),
+                        canonical_key: canonical_key(shikimori_id, &provider, &external_id),
+                        provider,
+                        external_id,
+                        media_type,
+                        title,
+                        poster_url,
+                        date: Some(aired_from),
+                        kind: CalendarEventKind::Premiere,
+                        is_past: aired_from < today,
+                    }
+                },
+            )
+            .collect();
+
+        let all_events = merge_and_dedup(episodes, premieres);
+
+        // --- Year section ---------------------------------------------------
+        type YearRow = (String, String, String, String, Option<String>, Option<i64>);
+        #[allow(clippy::type_complexity)]
+        let year_rows: Vec<YearRow> = sqlx::query_as(
+            r#"
+            SELECT DISTINCT m.provider, m.external_id, m.media_type, m.title,
+                            m.poster_url, m.shikimori_id
+            FROM media_items m
+            JOIN tracking_entries t ON t.media_id = m.id
+            WHERE t.user_id = $1
+              AND t.status = 'planned'
+              AND m.year = $2
+              AND m.aired_from IS NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM release_schedule r
+                  WHERE (r.provider = m.provider AND r.external_id = m.external_id)
+                     OR (r.provider = 'shikimori'
+                         AND m.shikimori_id IS NOT NULL
+                         AND m.shikimori_id::text = r.external_id)
+              )
+            ORDER BY m.title ASC
+            "#,
+        )
+        .bind(user_id)
+        .bind(year as i16)
+        .fetch_all(&self.db)
+        .await?;
+
+        let year_all: Vec<CalendarEvent> = year_rows
+            .into_iter()
+            .map(|(provider, external_id, media_type, title, poster_url, shikimori_id)| {
+                CalendarEvent {
+                    family: search_families::family_of(&media_type),
+                    canonical_key: canonical_key(shikimori_id, &provider, &external_id),
+                    provider,
+                    external_id,
+                    media_type,
+                    title,
+                    poster_url,
+                    date: None,
+                    kind: CalendarEventKind::Premiere,
+                    is_past: false,
+                }
+            })
+            .collect();
+
+        // --- Counts (whole month, before family filtering) ------------------
+        let mut counts: BTreeMap<&'static str, usize> = BTreeMap::new();
+        for event in &all_events {
+            *counts.entry(event.family).or_insert(0) += 1;
+        }
+
+        let month_qs = format!("?year={year}&month={month}");
+        let mut family_tabs: Vec<FamilyTab> =
+            Vec::with_capacity(search_families::families().len() + 1);
+        family_tabs.push(FamilyTab {
+            key: search_families::ALL_TAB,
+            label: search_families::all_label().to_string(),
+            count: all_events.len(),
+            href: format!("/calendar{month_qs}"),
+            active: family.is_empty(),
+        });
+        for f in search_families::families() {
+            family_tabs.push(FamilyTab {
+                key: f.key,
+                label: f.label.to_string(),
+                count: counts.get(f.key).copied().unwrap_or(0),
+                href: format!("/calendar{month_qs}&family={}", f.key),
+                active: f.key == family,
+            });
+        }
+
+        // --- Filter + group -------------------------------------------------
+        let visible = filter_by_family(&all_events, family);
+        let weeks = group_into_weeks(visible);
+        let year_section = filter_by_family(&year_all, family);
+        let is_empty = weeks.is_empty() && year_section.is_empty();
+
+        Ok(CalendarMonthView {
+            weeks,
+            year_section,
+            year_section_title: format!("Выйдет когда-то в {year}"),
+            family_tabs,
+            is_empty,
+        })
     }
 
     /// Send Telegram notifications for episodes that aired in the last window.
