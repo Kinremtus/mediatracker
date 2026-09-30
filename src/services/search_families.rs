@@ -75,6 +75,15 @@ pub fn family(key: &str) -> Option<Family> {
     families().into_iter().find(|f| f.key == key)
 }
 
+/// Family key that owns a raw media type. Unknown types fall back to `ALL_TAB`.
+pub fn family_of(media_type: &str) -> &'static str {
+    families()
+        .into_iter()
+        .find(|f| f.types.contains(&media_type))
+        .map(|f| f.key)
+        .unwrap_or(ALL_TAB)
+}
+
 /// `(icon, label)` metadata for a raw media type, sourced from the canonical
 /// 14-key registry. Unknown ids fall back to `("", media_type)`.
 pub fn type_meta(media_type: &str) -> (String, String) {
@@ -123,5 +132,17 @@ mod tests {
     fn type_meta_known_and_unknown() {
         assert_eq!(type_meta("anime"), ("▶".to_string(), "Аниме".to_string()));
         assert_eq!(type_meta("nope"), (String::new(), "nope".to_string()));
+    }
+
+    #[test]
+    fn family_of_maps_types_and_unknowns() {
+        assert_eq!(family_of("anime"), "anime");
+        assert_eq!(family_of("movie"), "movies");
+        assert_eq!(family_of("animated-movies"), "movies");
+        assert_eq!(family_of("manga"), "manga");
+        assert_eq!(family_of("other-comics"), "manga");
+        assert_eq!(family_of("book"), "books");
+        assert_eq!(family_of("comic"), "comics");
+        assert_eq!(family_of("nope"), ALL_TAB);
     }
 }
