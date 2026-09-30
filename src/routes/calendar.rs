@@ -50,6 +50,7 @@ struct CalendarTemplate {
 /// Rendered alone for `HX-Request` swaps into `#calendar-content`.
 #[derive(Template)]
 #[template(path = "partials/calendar_weeks.html")]
+#[expect(dead_code)]
 struct CalendarWeeksPartial {
     family_tabs: Vec<FamilyTab>,
     weeks: Vec<WeekGroup>,
