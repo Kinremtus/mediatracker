@@ -114,6 +114,10 @@ impl CalendarEvent {
         matches!(self.kind, CalendarEventKind::Episode { .. })
     }
 
+    pub fn is_past(&self) -> bool {
+        self.is_past
+    }
+
     pub fn poster_or_placeholder(&self) -> &str {
         self.poster_url
             .as_deref()
