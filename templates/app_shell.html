@@ -139,7 +139,12 @@
         <div class="search-overlay-card" @click.stop>
             <div class="search-overlay-header">
                 <input type="text" x-model="query"
-                       @input.debounce.300ms="search()"
+                       id="quick-search-input"
+                       name="q"
+                       hx-get="/api/search/panel"
+                       hx-trigger="input changed delay:300ms"
+                       hx-target="#quick-search-results"
+                       hx-swap="innerHTML"
                        @keydown.enter.prevent="submitSearch()"
                        placeholder="Поиск аниме, манги, фильмов, игр..."
                        x-ref="overlayInput">
@@ -171,32 +176,14 @@
                         </div>
                     </div>
                 </template>
-                <template x-if="query.length">
-                    <div class="search-dropdown-section">
-                        <a :href="'/search?q=' + encodeURIComponent(query)"
-                           class="search-dropdown-advanced"
-                           @click="closeSearch()">
-                            🔍 продвинутый поиск по «<span x-text="query"></span>»
-                        </a>
-                        <template x-for="item in results" :key="item.provider + '-' + item.external_id">
-                            <a href="#" class="search-dropdown-item"
-                               @click.prevent="clickResult(item)">
-                                <img x-show="item.poster_url" :src="item.poster_url"
-                                     class="search-dropdown-poster" alt="">
-                                <div class="search-dropdown-item-body">
-                                    <div class="search-dropdown-item-title" x-text="item.title"></div>
-                                    <div class="search-dropdown-item-meta">
-                                        <span class="search-dropdown-badge" x-text="item.media_type"></span>
-                                        <span x-show="item.year" x-text="item.year"></span>
-                                        <span x-show="item.score" class="search-dropdown-score" x-text="'★ ' + item.score"></span>
-                                        <span x-show="item.is_tracked" class="search-dropdown-tracked">✓ В списке</span>
-                                    </div>
-                                </div>
-                            </a>
-                        </template>
-                        <div class="search-dropdown-loading" x-show="loading">Поиск…</div>
-                    </div>
-                </template>
+                <!--
+                    Server-rendered results host: the hx-get on #quick-search-input
+                    fetches GET /api/search/panel and swaps the fragment here. Its item
+                    cards call openMediaDrawer(...); saveRecentMediaFromElement($el);
+                    closeSearch() and are re-bound by the htmx:afterSwap ->
+                    Alpine.initTree listener in static/js/app.js.
+                -->
+                <div id="quick-search-results" x-show="query.length"></div>
             </div>
         </div>
     </div>

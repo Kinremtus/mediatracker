@@ -10,8 +10,11 @@ use crate::app_state::AppState;
 use crate::middleware::CurrentUser;
 use crate::models::media_item::{CreateMediaItem, SearchSuggestion};
 use crate::services::search;
+use crate::services::search_families;
 
 const ITEMS_PER_PAGE: usize = 24;
+const PANEL_PAGE: usize = 5;
+const PANEL_LIMIT_CAP: usize = 50;
 
 #[derive(Debug)]
 struct PageItem {
@@ -179,4 +182,208 @@ async fn mark_tracked(state: &AppState, user_id: uuid::Uuid, items: &mut [Create
             item.is_tracked = true;
         }
     }
+}
+
+#[derive(Deserialize)]
+pub struct QuickSearchQuery {
+    q: Option<String>,
+    family: Option<String>,
+    #[serde(rename = "type")]
+    section_type: Option<String>,
+    limit: Option<usize>,
+}
+
+struct FamilyChip {
+    key: String,
+    icon: String,
+    label: String,
+}
+
+struct QuickSearchItem {
+    provider: String,
+    external_id: String,
+    media_type: String,
+    media_type_label: String,
+    title: String,
+    poster_url: Option<String>,
+    year: Option<i16>,
+    score: Option<f64>,
+    is_tracked: bool,
+}
+
+struct QuickSearchSection {
+    media_type: String,
+    icon: String,
+    label: String,
+    items: Vec<QuickSearchItem>,
+    has_more: bool,
+    remaining: usize,
+    next_limit: usize,
+}
+
+#[derive(Template)]
+#[template(path = "partials/_quick_search_results.html")]
+struct QuickSearchView {
+    query: String,
+    active_family: String,
+    tabs_visible: bool,
+    families: Vec<FamilyChip>,
+    sections: Vec<QuickSearchSection>,
+    too_short: bool,
+}
+
+/// `GET /api/search/panel` — server-rendered quick-search fragment.
+///
+/// - `family=""` (the default "Все" tab) renders `all_types` results grouped
+///   inline by raw media type.
+/// - `family=<key>` fans out to the raw types of that family.
+/// - `type=<raw>&limit=<n>` is the "Показать ещё" expansion mode: one section,
+///   more items, no tabs.
+pub async fn get_search_panel(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Query(params): Query<QuickSearchQuery>,
+) -> Html<String> {
+    let query = params.q.unwrap_or_default().trim().to_string();
+    let active_family = params.family.unwrap_or_default();
+    let limit = params.limit.unwrap_or(PANEL_PAGE).clamp(1, PANEL_LIMIT_CAP);
+
+    let families: Vec<FamilyChip> = search_families::families()
+        .into_iter()
+        .map(|f| FamilyChip {
+            key: f.key.to_string(),
+            icon: f.icon.to_string(),
+            label: f.label.to_string(),
+        })
+        .collect();
+
+    if query.chars().count() < 2 {
+        return render_panel(QuickSearchView {
+            query,
+            active_family,
+            tabs_visible: true,
+            families,
+            sections: Vec::new(),
+            too_short: true,
+        });
+    }
+
+    // Expansion mode ("Показать ещё" outerHTML swap onto one section).
+    if let Some(section_type) = params.section_type.as_deref() {
+        let mut items = search::by_media_type(&state, &query, section_type).await;
+        mark_tracked(&state, user.id, &mut items).await;
+        let section = build_section(section_type, items, limit);
+        return render_panel(QuickSearchView {
+            query,
+            active_family,
+            tabs_visible: false,
+            families,
+            sections: vec![section],
+            too_short: false,
+        });
+    }
+
+    let mut all_items: Vec<CreateMediaItem> = if active_family.is_empty() {
+        // "Все" is a real tab: one call covering 7 providers, grouped inline.
+        search::all_types(&state, &query).await
+    } else {
+        match search_families::family(&active_family) {
+            Some(fam) if fam.types.len() == 1 => {
+                search::by_media_type(&state, &query, fam.types[0]).await
+            }
+            Some(fam) => {
+                let mut set = tokio::task::JoinSet::new();
+                for raw in fam.types {
+                    let state = state.clone();
+                    let query = query.clone();
+                    let raw = raw.to_string();
+                    set.spawn(async move { search::by_media_type(&state, &query, &raw).await });
+                }
+                let mut merged = Vec::new();
+                while let Some(joined) = set.join_next().await {
+                    match joined {
+                        Ok(items) => merged.extend(items),
+                        Err(e) => tracing::warn!(error = %e, "quick-search fan-out task failed"),
+                    }
+                }
+                merged
+            }
+            None => Vec::new(),
+        }
+    };
+
+    mark_tracked(&state, user.id, &mut all_items).await;
+    let sections = group_sections(all_items, limit);
+
+    render_panel(QuickSearchView {
+        query,
+        active_family,
+        tabs_visible: true,
+        families,
+        sections,
+        too_short: false,
+    })
+}
+
+fn render_panel(view: QuickSearchView) -> Html<String> {
+    view.render().map(Html).unwrap_or_else(|e| {
+        tracing::error!(error = %e, "template render failed");
+        Html(String::from("Internal Server Error"))
+    })
+}
+
+fn to_item(m: CreateMediaItem) -> QuickSearchItem {
+    let (_, label) = search_families::type_meta(&m.media_type);
+    QuickSearchItem {
+        provider: m.provider,
+        external_id: m.external_id,
+        media_type: m.media_type,
+        media_type_label: label,
+        title: m.title,
+        poster_url: m.poster_url,
+        year: m.year,
+        score: m.score,
+        is_tracked: m.is_tracked,
+    }
+}
+
+fn build_section(
+    media_type: &str,
+    items: Vec<CreateMediaItem>,
+    limit: usize,
+) -> QuickSearchSection {
+    let (icon, label) = search_families::type_meta(media_type);
+    let total = items.len();
+    let shown = total.min(limit);
+    let remaining = total.saturating_sub(shown);
+    QuickSearchSection {
+        media_type: media_type.to_string(),
+        icon,
+        label,
+        items: items.into_iter().take(shown).map(to_item).collect(),
+        has_more: remaining > 0,
+        remaining,
+        next_limit: shown + PANEL_PAGE,
+    }
+}
+
+fn group_sections(items: Vec<CreateMediaItem>, limit: usize) -> Vec<QuickSearchSection> {
+    use std::collections::HashMap;
+    let mut by_type: HashMap<String, Vec<CreateMediaItem>> = HashMap::new();
+    for item in items {
+        by_type
+            .entry(item.media_type.clone())
+            .or_default()
+            .push(item);
+    }
+    let mut sections = Vec::new();
+    for (key, _, _) in super::tracking::get_all_media_types() {
+        if let Some(items) = by_type.remove(key) {
+            if items.is_empty() {
+                continue;
+            }
+            sections.push(build_section(key, items, limit));
+        }
+    }
+    sections
 }

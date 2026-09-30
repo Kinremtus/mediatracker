@@ -11,6 +11,7 @@ pub mod password_reset;
 pub mod refresh_counts;
 pub mod release_schedule;
 pub mod search;
+pub mod search_families;
 pub mod stats;
 pub mod tmdb_episodes;
 pub mod tracking;
