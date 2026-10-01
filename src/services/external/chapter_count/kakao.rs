@@ -39,9 +39,15 @@ impl ChapterCountProvider for KakaoProvider {
         Box::pin(async move {
             let mut url = url::Url::parse(BASE)?;
             url.query_pairs_mut().append_pair("series_id", external_id);
+            // The BFF rejects header-less requests with 403. These three
+            // headers (accept/origin/referer) are what the browser sends and
+            // what the gateway checks; the User-Agent is irrelevant.
             let resp = self
                 .client
                 .get(url)
+                .header("accept", "application/json, text/plain, */*")
+                .header("origin", "https://page.kakao.com")
+                .header("referer", "https://page.kakao.com/")
                 .send()
                 .await?
                 .error_for_status()?

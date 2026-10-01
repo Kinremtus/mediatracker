@@ -125,7 +125,16 @@ async fn search_chapter_items(db: &PgPool, q: Option<&str>) -> Vec<AdminChapterI
             SELECT provider, external_id, title, media_type, chapters, chapters_manual, chapters_source
             FROM media_items
             WHERE media_type IN ('manga','manhwa','manhua','novel','other-comics','comic')
-              AND (title ILIKE $1 OR title_russian ILIKE $1 OR title_english ILIKE $1)
+              AND (
+                title ILIKE $1
+                OR title_russian ILIKE $1
+                OR title_english ILIKE $1
+                OR title_native ILIKE $1
+                OR EXISTS (
+                  SELECT 1 FROM unnest(associated_titles) AS t(alt)
+                  WHERE alt ILIKE $1
+                )
+              )
             ORDER BY updated_at DESC
             LIMIT 20
             "#,

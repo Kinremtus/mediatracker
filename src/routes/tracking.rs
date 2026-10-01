@@ -12,6 +12,7 @@ use super::progress::ProgressRow;
 use crate::app_state::AppState;
 use crate::middleware::CurrentUser;
 use crate::models::tracking_entry::{TrackingEntryWithMedia, UpdateTracking};
+use crate::services::external::dispatch::{Provider, ProviderClients};
 
 #[derive(Template)]
 #[template(path = "tracking_list.html")]
@@ -534,7 +535,7 @@ pub async fn post_add_to_tracking(
     let needs_rawg = form.provider == "rawg";
     let needs_openlib = form.provider == "openlibrary";
 
-    let media = crate::models::media_item::CreateMediaItem {
+    let mut media = crate::models::media_item::CreateMediaItem {
         provider: form.provider,
         external_id: form.external_id,
         media_type: form.media_type,
@@ -586,6 +587,21 @@ pub async fn post_add_to_tracking(
         categories: form.categories,
         associated_titles: Vec::new(),
     };
+
+    // The add form does not carry associated/alternative titles (search results
+    // do not include them). Pull them from the provider's detail endpoint so the
+    // item is findable by its native/alternative titles in the admin panel.
+    if media.associated_titles.is_empty() {
+        let clients = ProviderClients::from_state(&state);
+        if let Some(p) = Provider::from_name(&clients, &media.provider)
+            && let Ok(details) = p.fetch(&media.external_id, &media.media_type).await
+        {
+            media.associated_titles = details.associated_titles;
+            if media.title_native.as_deref().unwrap_or("").is_empty() {
+                media.title_native = details.title_native;
+            }
+        }
+    }
 
     let status = if form.tracking_status.is_empty() {
         "planned"

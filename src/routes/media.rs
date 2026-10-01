@@ -144,6 +144,14 @@ impl Fallback {
     }
 }
 
+/// Media types whose progress unit is a chapter (see `MediaItem::total_count`).
+fn is_chapter_type(media_type: &str) -> bool {
+    matches!(
+        media_type,
+        "manga" | "manhwa" | "manhua" | "novel" | "other-comics" | "comic"
+    )
+}
+
 /// Решить, что рендерить для карточки.
 ///
 /// Возвращает `(item, kind)`:
@@ -173,7 +181,21 @@ async fn resolve_card_data(
     match Provider::from_name(&clients, provider) {
         None => local.map(|m| (m.into(), Fallback::Fresh)),
         Some(p) => match p.fetch(external_id, media_type).await {
-            Ok(item) => Some((item, Fallback::Fresh)),
+            Ok(mut item) => {
+                // Chapter-based media: the stored count is authoritative. It may
+                // carry a manual override or an enriched value from a source the
+                // upstream provider does not know about (e.g. Kakao), while the
+                // upstream only reports its own chapter list (often stale/lower).
+                // Prefer the DB value so the drawer and detail page agree with
+                // the chapter list and progress bar.
+                if is_chapter_type(media_type)
+                    && let Some(db_chapters) = local.as_ref().and_then(|m| m.chapters)
+                    && db_chapters > 0
+                {
+                    item.chapters = Some(db_chapters);
+                }
+                Some((item, Fallback::Fresh))
+            }
             Err(e) => {
                 tracing::debug!(
                     provider,
