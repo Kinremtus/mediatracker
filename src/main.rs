@@ -120,22 +120,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             axum::routing::post(media::set_chapter_read),
         )
         .route(
-            "/api/manga/{provider}/{external_id}/chapters/manual",
-            axum::routing::post(media::set_chapters_manual),
-        )
-        .route(
-            "/api/manga/{provider}/{external_id}/chapters/reset",
-            axum::routing::post(media::reset_chapters_auto),
-        )
-        .route(
-            "/api/manga/{provider}/{external_id}/source-id",
-            axum::routing::post(media::set_source_id),
-        )
-        .route(
-            "/api/manga/{provider}/{external_id}/source-id/delete",
-            axum::routing::post(media::delete_source_id),
-        )
-        .route(
             "/api/games/{provider}/{external_id}/additions",
             get(media::get_game_additions),
         )
@@ -228,6 +212,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route(
             "/admin/enrich-chapters",
             axum::routing::post(admin::post_enrich_chapters),
+        )
+        .route(
+            "/admin/chapters/manual",
+            axum::routing::post(admin::post_chapter_manual),
+        )
+        .route(
+            "/admin/chapters/reset",
+            axum::routing::post(admin::post_chapter_reset),
+        )
+        .route(
+            "/admin/chapters/bind",
+            axum::routing::post(admin::post_chapter_bind),
+        )
+        .route(
+            "/admin/chapters/unbind",
+            axum::routing::post(admin::post_chapter_unbind),
+        )
+        .route(
+            "/admin/chapters/refresh",
+            axum::routing::post(admin::post_chapter_refresh),
         )
         .layer(from_fn_with_state(state.clone(), auth_middleware));
 

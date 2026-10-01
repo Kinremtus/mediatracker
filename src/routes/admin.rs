@@ -1,7 +1,7 @@
 use askama::Template;
 use axum::{
     Form,
-    extract::State,
+    extract::{Query, State},
     http::StatusCode,
     response::{Html, IntoResponse, Redirect, Response},
 };
@@ -12,7 +12,7 @@ use uuid::Uuid;
 use super::home::{SidebarStats, get_sidebar_stats};
 use crate::app_state::AppState;
 use crate::middleware::CurrentUser;
-use crate::models::media_item::CreateMediaItem;
+use crate::models::media_item::{CreateMediaItem, chapter_source_label};
 use crate::services::chapters::enrich_from_mangadex;
 use crate::services::external::dispatch::{Provider, ProviderClients};
 
@@ -28,6 +28,8 @@ struct AdminTemplate {
     error: String,
     refreshed: Option<usize>,
     total: Option<usize>,
+    query: String,
+    items: Vec<AdminChapterItem>,
 }
 
 /// Renders a page template, degrading to a 500 instead of panicking the
@@ -46,13 +48,152 @@ fn require_admin(user: &CurrentUser) -> bool {
     user.role == "admin" || user.role == "moderator"
 }
 
+#[derive(Debug, Clone)]
+pub struct AdminChapterItem {
+    pub provider: String,
+    pub external_id: String,
+    pub title: String,
+    pub media_type: String,
+    pub chapters: Option<i32>,
+    pub chapters_manual: bool,
+    pub source_label: Option<String>,
+    pub bindings: Vec<crate::services::source_ids::SourceId>,
+}
+
+#[derive(Deserialize)]
+pub struct AdminQuery {
+    #[serde(default)]
+    pub q: String,
+}
+
+#[derive(Deserialize)]
+pub struct AdminChapterForm {
+    pub provider: String,
+    pub external_id: String,
+    #[serde(default)]
+    pub chapters: i32,
+    #[serde(default)]
+    pub source: String,
+    #[serde(default)]
+    pub source_id: String,
+    #[serde(default)]
+    pub q: String,
+}
+
+fn normalized_q(raw: &str) -> Option<String> {
+    let t = raw.trim();
+    if t.is_empty() {
+        None
+    } else {
+        Some(t.to_string())
+    }
+}
+
+async fn media_type_of(db: &PgPool, provider: &str, external_id: &str) -> Option<String> {
+    sqlx::query_scalar::<_, String>(
+        "SELECT media_type FROM media_items WHERE provider = $1 AND external_id = $2",
+    )
+    .bind(provider)
+    .bind(external_id)
+    .fetch_optional(db)
+    .await
+    .ok()
+    .flatten()
+}
+
+async fn chapters_source_of(db: &PgPool, provider: &str, external_id: &str) -> Option<String> {
+    sqlx::query_scalar::<_, String>(
+        "SELECT chapters_source FROM media_items WHERE provider = $1 AND external_id = $2",
+    )
+    .bind(provider)
+    .bind(external_id)
+    .fetch_optional(db)
+    .await
+    .ok()
+    .flatten()
+}
+
+#[allow(clippy::type_complexity)]
+async fn search_chapter_items(db: &PgPool, q: Option<&str>) -> Vec<AdminChapterItem> {
+    let Some(q) = q else {
+        return Vec::new();
+    };
+    let pattern = format!("%{}%", q);
+    let rows: Vec<(String, String, String, String, Option<i32>, bool, Option<String>)> =
+        match sqlx::query_as(
+            r#"
+            SELECT provider, external_id, title, media_type, chapters, chapters_manual, chapters_source
+            FROM media_items
+            WHERE media_type IN ('manga','manhwa','manhua','novel','other-comics','comic')
+              AND (title ILIKE $1 OR title_russian ILIKE $1 OR title_english ILIKE $1)
+            ORDER BY updated_at DESC
+            LIMIT 20
+            "#,
+        )
+        .bind(&pattern)
+        .fetch_all(db)
+        .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::error!(error = %e, "admin chapter search failed");
+                return Vec::new();
+            }
+        };
+
+    let mut items = Vec::with_capacity(rows.len());
+    for (provider, external_id, title, media_type, chapters, chapters_manual, source) in rows {
+        let bindings = crate::services::source_ids::list_source_ids(db, &provider, &external_id)
+            .await
+            .unwrap_or_default();
+        items.push(AdminChapterItem {
+            provider,
+            external_id,
+            title,
+            media_type,
+            chapters,
+            chapters_manual,
+            source_label: chapter_source_label(source.as_deref()).map(str::to_string),
+            bindings,
+        });
+    }
+    items
+}
+
+async fn render_admin(
+    state: &AppState,
+    user: &CurrentUser,
+    message: String,
+    error: String,
+    q: Option<String>,
+) -> Response {
+    let stats = get_sidebar_stats(state, user).await;
+    let items = search_chapter_items(&state.db, q.as_deref()).await;
+    let template = AdminTemplate {
+        username: user.username.clone(),
+        role: user.role.clone(),
+        stats,
+        active_page: "admin".to_string(),
+        message,
+        error,
+        refreshed: None,
+        total: None,
+        query: q.unwrap_or_default(),
+        items,
+    };
+    render_page(&template)
+}
+
 pub async fn get_admin_panel(
     user: CurrentUser,
     State(state): State<AppState>,
+    Query(params): Query<AdminQuery>,
 ) -> impl IntoResponse {
     if !require_admin(&user) {
         return Redirect::to("/").into_response();
     }
+    let q = normalized_q(&params.q);
+    let items = search_chapter_items(&state.db, q.as_deref()).await;
     let stats = get_sidebar_stats(&state, &user).await;
     let template = AdminTemplate {
         username: user.username,
@@ -63,6 +204,8 @@ pub async fn get_admin_panel(
         error: String::new(),
         refreshed: None,
         total: None,
+        query: q.unwrap_or_default(),
+        items,
     };
     render_page(&template)
 }
@@ -276,6 +419,8 @@ pub async fn post_refresh_details(
         error: String::new(),
         refreshed: None,
         total: Some(total),
+        query: String::new(),
+        items: Vec::new(),
     };
     render_page(&template)
 }
@@ -295,6 +440,8 @@ async fn render_with_error(
         error,
         refreshed: None,
         total: None,
+        query: String::new(),
+        items: Vec::new(),
     };
     render_page(&template)
 }
@@ -391,6 +538,213 @@ pub async fn post_enrich_chapters(
         error: String::new(),
         refreshed: None,
         total: Some(total),
+        query: String::new(),
+        items: Vec::new(),
     };
     render_page(&template)
+}
+
+/// POST /admin/chapters/manual — pin a manual chapter count (ground truth).
+pub async fn post_chapter_manual(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Form(form): Form<AdminChapterForm>,
+) -> impl IntoResponse {
+    if !require_admin(&user) {
+        return Redirect::to("/").into_response();
+    }
+    let q = normalized_q(&form.q);
+    match crate::services::chapters::set_manual_chapters(
+        &state.db,
+        &form.provider,
+        &form.external_id,
+        form.chapters,
+    )
+    .await
+    {
+        Ok(()) => {
+            let msg = format!("Установлено {} глав (manual)", form.chapters.max(0));
+            render_admin(&state, &user, msg, String::new(), q).await
+        }
+        Err(e) => render_admin(&state, &user, String::new(), format!("Ошибка БД: {}", e), q).await,
+    }
+}
+
+/// POST /admin/chapters/reset — drop the manual pin (auto may set it later).
+pub async fn post_chapter_reset(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Form(form): Form<AdminChapterForm>,
+) -> impl IntoResponse {
+    if !require_admin(&user) {
+        return Redirect::to("/").into_response();
+    }
+    let q = normalized_q(&form.q);
+    match crate::services::chapters::clear_manual_chapters(
+        &state.db,
+        &form.provider,
+        &form.external_id,
+    )
+    .await
+    {
+        Ok(()) => {
+            render_admin(
+                &state,
+                &user,
+                "Ручной счёт сброшен (подтянет авто)".to_string(),
+                String::new(),
+                q,
+            )
+            .await
+        }
+        Err(e) => render_admin(&state, &user, String::new(), format!("Ошибка БД: {}", e), q).await,
+    }
+}
+
+/// POST /admin/chapters/bind — bind a source id, then enrich immediately.
+pub async fn post_chapter_bind(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Form(form): Form<AdminChapterForm>,
+) -> impl IntoResponse {
+    if !require_admin(&user) {
+        return Redirect::to("/").into_response();
+    }
+    let q = normalized_q(&form.q);
+    let source = form.source.trim();
+    let source_id = form.source_id.trim();
+    if !crate::services::source_ids::is_known_source(source) || source_id.is_empty() {
+        return render_admin(
+            &state,
+            &user,
+            String::new(),
+            "Неизвестный источник или пустой id".to_string(),
+            q,
+        )
+        .await;
+    }
+    if let Err(e) = crate::services::source_ids::set_source_id(
+        &state.db,
+        &form.provider,
+        &form.external_id,
+        source,
+        source_id,
+    )
+    .await
+    {
+        return render_admin(&state, &user, String::new(), format!("Ошибка БД: {}", e), q).await;
+    }
+
+    let before =
+        crate::services::chapters::get_chapter_meta(&state.db, &form.provider, &form.external_id)
+            .await
+            .ok()
+            .flatten()
+            .and_then(|(ch, _, _)| ch);
+
+    let applied = match media_type_of(&state.db, &form.provider, &form.external_id).await {
+        Some(mt) => {
+            crate::services::chapter_enrich::enrich_chapter_count(
+                &state.db,
+                &form.provider,
+                &form.external_id,
+                &mt,
+            )
+            .await
+        }
+        None => None,
+    };
+
+    let msg = match applied {
+        Some(n) => {
+            let src = chapters_source_of(&state.db, &form.provider, &form.external_id).await;
+            let label = chapter_source_label(src.as_deref()).unwrap_or("auto");
+            format!("{} -> {} ({})", before.unwrap_or(0), n, label)
+        }
+        None => format!("Привязано: {} (счёт без изменений)", source),
+    };
+    render_admin(&state, &user, msg, String::new(), q).await
+}
+
+/// POST /admin/chapters/unbind — remove a source binding.
+pub async fn post_chapter_unbind(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Form(form): Form<AdminChapterForm>,
+) -> impl IntoResponse {
+    if !require_admin(&user) {
+        return Redirect::to("/").into_response();
+    }
+    let q = normalized_q(&form.q);
+    match crate::services::source_ids::delete_source_id(
+        &state.db,
+        &form.provider,
+        &form.external_id,
+        form.source.trim(),
+    )
+    .await
+    {
+        Ok(true) => {
+            render_admin(
+                &state,
+                &user,
+                "Источник отвязан".to_string(),
+                String::new(),
+                q,
+            )
+            .await
+        }
+        Ok(false) => {
+            render_admin(
+                &state,
+                &user,
+                "Привязка не найдена".to_string(),
+                String::new(),
+                q,
+            )
+            .await
+        }
+        Err(e) => render_admin(&state, &user, String::new(), format!("Ошибка БД: {}", e), q).await,
+    }
+}
+
+/// POST /admin/chapters/refresh — run enrichment for one item on demand.
+pub async fn post_chapter_refresh(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Form(form): Form<AdminChapterForm>,
+) -> impl IntoResponse {
+    if !require_admin(&user) {
+        return Redirect::to("/").into_response();
+    }
+    let q = normalized_q(&form.q);
+    let before =
+        crate::services::chapters::get_chapter_meta(&state.db, &form.provider, &form.external_id)
+            .await
+            .ok()
+            .flatten()
+            .and_then(|(ch, _, _)| ch);
+
+    let applied = match media_type_of(&state.db, &form.provider, &form.external_id).await {
+        Some(mt) => {
+            crate::services::chapter_enrich::enrich_chapter_count(
+                &state.db,
+                &form.provider,
+                &form.external_id,
+                &mt,
+            )
+            .await
+        }
+        None => None,
+    };
+
+    let msg = match applied {
+        Some(n) => {
+            let src = chapters_source_of(&state.db, &form.provider, &form.external_id).await;
+            let label = chapter_source_label(src.as_deref()).unwrap_or("auto");
+            format!("{} -> {} ({})", before.unwrap_or(0), n, label)
+        }
+        None => "Счёт без изменений".to_string(),
+    };
+    render_admin(&state, &user, msg, String::new(), q).await
 }

@@ -95,6 +95,7 @@ async fn sync_media_items_chapters(
         ) AS sub
         WHERE media_items.provider = $1
           AND media_items.external_id = $2
+          AND NOT COALESCE(media_items.chapters_manual, FALSE)
           AND sub.max_ch > COALESCE(media_items.chapters, 0)
         "#,
     )
@@ -127,7 +128,7 @@ pub async fn get_chapter_meta(
 /// Insert skeleton rows for every integer chapter `1..=n` (stored x100) under
 /// `(provider, external_id)`. Idempotent (`ON CONFLICT DO NOTHING`). Used so a
 /// manual count larger than the MangaUpdates skeleton can be rendered and ticked.
-async fn ensure_chapter_skeleton(
+pub(crate) async fn ensure_chapter_skeleton(
     conn: &mut sqlx::PgConnection,
     provider: &str,
     external_id: &str,
