@@ -154,10 +154,12 @@ async fn bind_enrich_unbind_cycle() {
             .await
             .unwrap()
     );
-    assert!(list_source_ids(&ctx.pool, "mangaupdates", &series)
-        .await
-        .unwrap()
-        .is_empty());
+    assert!(
+        list_source_ids(&ctx.pool, "mangaupdates", &series)
+            .await
+            .unwrap()
+            .is_empty()
+    );
 
     // 6. Re-enrich skips (no new query) and never lowers the count.
     let applied = enrich_with_providers(
@@ -175,4 +177,45 @@ async fn bind_enrich_unbind_cycle() {
 #[test]
 fn mangaupdates_is_not_a_bindable_source() {
     assert!(!is_known_source("mangaupdates"));
+}
+
+#[tokio::test]
+async fn enrich_extends_skeleton_to_reported_count() {
+    let ctx = setup().await;
+    let series = SERIES_ID.to_string();
+    let seen = Arc::new(Mutex::new(Vec::<String>::new()));
+
+    set_source_id(&ctx.pool, "mangaupdates", &series, "kakao", KAKAO_ID)
+        .await
+        .expect("set binding");
+
+    let applied = enrich_with_providers(
+        &ctx.pool,
+        "mangaupdates",
+        &series,
+        vec![recording("kakao", &seen)],
+    )
+    .await;
+    assert_eq!(applied, Some(157));
+
+    // Skeleton must have grown from 145 to 157 so chapters 146..157 are tickable.
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*)::bigint FROM series_chapters \
+         WHERE provider = 'mangaupdates' AND external_id = $1",
+    )
+    .bind(&series)
+    .fetch_one(&ctx.pool)
+    .await
+    .expect("count skeleton");
+    assert_eq!(count, 157, "enrichment must extend the skeleton");
+
+    let last: Option<i32> = sqlx::query_scalar(
+        "SELECT MAX(chapter_number) FROM series_chapters \
+         WHERE provider = 'mangaupdates' AND external_id = $1",
+    )
+    .bind(&series)
+    .fetch_one(&ctx.pool)
+    .await
+    .expect("max chapter");
+    assert_eq!(last, Some(15700), "last row is chapter 157 at x100 scale");
 }

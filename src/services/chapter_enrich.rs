@@ -66,27 +66,23 @@ pub async fn enrich_with_providers(
     for p in providers {
         // Layer 3: providers use their OWN ids. Never fall back to the skeleton
         // external_id — a missing binding means "do not query this provider".
-        let bound = match crate::services::source_ids::get_source_id(
-            db,
-            provider,
-            external_id,
-            p.name(),
-        )
-        .await
-        {
-            Ok(Some(id)) => id,
-            Ok(None) => continue,
-            Err(e) => {
-                tracing::debug!(
-                    provider,
-                    external_id,
-                    source = p.name(),
-                    error = %e,
-                    "chapter_enrich: source-id lookup failed"
-                );
-                continue;
-            }
-        };
+        let bound =
+            match crate::services::source_ids::get_source_id(db, provider, external_id, p.name())
+                .await
+            {
+                Ok(Some(id)) => id,
+                Ok(None) => continue,
+                Err(e) => {
+                    tracing::debug!(
+                        provider,
+                        external_id,
+                        source = p.name(),
+                        error = %e,
+                        "chapter_enrich: source-id lookup failed"
+                    );
+                    continue;
+                }
+            };
         let reading = match usable(p.fetch(&bound).await.ok().flatten()) {
             Some(r) => r,
             None => continue,
@@ -94,7 +90,14 @@ pub async fn enrich_with_providers(
         let Some(next) = raised_value(current, reading.total) else {
             continue;
         };
-        if let Err(e) = sqlx::query(
+        let mut tx = match db.begin().await {
+            Ok(tx) => tx,
+            Err(e) => {
+                tracing::debug!(provider, external_id, error = %e, "chapter_enrich: begin tx failed");
+                continue;
+            }
+        };
+        let updated = sqlx::query(
             "UPDATE media_items SET chapters = $3, chapters_source = $4, updated_at = NOW() \
              WHERE provider = $1 AND external_id = $2 AND chapters_manual = FALSE",
         )
@@ -102,10 +105,29 @@ pub async fn enrich_with_providers(
         .bind(external_id)
         .bind(next)
         .bind(reading.source)
-        .execute(db)
-        .await
+        .execute(&mut *tx)
+        .await;
+        match updated {
+            Ok(res) if res.rows_affected() == 0 => {
+                // Became manual (or row vanished) between read and write: no-op.
+                let _ = tx.rollback().await;
+                continue;
+            }
+            Ok(_) => {}
+            Err(e) => {
+                tracing::debug!(provider, external_id, error = %e, "chapter_enrich: write failed");
+                continue;
+            }
+        }
+        if let Err(e) =
+            crate::services::chapters::ensure_chapter_skeleton(&mut tx, provider, external_id, next)
+                .await
         {
-            tracing::debug!(provider, external_id, error = %e, "chapter_enrich: write failed");
+            tracing::debug!(provider, external_id, error = %e, "chapter_enrich: skeleton extend failed");
+            continue;
+        }
+        if let Err(e) = tx.commit().await {
+            tracing::debug!(provider, external_id, error = %e, "chapter_enrich: commit failed");
             continue;
         }
         tracing::info!(provider, external_id, from = ?current, to = next, source = reading.source, "chapter_enrich: raised");
