@@ -105,6 +105,98 @@ async fn sync_media_items_chapters(
     Ok(())
 }
 
+/// `(chapters, chapters_manual, chapters_source)` for one media item, or `None`
+/// when the item is unknown. The drawer uses this to surface the manual override
+/// over a live provider fetch.
+#[allow(clippy::type_complexity)]
+pub async fn get_chapter_meta(
+    pool: &PgPool,
+    provider: &str,
+    external_id: &str,
+) -> Result<Option<(Option<i32>, bool, Option<String>)>, sqlx::Error> {
+    sqlx::query_as(
+        "SELECT chapters, chapters_manual, chapters_source \
+         FROM media_items WHERE provider = $1 AND external_id = $2",
+    )
+    .bind(provider)
+    .bind(external_id)
+    .fetch_optional(pool)
+    .await
+}
+
+/// Insert skeleton rows for every integer chapter `1..=n` (stored x100) under
+/// `(provider, external_id)`. Idempotent (`ON CONFLICT DO NOTHING`). Used so a
+/// manual count larger than the MangaUpdates skeleton can be rendered and ticked.
+async fn ensure_chapter_skeleton(
+    conn: &mut sqlx::PgConnection,
+    provider: &str,
+    external_id: &str,
+    n: i32,
+) -> Result<(), sqlx::Error> {
+    if n <= 0 {
+        return Ok(());
+    }
+    let nums: Vec<i32> = (1..=n).map(|c| c * 100).collect();
+    sqlx::query(
+        "INSERT INTO series_chapters (provider, external_id, chapter_number) \
+         SELECT $1, $2, u.chapter_number FROM UNNEST($3::int[]) AS u(chapter_number) \
+         ON CONFLICT (provider, external_id, chapter_number) DO NOTHING",
+    )
+    .bind(provider)
+    .bind(external_id)
+    .bind(&nums)
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+/// Store a user-supplied count as ground truth. Also extends the skeleton so the
+/// drawer can display/tick chapters beyond the auto count. Transactional: the
+/// value and its skeleton move together.
+pub async fn set_manual_chapters(
+    pool: &PgPool,
+    provider: &str,
+    external_id: &str,
+    chapters: i32,
+) -> Result<(), sqlx::Error> {
+    let chapters = chapters.max(0);
+    let mut tx = pool.begin().await?;
+    sqlx::query(
+        "UPDATE media_items \
+         SET chapters = $3, chapters_manual = TRUE, chapters_source = 'manual', \
+             updated_at = NOW() \
+         WHERE provider = $1 AND external_id = $2",
+    )
+    .bind(provider)
+    .bind(external_id)
+    .bind(chapters)
+    .execute(&mut *tx)
+    .await?;
+    ensure_chapter_skeleton(&mut tx, provider, external_id, chapters).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Drop the manual override. `chapters` is intentionally left untouched until the
+/// next automatic refresh rewrites it (a transient provider failure must not blank
+/// the denominator).
+pub async fn clear_manual_chapters(
+    pool: &PgPool,
+    provider: &str,
+    external_id: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE media_items \
+         SET chapters_manual = FALSE, chapters_source = NULL, updated_at = NOW() \
+         WHERE provider = $1 AND external_id = $2",
+    )
+    .bind(provider)
+    .bind(external_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 /// Insert or update chapter skeleton in the DB. UNIQUE (provider,
 /// external_id, chapter_number) makes the operation idempotent.
 ///
@@ -273,7 +365,8 @@ pub async fn set_read(
     read: bool,
 ) -> Result<bool, sqlx::Error> {
     let result = if read {
-        sqlx::query(
+        // Bulk-fill every skeleton chapter <= N (existing behaviour).
+        let bulk = sqlx::query(
             r#"
             INSERT INTO user_chapter_progress
                 (user_id, provider, external_id, chapter_number, read, read_at)
@@ -292,9 +385,43 @@ pub async fn set_read(
         .bind(external_id)
         .bind(chapter_number)
         .execute(pool)
+        .await?;
+
+        // Manual override raises the ceiling past the auto skeleton: record the
+        // exact clicked chapter even when no `series_chapters` row exists for it.
+        let manual: bool = sqlx::query_scalar(
+            "SELECT COALESCE(chapters_manual, FALSE) FROM media_items \
+             WHERE provider = $1 AND external_id = $2",
+        )
+        .bind(provider)
+        .bind(external_id)
+        .fetch_optional(pool)
         .await?
+        .unwrap_or(false);
+
+        let direct = if manual {
+            sqlx::query(
+                r#"
+                INSERT INTO user_chapter_progress
+                    (user_id, provider, external_id, chapter_number, read, read_at)
+                VALUES ($1, $2, $3, $4, TRUE, NOW())
+                ON CONFLICT (user_id, provider, external_id, chapter_number) DO UPDATE
+                SET read = TRUE,
+                    read_at = NOW()
+                "#,
+            )
+            .bind(user_id)
+            .bind(provider)
+            .bind(external_id)
+            .bind(chapter_number)
+            .execute(pool)
+            .await?
+        } else {
+            Default::default()
+        };
+        (bulk, direct)
     } else {
-        sqlx::query(
+        let r = sqlx::query(
             r#"
             UPDATE user_chapter_progress
             SET read = FALSE,
@@ -310,9 +437,10 @@ pub async fn set_read(
         .bind(external_id)
         .bind(chapter_number)
         .execute(pool)
-        .await?
+        .await?;
+        (r, Default::default())
     };
-    Ok(result.rows_affected() > 0)
+    Ok(result.0.rows_affected() > 0 || result.1.rows_affected() > 0)
 }
 
 /// Highest chapter_number currently marked read for this user.

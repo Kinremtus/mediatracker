@@ -209,15 +209,31 @@ async fn refresh_group(db: &PgPool, items: Vec<MediaItemRow>, provider: Provider
             // MAL/Shikimori manga-family split need the real value.
             let fetch_media_type = media_type.clone();
             match provider.fetch(&ext_id, &fetch_media_type).await {
-                Ok(details) => match update_item(&db, &item, &details).await {
-                    Ok(true) => {
-                        updated.fetch_add(1, Ordering::Relaxed);
+                Ok(details) => {
+                    match update_item(&db, &item, &details).await {
+                        Ok(true) => {
+                            updated.fetch_add(1, Ordering::Relaxed);
+                        }
+                        Ok(false) => {}
+                        Err(e) => {
+                            warn!(external_id = %ext_id, error = %e, "refresh: update_item failed");
+                        }
                     }
-                    Ok(false) => {}
-                    Err(e) => {
-                        warn!(external_id = %ext_id, error = %e, "refresh: update_item failed");
+                    // Layer 2: raise the count from original-language sources.
+                    // Raises only; respects chapters_manual; failures are no-ops.
+                    if matches!(
+                        media_type.as_str(),
+                        "manga" | "manhwa" | "manhua" | "novel" | "other-comics" | "comic"
+                    ) {
+                        crate::services::chapter_enrich::enrich_chapter_count(
+                            &db,
+                            &item.provider,
+                            &ext_id,
+                            &media_type,
+                        )
+                        .await;
                     }
-                },
+                }
                 Err(e) => {
                     warn!(external_id = %ext_id, error = %e, "refresh: fetch failed");
                 }
@@ -247,7 +263,15 @@ pub async fn update_item(
         UPDATE media_items
         SET
             episodes = COALESCE($2, episodes),
-            chapters = COALESCE($3, chapters),
+            chapters = CASE
+                WHEN chapters_manual THEN chapters
+                ELSE COALESCE($3, chapters)
+            END,
+            chapters_source = CASE
+                WHEN chapters_manual THEN chapters_source
+                WHEN $3 IS NOT NULL THEN $13
+                ELSE chapters_source
+            END,
             volumes = COALESCE($4, volumes),
             pages = COALESCE($5, pages),
             runtime_minutes = COALESCE($6, runtime_minutes),
@@ -267,7 +291,7 @@ pub async fn update_item(
         WHERE id = $1
           AND (
             ($2 IS NOT NULL AND episodes IS DISTINCT FROM $2)
-            OR ($3 IS NOT NULL AND chapters IS DISTINCT FROM $3)
+            OR (NOT chapters_manual AND $3 IS NOT NULL AND chapters IS DISTINCT FROM $3)
             OR ($4 IS NOT NULL AND volumes IS DISTINCT FROM $4)
             OR ($5 IS NOT NULL AND pages IS DISTINCT FROM $5)
             OR ($6 IS NOT NULL AND runtime_minutes IS DISTINCT FROM $6)
@@ -292,6 +316,7 @@ pub async fn update_item(
     .bind(new.poster_url.as_deref().unwrap_or(""))
     .bind(&new.associated_titles)
     .bind(&new.genres)
+    .bind(format!("auto:{}", old.provider))
     .execute(db)
     .await?;
 

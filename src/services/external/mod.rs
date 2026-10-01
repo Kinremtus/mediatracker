@@ -1,4 +1,5 @@
 pub mod anilist;
+pub mod chapter_count;
 pub mod comicvine;
 pub mod google_books;
 pub mod hardcover;

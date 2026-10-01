@@ -1,7 +1,7 @@
 use askama::Template;
 use axum::{
     extract::{Form, Path, Query, State},
-    response::{Html, IntoResponse},
+    response::{Html, IntoResponse, Response},
 };
 use serde::Deserialize;
 
@@ -11,7 +11,8 @@ use super::home::{SidebarStats, get_sidebar_stats};
 use crate::app_state::AppState;
 use crate::middleware::CurrentUser;
 use crate::models::media_item::{
-    CreateMediaItem, derived_status_class, derived_status_label, parse_description,
+    CreateMediaItem, chapter_source_label, derived_status_class, derived_status_label,
+    parse_description,
 };
 use crate::services::external::dispatch::{Provider, ProviderClients};
 use crate::services::external::is_not_found;
@@ -28,6 +29,8 @@ struct MediaDrawerTemplate {
     progress: Option<i32>,
     rating: Option<f64>,
     total_count: Option<i32>,
+    chapter_chip: String,
+    source_id_form: String,
     progress_unit: String,
     mal_id: Option<i64>,
     has_progress: bool,
@@ -298,6 +301,45 @@ pub async fn get_media_drawer_content(
                 Some((id, status, prog, rat)) => (Some(id), Some(status), Some(prog), rat),
                 None => (None, None, None, None),
             };
+            let mut item = item;
+            let chapter_meta = if matches!(
+                item.media_type.as_str(),
+                "manga" | "manhwa" | "manhua" | "novel" | "other-comics" | "comic"
+            ) {
+                crate::services::chapters::get_chapter_meta(&state.db, &provider, &external_id)
+                    .await
+                    .unwrap_or(None)
+            } else {
+                None
+            };
+            // A user-pinned count wins over the live provider value the drawer
+            // otherwise renders from `resolve_card_data`.
+            if let Some((Some(ch), true, _)) = chapter_meta {
+                item.chapters = Some(ch);
+            }
+            let chapter_chip =
+                ChapterCountChip::build(&provider, &external_id, &item, chapter_meta).render_html();
+            let source_id_form = if matches!(
+                item.media_type.as_str(),
+                "manga" | "manhwa" | "manhua" | "novel" | "other-comics" | "comic"
+            ) {
+                let bindings = crate::services::source_ids::list_source_ids(
+                    &state.db,
+                    &provider,
+                    &external_id,
+                )
+                .await
+                .unwrap_or_default();
+                SourceIdForm {
+                    provider: provider.clone(),
+                    external_id: external_id.clone(),
+                    bindings,
+                    sources: crate::services::source_ids::known_sources(),
+                }
+                .render_html()
+            } else {
+                String::new()
+            };
             let total_count = item.total_count();
             let progress_unit = item.progress_unit_ru().to_string();
             let star_classes = MediaDrawerTemplate::compute_star_classes(rating);
@@ -337,6 +379,8 @@ pub async fn get_media_drawer_content(
                     progress,
                     rating,
                     total_count,
+                    chapter_chip,
+                    source_id_form,
                     progress_unit,
                     has_progress,
                     role: user.role,
@@ -800,6 +844,65 @@ struct ChapterListPartial {
 }
 
 #[derive(Template)]
+#[template(path = "partials/_chapter_count_chip.html")]
+struct ChapterCountChip {
+    provider: String,
+    external_id: String,
+    total_count: Option<i32>,
+    progress_unit: String,
+    chapters_manual: bool,
+    source_label: Option<String>,
+}
+
+impl ChapterCountChip {
+    fn build(
+        provider: &str,
+        external_id: &str,
+        item: &CreateMediaItem,
+        meta: Option<(Option<i32>, bool, Option<String>)>,
+    ) -> Self {
+        let (chapters, manual, source) = match meta {
+            Some((ch, m, s)) => (ch, m, s),
+            None => (item.chapters, false, None),
+        };
+        ChapterCountChip {
+            provider: provider.to_string(),
+            external_id: external_id.to_string(),
+            total_count: chapters,
+            progress_unit: item.progress_unit_ru().to_string(),
+            chapters_manual: manual,
+            source_label: chapter_source_label(source.as_deref()).map(str::to_string),
+        }
+    }
+
+    fn render_html(&self) -> String {
+        self.render().unwrap_or_else(|e| {
+            tracing::error!(error = %e, "chapter chip render failed");
+            String::new()
+        })
+    }
+}
+
+#[derive(Template)]
+#[template(path = "partials/_source_id_form.html")]
+#[expect(dead_code)]
+struct SourceIdForm {
+    provider: String,
+    external_id: String,
+    bindings: Vec<crate::services::source_ids::SourceId>,
+    sources: Vec<&'static str>,
+}
+
+impl SourceIdForm {
+    fn render_html(&self) -> String {
+        self.render().unwrap_or_else(|e| {
+            tracing::error!(error = %e, "source-id form render failed");
+            String::new()
+        })
+    }
+}
+
+#[derive(Template)]
 #[template(path = "partials/_chapter_item.html")]
 struct ChapterItemPartial {
     chapter: crate::services::chapters::StoredChapter,
@@ -1095,6 +1198,147 @@ pub async fn set_chapter_read(
     let mut resp = Html(html).into_response();
     crate::utils::set_hx_trigger(&mut resp, &trigger.to_string());
     resp
+}
+
+#[derive(Deserialize)]
+pub struct SetSourceIdForm {
+    pub source: String,
+    pub source_id: String,
+}
+
+#[derive(Deserialize)]
+pub struct DeleteSourceIdForm {
+    pub source: String,
+}
+
+#[derive(Deserialize)]
+pub struct SetChaptersForm {
+    #[serde(default)]
+    pub chapters: i32,
+}
+
+/// POST /api/manga/{provider}/{external_id}/chapters/manual
+/// Pin `media_items.chapters` and mark it manual (ground truth).
+pub async fn set_chapters_manual(
+    _user: CurrentUser,
+    State(state): State<AppState>,
+    Path((provider, external_id)): Path<(String, String)>,
+    Form(form): Form<SetChaptersForm>,
+) -> impl IntoResponse {
+    if let Err(e) = crate::services::chapters::set_manual_chapters(
+        &state.db,
+        &provider,
+        &external_id,
+        form.chapters,
+    )
+    .await
+    {
+        tracing::warn!(provider, external_id, error = %e, "set_manual_chapters failed");
+    }
+    render_chapter_chip(&state, &provider, &external_id).await
+}
+
+/// POST /api/manga/{provider}/{external_id}/chapters/reset
+/// Drop the manual override (next auto refresh may set the value again).
+pub async fn reset_chapters_auto(
+    _user: CurrentUser,
+    State(state): State<AppState>,
+    Path((provider, external_id)): Path<(String, String)>,
+) -> impl IntoResponse {
+    if let Err(e) =
+        crate::services::chapters::clear_manual_chapters(&state.db, &provider, &external_id).await
+    {
+        tracing::warn!(provider, external_id, error = %e, "clear_manual_chapters failed");
+    }
+    render_chapter_chip(&state, &provider, &external_id).await
+}
+
+/// Rebuild the chip from the DB and fire `chaptersChanged` so the open chapter
+/// list reloads its skeleton (`hx-trigger` on the drawer's chapters div).
+async fn render_chapter_chip(state: &AppState, provider: &str, external_id: &str) -> Response {
+    let meta = crate::services::chapters::get_chapter_meta(&state.db, provider, external_id)
+        .await
+        .unwrap_or(None);
+    let (chapters, manual, source) = match meta {
+        Some((ch, m, s)) => (ch, m, s),
+        None => (None, false, None),
+    };
+    let unit = sqlx::query_scalar::<_, String>(
+        "SELECT media_type FROM media_items WHERE provider = $1 AND external_id = $2",
+    )
+    .bind(provider)
+    .bind(external_id)
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten()
+    .map(|mt| match mt.as_str() {
+        "comic" => "вып.".to_string(),
+        _ => "гл.".to_string(),
+    })
+    .unwrap_or_else(|| "гл.".to_string());
+    let chip = ChapterCountChip {
+        provider: provider.to_string(),
+        external_id: external_id.to_string(),
+        total_count: chapters,
+        progress_unit: unit,
+        chapters_manual: manual,
+        source_label: chapter_source_label(source.as_deref()).map(str::to_string),
+    };
+    let mut resp = Html(chip.render_html()).into_response();
+    crate::utils::set_hx_trigger(&mut resp, r#"{"chaptersChanged":true}"#);
+    resp
+}
+
+/// POST /api/manga/{provider}/{external_id}/source-id
+pub async fn set_source_id(
+    _user: CurrentUser,
+    State(state): State<AppState>,
+    Path((provider, external_id)): Path<(String, String)>,
+    Form(form): Form<SetSourceIdForm>,
+) -> impl IntoResponse {
+    let source = form.source.trim();
+    let source_id = form.source_id.trim();
+    if !crate::services::source_ids::is_known_source(source) || source_id.is_empty() {
+        tracing::warn!(provider, source, "set_source_id: rejected unknown source or empty id");
+    } else if let Err(e) = crate::services::source_ids::set_source_id(
+        &state.db, &provider, &external_id, source, source_id,
+    )
+    .await
+    {
+        tracing::warn!(provider, external_id, error = %e, "set_source_id failed");
+    }
+    render_source_id_form(&state, &provider, &external_id).await
+}
+
+/// POST /api/manga/{provider}/{external_id}/source-id/delete
+pub async fn delete_source_id(
+    _user: CurrentUser,
+    State(state): State<AppState>,
+    Path((provider, external_id)): Path<(String, String)>,
+    Form(form): Form<DeleteSourceIdForm>,
+) -> impl IntoResponse {
+    if let Err(e) = crate::services::source_ids::delete_source_id(
+        &state.db, &provider, &external_id, form.source.trim(),
+    )
+    .await
+    {
+        tracing::warn!(provider, external_id, error = %e, "delete_source_id failed");
+    }
+    render_source_id_form(&state, &provider, &external_id).await
+}
+
+async fn render_source_id_form(state: &AppState, provider: &str, external_id: &str) -> Response {
+    let bindings = crate::services::source_ids::list_source_ids(&state.db, provider, external_id)
+        .await
+        .unwrap_or_default();
+    let form = SourceIdForm {
+        provider: provider.to_string(),
+        external_id: external_id.to_string(),
+        bindings,
+        sources: crate::services::source_ids::known_sources(),
+    };
+    Html(form.render_html()).into_response()
 }
 
 #[cfg(test)]
