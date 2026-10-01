@@ -2,6 +2,8 @@
 //! Verified: GET bff-page.kakao.com/api/gateway/api/v2/content/product/list
 //!   ?series_id=<id> -> {"result":{"total_count":157,
 //!   "series_item":{"on_sale_count":157}},...}; works from a datacenter IP, no token.
+//! The BFF requires accept/origin/referer AND a non-empty User-Agent; a
+//! UA-less request is answered with HTTP 500 (not 403).
 
 use super::{ChapterCount, ChapterCountFuture, ChapterCountProvider};
 
@@ -65,15 +67,19 @@ impl ChapterCountProvider for KakaoProvider {
         Box::pin(async move {
             let mut url = url::Url::parse(BASE)?;
             url.query_pairs_mut().append_pair("series_id", external_id);
-            // The BFF rejects header-less requests with 403. These three
-            // headers (accept/origin/referer) are what the browser sends and
-            // what the gateway checks; the User-Agent is irrelevant.
+            // The BFF rejects header-less requests with 403, and answers a
+            // request without a User-Agent with HTTP 500 (reqwest sends none
+            // by default). Send the same headers a browser would.
             let resp = self
                 .client
                 .get(url)
                 .header("accept", "application/json, text/plain, */*")
                 .header("origin", "https://page.kakao.com")
                 .header("referer", "https://page.kakao.com/")
+                .header(
+                    "user-agent",
+                    "mediatracker/1.0 (+https://github.com/Kinremtus/mediatracker)",
+                )
                 .send()
                 .await?
                 .error_for_status()?

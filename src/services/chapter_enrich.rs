@@ -83,7 +83,20 @@ pub async fn enrich_with_providers(
                     continue;
                 }
             };
-        let reading = match usable(p.fetch(&bound).await.ok().flatten()) {
+        let fetched = match p.fetch(&bound).await {
+            Ok(fetched) => fetched,
+            Err(e) => {
+                tracing::warn!(
+                    provider,
+                    external_id,
+                    source = p.name(),
+                    error = %e,
+                    "chapter_enrich: fetch failed"
+                );
+                None
+            }
+        };
+        let reading = match usable(fetched) {
             Some(r) => r,
             None => continue,
         };
