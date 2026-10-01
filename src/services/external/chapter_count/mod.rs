@@ -9,6 +9,7 @@
 
 pub mod kakao;
 pub mod mangaplus;
+pub mod mh5;
 pub mod syosetu;
 
 use std::future::Future;
@@ -89,6 +90,7 @@ pub fn providers_for(media_type: &str) -> Vec<Arc<dyn ChapterCountProvider>> {
         Arc::new(kakao::KakaoProvider::new()),
         Arc::new(mangaplus::MangaPlusProvider::new()),
         Arc::new(syosetu::SyosetuProvider::new()),
+        Arc::new(mh5::Mh5Provider::new()),
     ];
     all.into_iter()
         .filter(|p| p.media_types().contains(&media_type))
@@ -109,6 +111,11 @@ mod registry_tests {
             providers_for("manga")
                 .iter()
                 .any(|p| p.name() == "mangaplus")
+        );
+        assert!(
+            providers_for("manhua")
+                .iter()
+                .any(|p| p.name() == "mh5")
         );
     }
 }

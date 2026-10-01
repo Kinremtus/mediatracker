@@ -301,6 +301,7 @@ pub fn chapter_source_label(source: Option<&str>) -> Option<&'static str> {
         Some("auto:kakao") => Some("Kakao"),
         Some("auto:mangaplus") => Some("MangaPlus"),
         Some("auto:syosetu") => Some("Syosetu"),
+        Some("auto:mh5") => Some("MH5"),
         Some("auto:mangaupdates") => Some("MangaUpdates"),
         Some(_) => Some("авто"),
     }
@@ -875,6 +876,7 @@ mod tests {
             Some("MangaPlus")
         );
         assert_eq!(chapter_source_label(Some("auto:syosetu")), Some("Syosetu"));
+        assert_eq!(chapter_source_label(Some("auto:mh5")), Some("MH5"));
         assert_eq!(
             chapter_source_label(Some("auto:mangaupdates")),
             Some("MangaUpdates")
