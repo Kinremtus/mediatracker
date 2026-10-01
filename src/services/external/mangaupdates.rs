@@ -194,6 +194,23 @@ fn extract_parenthesized_after_volumes(s: &str) -> Option<String> {
     }
 }
 
+/// MangaUpdates хранит *опубликованное* число глав в `status`
+/// (например, "315 Chapters (Ongoing)"), тогда как `latest_chapter` — это
+/// только последняя ПЕРЕВЕДЁННАЯ глава (может отставать на десятки глав).
+/// Извлекаем первое "N Chapters" из статуса; "N Volumes" игнорируем.
+fn chapters_from_status(status: Option<&str>) -> Option<i32> {
+    let s = status?;
+    let tokens: Vec<&str> = s.split_whitespace().collect();
+    tokens
+        .windows(2)
+        .find_map(|w| {
+            let n: i32 = w[0].parse().ok()?;
+            (w[1].eq_ignore_ascii_case("chapters") || w[1].eq_ignore_ascii_case("chapter"))
+                .then_some(n)
+        })
+        .filter(|n| *n > 0)
+}
+
 fn map_series(series: MangaUpdatesSeries) -> CreateMediaItem {
     let media_type = media_type_for(series.series_type.as_deref());
     let poster_url = poster_url_from(series.image);
@@ -223,6 +240,7 @@ fn map_series(series: MangaUpdatesSeries) -> CreateMediaItem {
 
     let year_parsed = series.year.as_ref().and_then(|y| y.parse::<i16>().ok());
 
+    let status_chapters = chapters_from_status(series.status.as_deref());
     let (status, volumes) = parse_mu_status(series.status);
 
     let mut details = serde_json::Map::new();
@@ -272,7 +290,7 @@ fn map_series(series: MangaUpdatesSeries) -> CreateMediaItem {
         } else {
             Some(serde_json::Value::Object(details))
         },
-        chapters: series.latest_chapter,
+        chapters: series.latest_chapter.max(status_chapters),
         volumes,
         pages: None,
         runtime_minutes: None,
@@ -494,5 +512,46 @@ mod tests {
         let (s, v) = parse_mu_status(None);
         assert_eq!(s, None);
         assert_eq!(v, None);
+    }
+
+    #[test]
+    fn chapters_from_status_reads_published_count() {
+        assert_eq!(
+            chapters_from_status(Some("315 Chapters (Ongoing)")),
+            Some(315)
+        );
+        assert_eq!(chapters_from_status(Some("1 Chapter (Ongoing)")), Some(1));
+        assert_eq!(chapters_from_status(Some("72 Volumes (Complete)")), None);
+        assert_eq!(chapters_from_status(Some("Ongoing")), None);
+        assert_eq!(chapters_from_status(Some("Complete")), None);
+        assert_eq!(chapters_from_status(None), None);
+    }
+
+    #[test]
+    fn status_chapters_beat_lagging_latest_chapter() {
+        let json = r#"{
+            "series_id": 32885602242,
+            "title": "Cultivator Against Hero Society",
+            "type": "Manhua",
+            "latest_chapter": 291,
+            "status": "315 Chapters (Ongoing)"
+        }"#;
+        let series: MangaUpdatesSeries = serde_json::from_str(json).unwrap();
+        let item = map_series(series);
+        assert_eq!(item.chapters, Some(315));
+    }
+
+    #[test]
+    fn latest_chapter_wins_when_status_has_no_chapter_count() {
+        let json = r#"{
+            "series_id": 1,
+            "title": "Ongoing Thing",
+            "type": "Manga",
+            "latest_chapter": 42,
+            "status": "Ongoing"
+        }"#;
+        let series: MangaUpdatesSeries = serde_json::from_str(json).unwrap();
+        let item = map_series(series);
+        assert_eq!(item.chapters, Some(42));
     }
 }
