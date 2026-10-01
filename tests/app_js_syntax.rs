@@ -675,8 +675,8 @@ fn drawer_labels_carry_counts() {
         "the episodes label must carry the `total_count` counter"
     );
     assert!(
-        src.contains("Главы{% if let Some(tc) = total_count %} · {{ tc }}{% endif %}"),
-        "the chapters label must carry the `total_count` counter"
+        src.contains("<div class=\"drawer-section-label\">Главы {{ chapter_chip|safe }}</div>"),
+        "the chapters label must carry the chapter-count chip"
     );
 }
 

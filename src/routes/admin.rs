@@ -176,7 +176,16 @@ pub async fn post_refresh_details(
                         title_english = $2, title_native = $3, title_russian = $4,
                         description = $5, status = $6, score = $7,
                         format_type = $8, details = $9,
-                        chapters = $10, volumes = $11, pages = $12,
+                        chapters = CASE
+                            WHEN chapters_manual THEN chapters
+                            ELSE $10
+                        END,
+                        chapters_source = CASE
+                            WHEN chapters_manual THEN chapters_source
+                            WHEN $10 IS NOT NULL THEN 'auto:' || $42
+                            ELSE chapters_source
+                        END,
+                        volumes = $11, pages = $12,
                         runtime_minutes = $13, playtime_hours = $14,
                         year = $15, aired_from = $16, aired_to = $17,
                         premiered_season = $18, premiered_year = $19, broadcast = $20,
@@ -236,6 +245,7 @@ pub async fn post_refresh_details(
                     .bind(&item.categories)
                     .bind(item.episodes)
                     .bind(&item.associated_titles)
+                    .bind(&provider)
                     .execute(db)
                     .await;
                     match res {

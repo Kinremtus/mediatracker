@@ -291,6 +291,21 @@ pub fn derived_status_class(label: &str) -> &'static str {
     }
 }
 
+/// Human label for `media_items.chapters_source` (drawer provenance badge).
+/// `None`/empty => no badge. Unknown non-empty values degrade to "авто" so a
+/// future source never renders as a raw DB token.
+pub fn chapter_source_label(source: Option<&str>) -> Option<&'static str> {
+    match source {
+        None | Some("") => None,
+        Some("manual") => Some("ручной"),
+        Some("auto:kakao") => Some("Kakao"),
+        Some("auto:mangaplus") => Some("MangaPlus"),
+        Some("auto:syosetu") => Some("Syosetu"),
+        Some("auto:mangaupdates") => Some("MangaUpdates"),
+        Some(_) => Some("авто"),
+    }
+}
+
 /// Structured pieces extracted from a provider description.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ParsedDescription {
@@ -847,5 +862,23 @@ mod tests {
         m.associated_titles = vec!["Alt One".to_string()];
         let c: CreateMediaItem = m.into();
         assert_eq!(c.associated_titles, vec!["Alt One".to_string()]);
+    }
+
+    #[test]
+    fn chapter_source_label_maps_known_and_unknown() {
+        assert_eq!(chapter_source_label(None), None);
+        assert_eq!(chapter_source_label(Some("")), None);
+        assert_eq!(chapter_source_label(Some("manual")), Some("ручной"));
+        assert_eq!(chapter_source_label(Some("auto:kakao")), Some("Kakao"));
+        assert_eq!(
+            chapter_source_label(Some("auto:mangaplus")),
+            Some("MangaPlus")
+        );
+        assert_eq!(chapter_source_label(Some("auto:syosetu")), Some("Syosetu"));
+        assert_eq!(
+            chapter_source_label(Some("auto:mangaupdates")),
+            Some("MangaUpdates")
+        );
+        assert_eq!(chapter_source_label(Some("auto:future")), Some("авто"));
     }
 }

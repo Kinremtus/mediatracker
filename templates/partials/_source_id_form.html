@@ -1,0 +1,26 @@
+{# Source-id bindings + inline bind/unbind form. Context: SourceIdForm
+   (src/routes/media.rs). Rendered both inside the drawer and by the two POST
+   handlers (HTMX outerHTML swap into #source-id-panel). #}
+<div class="source-id-panel" id="source-id-panel">
+    {% for b in bindings %}
+    <div class="source-id-row">
+        <span class="drawer-meta-badge">{{ b.source }}: {{ b.source_id }}</span>
+        <button type="button" class="source-id-unbind" title="Отвязать источник"
+                hx-post="/api/manga/{{ provider }}/{{ external_id }}/source-id/delete"
+                hx-vals='{"source":"{{ b.source }}"}'
+                hx-target="#source-id-panel"
+                hx-swap="outerHTML">Отвязать</button>
+    </div>
+    {% endfor %}
+    <form class="source-id-form"
+          hx-post="/api/manga/{{ provider }}/{{ external_id }}/source-id"
+          hx-target="#source-id-panel"
+          hx-swap="outerHTML">
+        <select name="source" aria-label="Источник">
+            {% for s in sources %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+        </select>
+        <input type="text" name="source_id" placeholder="source id" required
+               autocomplete="off">
+        <button type="submit">Привязать</button>
+    </form>
+</div>
