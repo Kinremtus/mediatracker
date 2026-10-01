@@ -1,6 +1,7 @@
 //! Kakao Page (KR webtoons) chapter-count source.
 //! Verified: GET bff-page.kakao.com/api/gateway/api/v2/content/product/list
-//!   ?series_id=<id> -> {"total_count":157,...}; works from a datacenter IP, no token.
+//!   ?series_id=<id> -> {"result":{"total_count":157,
+//!   "series_item":{"on_sale_count":157}},...}; works from a datacenter IP, no token.
 
 use super::{ChapterCount, ChapterCountFuture, ChapterCountProvider};
 
@@ -25,9 +26,34 @@ impl Default for KakaoProvider {
 }
 
 #[derive(serde::Deserialize)]
-struct KakaoList {
+struct KakaoResponse {
+    #[serde(default)]
+    result: Option<KakaoResult>,
+}
+
+#[derive(serde::Deserialize)]
+struct KakaoResult {
     #[serde(default)]
     total_count: Option<i64>,
+    #[serde(default)]
+    series_item: Option<KakaoSeriesItem>,
+}
+
+#[derive(serde::Deserialize)]
+struct KakaoSeriesItem {
+    #[serde(default)]
+    on_sale_count: Option<i64>,
+}
+
+/// Chapter count of a series: `result.series_item.on_sale_count` (episodes on
+/// sale) with a fallback to `result.total_count` (products in the list).
+fn chapter_total(resp: &KakaoResponse) -> Option<i64> {
+    let result = resp.result.as_ref()?;
+    result
+        .series_item
+        .as_ref()
+        .and_then(|s| s.on_sale_count)
+        .or(result.total_count)
 }
 
 impl ChapterCountProvider for KakaoProvider {
@@ -51,9 +77,9 @@ impl ChapterCountProvider for KakaoProvider {
                 .send()
                 .await?
                 .error_for_status()?
-                .json::<KakaoList>()
+                .json::<KakaoResponse>()
                 .await?;
-            Ok(resp.total_count.and_then(|n| {
+            Ok(chapter_total(&resp).and_then(|n| {
                 i32::try_from(n)
                     .ok()
                     .filter(|v| *v > 0)
@@ -72,13 +98,27 @@ impl ChapterCountProvider for KakaoProvider {
 
 #[cfg(test)]
 mod tests {
-    use super::KakaoList;
+    use super::{chapter_total, KakaoResponse};
+
+    fn parse(raw: &str) -> Option<i64> {
+        chapter_total(&serde_json::from_str::<KakaoResponse>(raw).unwrap())
+    }
 
     #[test]
-    fn parses_total_count_and_tolerates_missing() {
-        let j: KakaoList = serde_json::from_str(r#"{"total_count":157}"#).unwrap();
-        assert_eq!(j.total_count, Some(157));
-        let j: KakaoList = serde_json::from_str(r#"{"items":[]}"#).unwrap();
-        assert_eq!(j.total_count, None);
+    fn parses_nested_on_sale_count() {
+        let raw = r#"{"result":{"total_count":157,"series_item":{"on_sale_count":157}},"result_code":0}"#;
+        assert_eq!(parse(raw), Some(157));
+    }
+
+    #[test]
+    fn falls_back_to_result_total_count() {
+        let raw = r#"{"result":{"total_count":42}}"#;
+        assert_eq!(parse(raw), Some(42));
+    }
+
+    #[test]
+    fn tolerates_missing_fields() {
+        assert_eq!(parse(r#"{"result":{}}"#), None);
+        assert_eq!(parse(r#"{}"#), None);
     }
 }
