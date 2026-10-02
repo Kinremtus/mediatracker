@@ -619,19 +619,25 @@ pub async fn post_add_to_tracking(
 
     match state.tracking.add_to_list(user.id, &media, status).await {
         Ok(_) => {
-            // Official-source auto-verification: if a binding already exists for
-            // the source matching this media type, enrich the chapter counter
-            // right after the add (bounded, non-fatal — never fails the add).
-            if let Some(source) =
-                crate::services::official_resolve::official_source_for_media_type(&media.media_type)
-                && let Ok(Some(_)) = crate::services::source_ids::get_source_id(
+            // Enrich when ANY official source for this media type is already
+            // bound (bounded, non-fatal - never fails the add).
+            let sources =
+                crate::services::official_resolve::official_source_for_media_type(&media.media_type);
+            let mut has_binding = false;
+            for &source in sources {
+                if let Ok(Some(_)) = crate::services::source_ids::get_source_id(
                     &state.db,
                     &media.provider,
                     &media.external_id,
                     source,
                 )
                 .await
-            {
+                {
+                    has_binding = true;
+                    break;
+                }
+            }
+            if has_binding {
                 let _ = tokio::time::timeout(
                     std::time::Duration::from_secs(5),
                     crate::services::chapter_enrich::enrich_chapter_count(
