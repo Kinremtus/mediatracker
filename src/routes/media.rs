@@ -118,6 +118,11 @@ pub struct ChaptersQuery {
     /// `?all=true` returns the full list instead of the latest window.
     #[serde(default)]
     all: Option<bool>,
+    /// Slug passed by the drawer (`?media_type=...`) so the lazy chapter loader
+    /// can run official-source verification without a second lookup when the
+    /// media_items row has no value.
+    #[serde(default)]
+    media_type: Option<String>,
 }
 
 /// Why a card is rendering from stored data (or not).
@@ -887,6 +892,88 @@ pub async fn get_chapters(
         }
     };
 
+    // Official-source auto-verification. Hard one-request budget: resolve on the
+    // first drawer open only, never when a binding already exists
+    // (`resolve_and_bind` short-circuits before any network I/O), and never with
+    // retries. The MU `get_details` call is fetched at most once here and reused
+    // by the skeleton build below.
+    let local: Option<(String, String, Vec<String>)> = sqlx::query_as(
+        "SELECT media_type, title, associated_titles FROM media_items \
+         WHERE provider = $1 AND external_id = $2",
+    )
+    .bind(&mu_provider)
+    .bind(&mu_id)
+    .fetch_optional(&state.db)
+    .await
+    .unwrap_or_else(|e| {
+        tracing::warn!(provider = %mu_provider, external_id = %mu_id, error = %e, "media: local row lookup failed");
+        None
+    });
+
+    let media_type = query
+        .media_type
+        .clone()
+        .or_else(|| local.as_ref().map(|(mt, _, _)| mt.clone()))
+        .unwrap_or_default();
+
+    let mut details: Option<CreateMediaItem> = None;
+    if is_chapter_type(&media_type)
+        && crate::services::official_resolve::official_source_for_media_type(&media_type).is_some()
+    {
+        // Candidates come from the local row (title + associated_titles). When
+        // there is no local row, fetch MangaUpdates details once and share it
+        // with the skeleton build below instead of querying twice.
+        let has_local_title = matches!(&local, Some((_, title, _)) if !title.is_empty());
+        if !has_local_title {
+            details = crate::services::external::mangaupdates::MangaUpdatesService::new()
+                .get_details(&mu_id)
+                .await
+                .ok();
+        }
+
+        let (title, candidates): (String, Vec<String>) = match &local {
+            Some((_, title, alt)) if !title.is_empty() => (title.clone(), alt.clone()),
+            _ => match &details {
+                Some(d) => (d.title.clone(), d.associated_titles.clone()),
+                None => (String::new(), Vec::new()),
+            },
+        };
+
+        if !title.is_empty() {
+            // `resolve_and_bind` returns Some for a freshly resolved binding and
+            // for one that already existed, so this single check covers both.
+            let resolved = crate::services::official_resolve::resolve_and_bind(
+                &state.db,
+                &crate::services::official_resolve::HttpOfficialSearch::new(),
+                &mu_provider,
+                &mu_id,
+                &media_type,
+                &title,
+                &candidates,
+            )
+            .await;
+
+            if resolved.is_some() {
+                // Inline enrich so this HTMX response already carries the fresh
+                // count. `enrich_chapter_count` is raise-only and honours
+                // `chapters_manual`; every failure is a silent no-op.
+                let _ = crate::services::chapter_enrich::enrich_chapter_count(
+                    &state.db,
+                    &mu_provider,
+                    &mu_id,
+                    &media_type,
+                )
+                .await;
+            }
+        } else {
+            tracing::debug!(
+                provider = %mu_provider,
+                external_id = %mu_id,
+                "media: no candidate title for official resolve"
+            );
+        }
+    }
+
     // Try DB first.
     let existing =
         crate::services::chapters::get_chapters(&state.db, &mu_provider, &mu_id, user.id)
@@ -900,11 +987,14 @@ pub async fn get_chapters(
     if existing.is_empty()
         && let Ok(series_id_num) = mu_id.parse::<i64>()
     {
-        let details = crate::services::external::mangaupdates::MangaUpdatesService::new()
-            .get_details(&mu_id)
-            .await;
+        if details.is_none() {
+            details = crate::services::external::mangaupdates::MangaUpdatesService::new()
+                .get_details(&mu_id)
+                .await
+                .ok();
+        }
 
-        if let Ok(details) = details {
+        if let Some(details) = &details {
             let lc = details.chapters.unwrap_or(0);
             if lc > 0
                 && let Err(e) =
