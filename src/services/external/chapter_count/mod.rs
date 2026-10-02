@@ -11,6 +11,7 @@ pub mod kakao;
 pub mod kuaikan;
 pub mod mangaplus;
 pub mod mh5;
+pub mod naver;
 pub mod syosetu;
 
 use std::future::Future;
@@ -89,6 +90,7 @@ use std::sync::Arc;
 pub fn providers_for(media_type: &str) -> Vec<Arc<dyn ChapterCountProvider>> {
     let all: Vec<Arc<dyn ChapterCountProvider>> = vec![
         Arc::new(kakao::KakaoProvider::new()),
+        Arc::new(naver::NaverProvider::new()),
         Arc::new(mangaplus::MangaPlusProvider::new()),
         Arc::new(syosetu::SyosetuProvider::new()),
         Arc::new(kuaikan::KuaikanProvider::new()),
@@ -107,6 +109,13 @@ mod registry_tests {
     fn providers_for_filters_by_media_type() {
         let manhwa = providers_for("manhwa");
         assert!(manhwa.iter().any(|p| p.name() == "kakao"));
+        assert!(manhwa.iter().any(|p| p.name() == "naver"));
+        let names: Vec<&str> = manhwa.iter().map(|p| p.name()).collect();
+        assert!(
+            names.iter().position(|n| *n == "kakao")
+                < names.iter().position(|n| *n == "naver"),
+            "kakao must be tried before naver"
+        );
         assert!(!manhwa.iter().any(|p| p.name() == "syosetu"));
         assert!(providers_for("novel").iter().any(|p| p.name() == "syosetu"));
         assert!(
