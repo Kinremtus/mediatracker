@@ -10,6 +10,7 @@
 
 mod common;
 
+use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -27,18 +28,44 @@ use mediatracker::services::source_ids::{get_source_id, set_source_id};
 const SERIES_ID: i64 = 999_999_993; // distinct from source_id_mapping (…992)
 const KAKAO_ID: &str = "64096846"; // real Kakao series id for Yongsa Party
 
-/// Fixture-backed searcher: returns canned hits and records every call.
+/// Fixture-backed searcher: canned hits per source, optional forced errors, and
+/// a recorder of every `(source, query)` call.
 struct FixtureSearch {
-    hits: Vec<OfficialHit>,
+    hits_for: HashMap<String, Vec<OfficialHit>>,
+    fail_sources: HashSet<String>,
     calls: Arc<Mutex<Vec<(String, String)>>>,
 }
 
 impl FixtureSearch {
+    /// Same hits for every source (default for the single-source tests).
     fn new(hits: Vec<OfficialHit>) -> Self {
+        let mut hits_for = HashMap::new();
+        for src in ["kakao", "naver", "kuaikan", "mangaplus"] {
+            hits_for.insert(src.to_string(), hits.clone());
+        }
         Self {
-            hits,
+            hits_for,
+            fail_sources: HashSet::new(),
             calls: Arc::new(Mutex::new(Vec::new())),
         }
+    }
+
+    /// Explicit per-source hits (empty vector = "no match from this source").
+    fn with_sources(pairs: &[(&str, Vec<OfficialHit>)]) -> Self {
+        Self {
+            hits_for: pairs
+                .iter()
+                .map(|(s, h)| (s.to_string(), h.clone()))
+                .collect(),
+            fail_sources: HashSet::new(),
+            calls: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    /// Force `search(source, _)` to return `Err`.
+    fn failing(mut self, source: &str) -> Self {
+        self.fail_sources.insert(source.to_string());
+        self
     }
 
     /// Shared handle to the recorded `(source, query)` calls.
@@ -54,11 +81,15 @@ impl OfficialSearch for FixtureSearch {
         query: &'a str,
     ) -> Pin<Box<dyn Future<Output = anyhow::Result<Vec<OfficialHit>>> + Send + 'a>> {
         let calls = self.calls.clone();
-        let hits = self.hits.clone();
-        let source = source.to_string();
-        let query = query.to_string();
+        let source_owned = source.to_string();
+        let query_owned = query.to_string();
+        let hits = self.hits_for.get(source).cloned().unwrap_or_default();
+        let fail = self.fail_sources.contains(source);
         Box::pin(async move {
-            calls.lock().unwrap().push((source, query));
+            calls.lock().unwrap().push((source_owned, query_owned));
+            if fail {
+                anyhow::bail!("fixture: forced search failure");
+            }
             Ok(hits)
         })
     }
@@ -403,12 +434,164 @@ async fn raise_only_keeps_higher_count() {
 
 #[test]
 fn mapping_table() {
-    assert_eq!(official_source_for_media_type("manhua"), Some("kuaikan"));
-    assert_eq!(official_source_for_media_type("manhwa"), Some("kakao"));
-    assert_eq!(official_source_for_media_type("manga"), Some("mangaplus"));
-    assert_eq!(official_source_for_media_type("novel"), None);
-    assert_eq!(official_source_for_media_type("comic"), None);
-    assert_eq!(official_source_for_media_type("other-comics"), None);
-    assert_eq!(official_source_for_media_type("anime"), None);
-    assert_eq!(official_source_for_media_type(""), None);
+    assert_eq!(official_source_for_media_type("manhua"), &["kuaikan"][..]);
+    assert_eq!(official_source_for_media_type("manhwa"), &["kakao", "naver"][..]);
+    assert_eq!(official_source_for_media_type("manga"), &["mangaplus"][..]);
+    assert!(official_source_for_media_type("novel").is_empty());
+    assert!(official_source_for_media_type("comic").is_empty());
+    assert!(official_source_for_media_type("other-comics").is_empty());
+    assert!(official_source_for_media_type("anime").is_empty());
+    assert!(official_source_for_media_type("").is_empty());
+}
+
+#[tokio::test]
+async fn manhwa_falls_back_to_naver() {
+    let ctx = setup().await;
+    let series = SERIES_ID.to_string();
+    let search = FixtureSearch::with_sources(&[
+        ("kakao", vec![]),
+        ("naver", vec![hit("10319749", "왕의 힘으로 회귀한다")]),
+    ]);
+    let calls = search.calls();
+
+    let outcome = resolve_and_bind(
+        &ctx.pool,
+        &search,
+        "mangaupdates",
+        &series,
+        "manhwa",
+        "왕의 힘으로 회귀한다",
+        &[],
+    )
+    .await;
+
+    assert_eq!(
+        outcome,
+        Some(ResolveOutcome {
+            source: "naver".to_string(),
+            source_id: "10319749".to_string(),
+        })
+    );
+    assert_eq!(
+        get_source_id(&ctx.pool, "mangaupdates", &series, "naver")
+            .await
+            .unwrap(),
+        Some("10319749".to_string())
+    );
+    assert_eq!(
+        get_source_id(&ctx.pool, "mangaupdates", &series, "kakao")
+            .await
+            .unwrap(),
+        None,
+        "kakao returned no hit, so it must not be bound"
+    );
+
+    let calls = calls.lock().unwrap();
+    assert_eq!(calls.len(), 2, "kakao first, then naver");
+    assert_eq!(calls[0].0, "kakao");
+    assert_eq!(calls[1].0, "naver");
+}
+
+#[tokio::test]
+async fn kakao_error_falls_through_to_naver() {
+    let ctx = setup().await;
+    let series = SERIES_ID.to_string();
+    let search = FixtureSearch::with_sources(&[
+        ("kakao", vec![]),
+        ("naver", vec![hit("10319749", "왕의 힘으로 회귀한다")]),
+    ])
+    .failing("kakao");
+    let calls = search.calls();
+
+    let outcome = resolve_and_bind(
+        &ctx.pool,
+        &search,
+        "mangaupdates",
+        &series,
+        "manhwa",
+        "왕의 힘으로 회귀한다",
+        &[],
+    )
+    .await;
+
+    assert_eq!(
+        outcome,
+        Some(ResolveOutcome {
+            source: "naver".to_string(),
+            source_id: "10319749".to_string(),
+        })
+    );
+    let calls = calls.lock().unwrap();
+    assert_eq!(calls.len(), 2, "a failed kakao must not block naver");
+    assert_eq!(calls[1].0, "naver");
+}
+
+#[tokio::test]
+async fn existing_naver_binding_short_circuits() {
+    let ctx = setup().await;
+    let series = SERIES_ID.to_string();
+
+    set_source_id(&ctx.pool, "mangaupdates", &series, "naver", "10319749")
+        .await
+        .expect("pre-bind naver");
+
+    let search = FixtureSearch::with_sources(&[(
+        "naver",
+        vec![hit("10319749", "왕의 힘으로 회귀한다")],
+    )]);
+    let calls = search.calls();
+
+    let outcome = resolve_and_bind(
+        &ctx.pool,
+        &search,
+        "mangaupdates",
+        &series,
+        "manhwa",
+        "왕의 힘으로 회귀한다",
+        &[],
+    )
+    .await;
+
+    assert_eq!(
+        outcome,
+        Some(ResolveOutcome {
+            source: "naver".to_string(),
+            source_id: "10319749".to_string(),
+        })
+    );
+    assert!(
+        calls.lock().unwrap().is_empty(),
+        "an existing binding for any source must skip ALL network I/O"
+    );
+}
+
+#[tokio::test]
+async fn no_match_anywhere_binds_nothing() {
+    let ctx = setup().await;
+    let series = SERIES_ID.to_string();
+    let search = FixtureSearch::with_sources(&[
+        ("kakao", vec![]),
+        ("naver", vec![]),
+    ]);
+    let calls = search.calls();
+
+    let outcome = resolve_and_bind(
+        &ctx.pool,
+        &search,
+        "mangaupdates",
+        &series,
+        "manhwa",
+        "존재하지 않는 제목",
+        &[],
+    )
+    .await;
+
+    assert_eq!(outcome, None);
+    assert_eq!(calls.lock().unwrap().len(), 2, "both sources were tried once");
+    assert_eq!(
+        get_source_id(&ctx.pool, "mangaupdates", &series, "naver")
+            .await
+            .unwrap(),
+        None
+    );
 }
