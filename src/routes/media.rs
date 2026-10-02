@@ -918,7 +918,7 @@ pub async fn get_chapters(
 
     let mut details: Option<CreateMediaItem> = None;
     if is_chapter_type(&media_type)
-        && crate::services::official_resolve::official_source_for_media_type(&media_type).is_some()
+        && !crate::services::official_resolve::official_source_for_media_type(&media_type).is_empty()
     {
         // Candidates come from the local row (title + associated_titles). When
         // there is no local row, fetch MangaUpdates details once and share it
