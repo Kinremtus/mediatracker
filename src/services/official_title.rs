@@ -78,6 +78,7 @@ pub fn pick_candidate<'a>(candidates: &'a [String], source: &str) -> Option<&'a 
         let script = detect_script(candidate);
         let fits = match source.as_str() {
             "kakao" => script == Script::Hangul,
+            "naver" => script == Script::Hangul,
             "kuaikan" => script == Script::Han,
             "mangaplus" => matches!(script, Script::Latin | Script::Other),
             _ => false,
@@ -145,6 +146,13 @@ mod tests {
     fn pick_kakao_prefers_hangul() {
         let candidates = ["One Piece".to_string(), "원피스".to_string()];
         assert_eq!(pick_candidate(&candidates, "kakao"), Some("원피스"));
+    }
+
+    #[test]
+    fn pick_naver_requires_hangul() {
+        let candidates = ["One Piece".to_string(), "원피스".to_string()];
+        assert_eq!(pick_candidate(&candidates, "naver"), Some("원피스"));
+        assert_eq!(pick_candidate(&["One Piece".to_string()], "naver"), None);
     }
 
     #[test]
