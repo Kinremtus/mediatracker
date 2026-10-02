@@ -619,6 +619,31 @@ pub async fn post_add_to_tracking(
 
     match state.tracking.add_to_list(user.id, &media, status).await {
         Ok(_) => {
+            // Official-source auto-verification: if a binding already exists for
+            // the source matching this media type, enrich the chapter counter
+            // right after the add (bounded, non-fatal — never fails the add).
+            if let Some(source) =
+                crate::services::official_resolve::official_source_for_media_type(&media.media_type)
+                && let Ok(Some(_)) = crate::services::source_ids::get_source_id(
+                    &state.db,
+                    &media.provider,
+                    &media.external_id,
+                    source,
+                )
+                .await
+            {
+                let _ = tokio::time::timeout(
+                    std::time::Duration::from_secs(5),
+                    crate::services::chapter_enrich::enrich_chapter_count(
+                        &state.db,
+                        &media.provider,
+                        &media.external_id,
+                        &media.media_type,
+                    ),
+                )
+                .await;
+            }
+
             // For anime, fire-and-forget fetch of the episode list via
             // Jikan v4 so the drawer's "Эпизоды" section has data ready
             // by the time the user opens it. The drawer also falls back
