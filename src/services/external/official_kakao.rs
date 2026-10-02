@@ -40,9 +40,12 @@ pub async fn search(client: &reqwest::Client, title: &str) -> anyhow::Result<Vec
 /// Pure parser, unit-testable without network.
 ///
 /// Reads `result.list[]` where each entry has a `title` (string) and a
-/// `series_id` that may be either a number or a string. Malformed JSON, a
-/// missing `result` branch, or any non-array `list` yields an empty vector -
-/// never a panic. Entries without a title or series_id are skipped.
+/// `series_id` that may be either a number or a string. Only webtoon entries
+/// (`category_uid == 10`) are kept: Kakao returns the same title as both a web
+/// novel (11) and a webtoon (10), and only the latter is a valid manhwa match.
+/// Entries with a missing/non-numeric `category_uid` are skipped too.
+/// Malformed JSON, a missing `result` branch, or any non-array `list` yields an
+/// empty vector - never a panic. Entries without a title or series_id are skipped.
 pub fn parse_search(body: &str) -> Vec<OfficialHit> {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(body) else {
         return Vec::new();
@@ -59,6 +62,11 @@ pub fn parse_search(body: &str) -> Vec<OfficialHit> {
     entries
         .iter()
         .filter_map(|entry| {
+            // Kakao category ids: 10 = 웹툰 (webtoon), 11 = 웹소설 (web novel),
+            // 16 = 책 (book). A missing/non-numeric uid is treated as no match.
+            if entry.get("category_uid").and_then(|uid| uid.as_u64()) != Some(10) {
+                return None;
+            }
             let title = entry.get("title")?.as_str()?.to_string();
             let series_id = entry.get("series_id")?;
             let id = series_id
@@ -96,10 +104,51 @@ mod tests {
 
     #[test]
     fn accepts_string_series_id() {
-        let body = r#"{"result":{"list":[{"series_id":"abc","title":"T"}]}}"#;
+        let body =
+            r#"{"result":{"list":[{"series_id":"abc","title":"T","category_uid":10}]}}"#;
         let hits = parse_search(body);
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].id, "abc");
         assert_eq!(hits[0].title, "T");
+    }
+
+    #[test]
+    fn filters_out_web_novel_listed_first() {
+        // Same title as both a web novel (listed first) and a webtoon.
+        let body = r#"{"result":{"list":[
+            {"series_id":58736258,"title":"용사파티","category_uid":11,"category":"웹소설"},
+            {"series_id":64096846,"title":"용사파티","category_uid":10,"category":"웹툰"}
+        ]}}"#;
+        let hits = parse_search(body);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].id, "64096846");
+        assert_eq!(hits[0].title, "용사파티");
+    }
+
+    #[test]
+    fn skips_entries_without_numeric_category_uid() {
+        let body = r#"{"result":{"list":[
+            {"series_id":"abc","title":"T"},
+            {"series_id":"def","title":"U","category_uid":"10"},
+            {"series_id":"ghi","title":"V","category_uid":10}
+        ]}}"#;
+        let hits = parse_search(body);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].id, "ghi");
+        assert_eq!(hits[0].title, "V");
+    }
+
+    #[test]
+    fn mixed_list_keeps_only_webtoons() {
+        let body = r#"{"result":{"list":[
+            {"series_id":1,"title":"A","category_uid":10},
+            {"series_id":2,"title":"B","category_uid":11},
+            {"series_id":3,"title":"C","category_uid":16},
+            {"series_id":4,"title":"D","category_uid":10}
+        ]}}"#;
+        let hits = parse_search(body);
+        assert_eq!(hits.len(), 2);
+        assert_eq!(hits[0].id, "1");
+        assert_eq!(hits[1].id, "4");
     }
 }
