@@ -9,6 +9,7 @@ pub mod email;
 pub mod episodes;
 pub mod external;
 pub mod notifications;
+pub mod official_resolve;
 pub mod official_title;
 pub mod official_types;
 pub mod protobuf_wire;
