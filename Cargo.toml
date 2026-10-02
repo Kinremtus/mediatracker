@@ -29,6 +29,7 @@ url = "2"
 regex = "1"
 urlencoding = "2"
 clap = { version = "4", features = ["derive"] }
+unicode-normalization = "0.1"
 
 # Metrics
 metrics = "0.23"
