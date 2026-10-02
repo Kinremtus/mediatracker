@@ -8,6 +8,7 @@
 //! `services::search` (boxed `Pin<Future>`), already used in this codebase.
 
 pub mod kakao;
+pub mod kuaikan;
 pub mod mangaplus;
 pub mod mh5;
 pub mod syosetu;
@@ -90,6 +91,7 @@ pub fn providers_for(media_type: &str) -> Vec<Arc<dyn ChapterCountProvider>> {
         Arc::new(kakao::KakaoProvider::new()),
         Arc::new(mangaplus::MangaPlusProvider::new()),
         Arc::new(syosetu::SyosetuProvider::new()),
+        Arc::new(kuaikan::KuaikanProvider::new()),
         Arc::new(mh5::Mh5Provider::new()),
     ];
     all.into_iter()
@@ -111,6 +113,11 @@ mod registry_tests {
             providers_for("manga")
                 .iter()
                 .any(|p| p.name() == "mangaplus")
+        );
+        assert!(
+            providers_for("manhua")
+                .iter()
+                .any(|p| p.name() == "kuaikan")
         );
         assert!(
             providers_for("manhua")

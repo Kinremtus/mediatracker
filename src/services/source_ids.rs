@@ -9,7 +9,7 @@ use sqlx::PgPool;
 
 /// Whitelist of id-bindable original-language sources. Adding a source here is
 /// enough for the UI + validation; the DB column is free-form TEXT.
-pub const KNOWN_SOURCES: &[&str] = &["kakao", "mangaplus", "syosetu", "mh5"];
+pub const KNOWN_SOURCES: &[&str] = &["kakao", "kuaikan", "mangaplus", "syosetu", "mh5"];
 
 /// True when `source` is a whitelisted bindable source.
 pub fn is_known_source(source: &str) -> bool {
@@ -111,6 +111,7 @@ mod tests {
     #[test]
     fn known_source_whitelist() {
         assert!(is_known_source("kakao"));
+        assert!(is_known_source("kuaikan"));
         assert!(is_known_source("mangaplus"));
         assert!(is_known_source("syosetu"));
         assert!(is_known_source("mh5"));
