@@ -10,6 +10,7 @@ pub mod mangaupdates;
 pub mod official_kakao;
 pub mod official_kuaikan;
 pub mod official_mangaplus;
+pub mod official_naver;
 pub mod openlibrary;
 pub mod rawg;
 pub mod shikimori;
