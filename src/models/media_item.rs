@@ -299,6 +299,7 @@ pub fn chapter_source_label(source: Option<&str>) -> Option<&'static str> {
         None | Some("") => None,
         Some("manual") => Some("ручной"),
         Some("auto:kakao") => Some("Kakao"),
+        Some("auto:naver") => Some("Naver"),
         Some("auto:mangaplus") => Some("MangaPlus"),
         Some("auto:syosetu") => Some("Syosetu"),
         Some("auto:kuaikan") => Some("Kuaikan"),
@@ -872,6 +873,7 @@ mod tests {
         assert_eq!(chapter_source_label(Some("")), None);
         assert_eq!(chapter_source_label(Some("manual")), Some("ручной"));
         assert_eq!(chapter_source_label(Some("auto:kakao")), Some("Kakao"));
+        assert_eq!(chapter_source_label(Some("auto:naver")), Some("Naver"));
         assert_eq!(
             chapter_source_label(Some("auto:mangaplus")),
             Some("MangaPlus")
