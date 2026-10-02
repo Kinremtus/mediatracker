@@ -197,7 +197,7 @@
 <div class="drawer-section">
     <div class="drawer-section-label">Главы{% if let Some(tc) = total_count %} · {{ tc }}{% endif %}</div>
     <div class="drawer-chapters"
-         hx-get="/api/manga/{{ item.provider }}/{{ item.external_id }}/chapters"
+         hx-get="/api/manga/{{ item.provider }}/{{ item.external_id }}/chapters?media_type={{ item.media_type }}"
          hx-trigger="revealed once"
          hx-swap="innerHTML">
         <div class="drawer-episodes-loading">Загрузка глав…</div>
