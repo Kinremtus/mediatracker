@@ -75,7 +75,7 @@
     <h2>Главы: счётчик и источники</h2>
     <p style="color: var(--text-secondary); margin-bottom: 1rem;">
         Поиск тайтла (до 20), ручной счёт глав, привязка оригинальных источников
-        (kakao/kuaikan/mangaplus/syosetu/mh5) и обогащение по требованию. Привязка сразу запускает обогащение.
+        (kakao/naver/kuaikan/mangaplus/syosetu/mh5) и обогащение по требованию. Привязка сразу запускает обогащение.
     </p>
 
     <form method="GET" action="/admin" class="admin-form">
@@ -148,6 +148,7 @@
                 <input type="hidden" name="q" value="{{ query }}">
                 <select name="source" aria-label="Источник">
                     <option value="kakao">kakao</option>
+                    <option value="naver">naver</option>
                     <option value="kuaikan">kuaikan</option>
                     <option value="mangaplus">mangaplus</option>
                     <option value="syosetu">syosetu</option>
