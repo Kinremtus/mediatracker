@@ -514,8 +514,10 @@ fn drawer_content_lists_below_description() {
             "{DRAWER_CONTENT_HTML}: description section (`drawer-description-details`) not found"
         )
     });
-    let chapters_pos = src.find("/chapters\"").unwrap_or_else(|| {
-        panic!("{DRAWER_CONTENT_HTML}: chapters content-list endpoint (`/chapters\"`) not found")
+    let chapters_pos = src.find("/chapters?media_type=").unwrap_or_else(|| {
+        panic!(
+            "{DRAWER_CONTENT_HTML}: chapters content-list endpoint (`/chapters?media_type=`) not found"
+        )
     });
     assert!(
         chapters_pos > description_pos,
