@@ -9,6 +9,12 @@
 //! Search is wrapped in a module-local 7-day cache + throttle (Decision #8):
 //! `code 503` sets a 1.5 h cooldown and negative-caches the query, ≤4 live
 //! calls per rolling hour; locks are never held across `.await`.
+//!
+//! Optional account mode: `BILIBILI_COOKIE` replaces the guest `buvid3=infoc`
+//! Cookie header (guest quota does not apply to an account). If an account
+//! search still comes back `code 503` (stale cookie / exhausted quota), one
+//! guest retry is made and its outcome is absorbed as usual. The cookie value
+//! is never logged.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Mutex, OnceLock};
@@ -25,6 +31,10 @@ const SEARCH_URL: &str = "https://manga.bilibili.com/twirp/comic.v1.Comic/Search
 const CACHE_TTL: Duration = Duration::from_secs(7 * 24 * 3600);
 const COOLDOWN: Duration = Duration::from_secs(90 * 60);
 const MAX_CALLS_PER_HOUR: usize = 4;
+
+/// Guest Cookie header (required by search, value ignored). Used whenever
+/// `BILIBILI_COOKIE` is unset, and for the single account->guest retry.
+const GUEST_COOKIE: &str = "buvid3=infoc";
 
 /// GET `https://manga.bilibili.com/m/detail/mc<id>` and parse the SSR page.
 pub async fn fetch_meta(client: &reqwest::Client, comic_id: &str) -> anyhow::Result<OfficialMeta> {
@@ -180,6 +190,29 @@ fn classify(body: &str) -> SearchOutcome {
     SearchOutcome::Hits(parse_search(body))
 }
 
+/// Cookie header for one search call: the account cookie verbatim when
+/// configured, otherwise the guest placeholder. Pure (no env access).
+fn search_cookie(account: Option<&str>) -> &str {
+    account.unwrap_or(GUEST_COOKIE)
+}
+
+/// Thin wrapper over `BILIBILI_COOKIE`: a set, non-blank (after trim) value
+/// enables account mode. The value itself must NEVER be logged.
+fn account_cookie_env() -> Option<String> {
+    let Ok(raw) = std::env::var("BILIBILI_COOKIE") else {
+        return None;
+    };
+    let trimmed = raw.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
+}
+
+/// Auto-fallback rule (Decision #8): retry as guest exactly once when the
+/// *account* attempt came back quota-limited. Guest mode never retries.
+/// Pure, so tests need no env mutation.
+fn retry_as_guest(account_mode: bool, outcome: &SearchOutcome) -> bool {
+    account_mode && matches!(outcome, SearchOutcome::Limited)
+}
+
 /// Fold one response into throttle + cache. Sync on purpose: testable without
 /// a network, and both locks stay scoped (never held across `.await`).
 fn absorb(
@@ -241,6 +274,31 @@ fn throttle_cell() -> &'static Mutex<ThrottleState> {
     CELL.get_or_init(|| Mutex::new(ThrottleState::default()))
 }
 
+/// One live search POST. The Cookie header is an explicit argument so the
+/// account->guest fallback is just a second call with a different cookie.
+/// No `Origin` header — a wrong one yields 400.
+async fn post_search(
+    client: &reqwest::Client,
+    title: &str,
+    cookie: &str,
+) -> anyhow::Result<String> {
+    let body = client
+        .post(SEARCH_URL)
+        .header(reqwest::header::USER_AGENT, UA)
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .header(reqwest::header::COOKIE, cookie)
+        .body(
+            serde_json::json!({ "key_word": title, "page_num": 1, "page_size": 10 })
+                .to_string(),
+        )
+        .send()
+        .await?
+        .error_for_status()?
+        .text()
+        .await?;
+    Ok(body)
+}
+
 /// Cached + throttled wrapper wired into `HttpOfficialSearch` for `"bilibili"`.
 pub async fn search_cached(
     client: &reqwest::Client,
@@ -266,26 +324,22 @@ pub async fn search_cached(
         }
     }
 
-    // 3) Live call. The response body (not the status) carries `code 503`.
-    let body = client
-        .post(SEARCH_URL)
-        .header(reqwest::header::USER_AGENT, UA)
-        .header(reqwest::header::CONTENT_TYPE, "application/json")
-        // Guest mode: the `buvid3` cookie is required (value ignored). No
-        // `Origin` header — a wrong one yields 400.
-        .header(reqwest::header::COOKIE, "buvid3=infoc")
-        .body(
-            serde_json::json!({ "key_word": title, "page_num": 1, "page_size": 10 })
-                .to_string(),
-        )
-        .send()
-        .await?
-        .error_for_status()?
-        .text()
-        .await?;
+    // 3) Live call. Account mode sends `BILIBILI_COOKIE`, guest mode sends
+    // `buvid3=infoc`. The response body (not the status) carries `code 503`.
+    let account = account_cookie_env();
+    let mut outcome = classify(
+        &post_search(client, title, search_cookie(account.as_deref())).await?,
+    );
+
+    // 3b) Stale account cookie / exhausted quota -> ONE guest retry. Locks are
+    // not held here (no await while held); the guest outcome is absorbed
+    // below exactly like a first-try result.
+    if retry_as_guest(account.is_some(), &outcome) {
+        tracing::warn!("bilibili: search limit with account cookie, falling back to guest");
+        outcome = classify(&post_search(client, title, GUEST_COOKIE).await?);
+    }
 
     // 4) Fold the outcome in; locks stay scoped, no await while held.
-    let outcome = classify(&body);
     let mut cache = cache_cell().lock().expect("search cache poisoned");
     let mut throttle = throttle_cell().lock().expect("throttle poisoned");
     Ok(absorb(&outcome, &key, &mut cache, &mut throttle, now))
@@ -394,6 +448,29 @@ mod tests {
         assert_eq!(hits[0].id, "25506");
         assert_eq!(hits[0].title, "ワンピース");
         assert_eq!(hits[1].id, "25507");
+    }
+
+    #[test]
+    fn cookie_choice_account_vs_guest() {
+        // No env value -> guest placeholder (current behaviour preserved).
+        assert_eq!(search_cookie(None), "buvid3=infoc");
+        assert_eq!(search_cookie(None), GUEST_COOKIE);
+        // Account value is passed through verbatim (no trimming/mangling).
+        let account = "SESSDATA=abc; bili_jct=def; buvid3=real";
+        assert_eq!(search_cookie(Some(account)), account);
+    }
+
+    #[test]
+    fn guest_retry_only_for_account_limit() {
+        let limited = SearchOutcome::Limited;
+        let hits = SearchOutcome::Hits(Vec::new());
+        // Account + quota exhausted -> exactly one guest retry.
+        assert!(retry_as_guest(true, &limited));
+        // Guest mode never retries, even on 503 (cooldown absorbs it).
+        assert!(!retry_as_guest(false, &limited));
+        // Successful account responses never retry.
+        assert!(!retry_as_guest(true, &hits));
+        assert!(!retry_as_guest(false, &hits));
     }
 
     #[test]
