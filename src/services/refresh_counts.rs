@@ -232,6 +232,12 @@ async fn refresh_group(db: &PgPool, items: Vec<MediaItemRow>, provider: Provider
                             &media_type,
                         )
                         .await;
+                        let _ = crate::services::chapter_meta_enrich::enrich_official_meta_for_key(
+                            &db,
+                            &item.provider,
+                            &ext_id,
+                        )
+                        .await;
                     }
                 }
                 Err(e) => {

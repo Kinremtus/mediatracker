@@ -736,13 +736,20 @@ pub async fn post_chapter_refresh(
 
     let applied = match media_type_of(&state.db, &form.provider, &form.external_id).await {
         Some(mt) => {
-            crate::services::chapter_enrich::enrich_chapter_count(
+            let applied = crate::services::chapter_enrich::enrich_chapter_count(
                 &state.db,
                 &form.provider,
                 &form.external_id,
                 &mt,
             )
-            .await
+            .await;
+            let _ = crate::services::chapter_meta_enrich::enrich_official_meta_for_key(
+                &state.db,
+                &form.provider,
+                &form.external_id,
+            )
+            .await;
+            applied
         }
         None => None,
     };
