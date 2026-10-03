@@ -9,7 +9,23 @@ use sqlx::PgPool;
 
 /// Whitelist of id-bindable original-language sources. Adding a source here is
 /// enough for the UI + validation; the DB column is free-form TEXT.
-pub const KNOWN_SOURCES: &[&str] = &["kakao", "naver", "kuaikan", "mangaplus", "syosetu", "mh5"];
+pub const KNOWN_SOURCES: &[&str] = &[
+    "kakao",
+    "naver",
+    "kuaikan",
+    "mangaplus",
+    "syosetu",
+    "mh5",
+    // 2026-10 official expansion
+    "comicwalker",
+    "kakuyomu",
+    "alphapolis",
+    "bilibili",
+    "daum",
+    "qidian",
+    "ridibooks",
+    "mangaup",
+];
 
 /// True when `source` is a whitelisted bindable source.
 pub fn is_known_source(source: &str) -> bool {
@@ -106,7 +122,7 @@ pub async fn delete_source_id(
 
 #[cfg(test)]
 mod tests {
-    use super::is_known_source;
+    use super::{KNOWN_SOURCES, is_known_source};
 
     #[test]
     fn known_source_whitelist() {
@@ -118,5 +134,27 @@ mod tests {
         assert!(is_known_source("mh5"));
         assert!(!is_known_source("mangaupdates"));
         assert!(!is_known_source(""));
+    }
+
+    #[test]
+    fn known_source_whitelist_expansion() {
+        for source in [
+            "comicwalker",
+            "kakuyomu",
+            "alphapolis",
+            "bilibili",
+            "daum",
+            "qidian",
+            "ridibooks",
+            "mangaup",
+        ] {
+            assert!(is_known_source(source), "{source} must be known");
+            assert!(
+                KNOWN_SOURCES.contains(&source),
+                "{source} must be in KNOWN_SOURCES"
+            );
+        }
+        // Narō reuses `syosetu`, so `narou` must NOT be bindable.
+        assert!(!is_known_source("narou"));
     }
 }

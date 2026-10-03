@@ -277,7 +277,7 @@ async fn existing_binding_skips_network() {
 }
 
 #[tokio::test]
-async fn novel_is_skipped() {
+async fn unsupported_media_type_is_skipped() {
     let ctx = setup().await;
     let series = SERIES_ID.to_string();
     let search = FixtureSearch::new(vec![hit(KAKAO_ID, "용사파티")]);
@@ -288,7 +288,7 @@ async fn novel_is_skipped() {
         &search,
         "mangaupdates",
         &series,
-        "novel",
+        "comic",
         "용사파티",
         &[],
     )
@@ -434,10 +434,22 @@ async fn raise_only_keeps_higher_count() {
 
 #[test]
 fn mapping_table() {
-    assert_eq!(official_source_for_media_type("manhua"), &["kuaikan"][..]);
-    assert_eq!(official_source_for_media_type("manhwa"), &["kakao", "naver"][..]);
-    assert_eq!(official_source_for_media_type("manga"), &["mangaplus"][..]);
-    assert!(official_source_for_media_type("novel").is_empty());
+    assert_eq!(
+        official_source_for_media_type("manhua"),
+        &["kuaikan", "bilibili"][..]
+    );
+    assert_eq!(
+        official_source_for_media_type("manhwa"),
+        &["kakao", "naver", "daum", "ridibooks"][..]
+    );
+    assert_eq!(
+        official_source_for_media_type("manga"),
+        &["mangaplus", "comicwalker", "mangaup", "alphapolis"][..]
+    );
+    assert_eq!(
+        official_source_for_media_type("novel"),
+        &["syosetu", "kakuyomu", "qidian", "ridibooks", "alphapolis"][..]
+    );
     assert!(official_source_for_media_type("comic").is_empty());
     assert!(official_source_for_media_type("other-comics").is_empty());
     assert!(official_source_for_media_type("anime").is_empty());
@@ -587,7 +599,11 @@ async fn no_match_anywhere_binds_nothing() {
     .await;
 
     assert_eq!(outcome, None);
-    assert_eq!(calls.lock().unwrap().len(), 2, "both sources were tried once");
+    assert_eq!(
+        calls.lock().unwrap().len(),
+        4,
+        "all four manhwa sources were tried once"
+    );
     assert_eq!(
         get_source_id(&ctx.pool, "mangaupdates", &series, "naver")
             .await

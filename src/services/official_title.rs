@@ -81,6 +81,16 @@ pub fn pick_candidate<'a>(candidates: &'a [String], source: &str) -> Option<&'a 
             "naver" => script == Script::Hangul,
             "kuaikan" => script == Script::Han,
             "mangaplus" => matches!(script, Script::Latin | Script::Other),
+            // JP sources accept Latin | Other (kana -> Other, so JP titles fit).
+            "comicwalker" | "mangaup" | "alphapolis" => {
+                matches!(script, Script::Latin | Script::Other)
+            }
+            "kakuyomu" => matches!(script, Script::Latin | Script::Other),
+            // CN sources are Han-only.
+            "bilibili" | "qidian" => script == Script::Han,
+            // KR sources.
+            "daum" => script == Script::Hangul,
+            "ridibooks" => matches!(script, Script::Hangul | Script::Latin | Script::Other),
             _ => false,
         };
         fits.then_some(candidate.as_str())
@@ -165,6 +175,51 @@ mod tests {
     fn pick_mangaplus_returns_latin() {
         let candidates = ["One Piece".to_string(), "원피스".to_string()];
         assert_eq!(pick_candidate(&candidates, "mangaplus"), Some("One Piece"));
+    }
+
+    #[test]
+    fn pick_bilibili_requires_han() {
+        let candidates = [
+            "One Piece".to_string(),
+            "我的英雄学院".to_string(),
+            "원피스".to_string(),
+        ];
+        assert_eq!(
+            pick_candidate(&candidates, "bilibili"),
+            Some("我的英雄学院")
+        );
+        assert_eq!(pick_candidate(&["One Piece".to_string()], "bilibili"), None);
+    }
+
+    #[test]
+    fn pick_daum_requires_hangul() {
+        let candidates = ["One Piece".to_string(), "원피스".to_string()];
+        assert_eq!(pick_candidate(&candidates, "daum"), Some("원피스"));
+        assert_eq!(pick_candidate(&["One Piece".to_string()], "daum"), None);
+    }
+
+    #[test]
+    fn pick_comicwalker_accepts_latin() {
+        let candidates = ["One Piece".to_string(), "원피스".to_string()];
+        assert_eq!(pick_candidate(&candidates, "comicwalker"), Some("One Piece"));
+    }
+
+    #[test]
+    fn pick_kakuyomu_accepts_latin_and_other() {
+        let latin = ["One Piece".to_string()];
+        assert_eq!(pick_candidate(&latin, "kakuyomu"), Some("One Piece"));
+        let jp = ["鬼滅の刃".to_string()];
+        assert_eq!(pick_candidate(&jp, "kakuyomu"), Some("鬼滅の刃"));
+    }
+
+    #[test]
+    fn pick_ridibooks_accepts_hangul_latin_other() {
+        let hangul = ["원피스".to_string()];
+        assert_eq!(pick_candidate(&hangul, "ridibooks"), Some("원피스"));
+        let latin = ["One Piece".to_string()];
+        assert_eq!(pick_candidate(&latin, "ridibooks"), Some("One Piece"));
+        let jp = ["鬼滅の刃".to_string()];
+        assert_eq!(pick_candidate(&jp, "ridibooks"), Some("鬼滅の刃"));
     }
 
     #[test]

@@ -179,6 +179,27 @@ fn mangaupdates_is_not_a_bindable_source() {
     assert!(!is_known_source("mangaupdates"));
 }
 
+#[test]
+fn new_official_sources_are_bindable_and_narou_is_not() {
+    for source in [
+        "comicwalker",
+        "kakuyomu",
+        "alphapolis",
+        "bilibili",
+        "daum",
+        "qidian",
+        "ridibooks",
+        "mangaup",
+    ] {
+        assert!(
+            is_known_source(source),
+            "{source} must be a known bindable source"
+        );
+    }
+    // Naro reuses `syosetu`; `narou` itself must never be bindable.
+    assert!(!is_known_source("narou"));
+}
+
 #[tokio::test]
 async fn enrich_extends_skeleton_to_reported_count() {
     let ctx = setup().await;
