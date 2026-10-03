@@ -15,12 +15,18 @@ pub struct ResolveOutcome {
 }
 
 /// Ordered official sources for a media type, highest priority first.
-/// manhua -> [kuaikan], manhwa -> [kakao, naver], manga -> [mangaplus]; else [].
+/// All wired sources are auto-bind; order encodes priority (quota-limited or
+/// expensive sources last). `narou` is intentionally absent: it reuses `syosetu`.
 pub fn official_source_for_media_type(media_type: &str) -> &'static [&'static str] {
     match media_type {
-        "manhua" => &["kuaikan"],
-        "manhwa" => &["kakao", "naver"],
-        "manga" => &["mangaplus"],
+        // kuaikan is existing/cheap -> first; bilibili is quota-limited -> last.
+        "manhua" => &["kuaikan", "bilibili"],
+        // kakao/naver existing; daum is the new bindable source; ridibooks last.
+        "manhwa" => &["kakao", "naver", "daum", "ridibooks"],
+        // mangaplus existing; comicwalker/mangaup new; alphapolis last.
+        "manga" => &["mangaplus", "comicwalker", "mangaup", "alphapolis"],
+        // syosetu existing; kakuyomu new JP; qidian CN; ridibooks/alphapolis last.
+        "novel" => &["syosetu", "kakuyomu", "qidian", "ridibooks", "alphapolis"],
         _ => &[],
     }
 }
@@ -90,9 +96,50 @@ impl OfficialSearch for HttpOfficialSearch {
                     }
                     Ok(hits)
                 }
+                "comicwalker" => {
+                    crate::services::external::official_comicwalker::search(&self.client, query).await
+                }
+                "kakuyomu" => {
+                    crate::services::external::official_kakuyomu::search(&self.client, query).await
+                }
+                "alphapolis" => {
+                    crate::services::external::official_alphapolis::search(&self.client, query).await
+                }
+                // Bilibili has a tiny guest quota: use the cached/cooldown path.
+                "bilibili" => {
+                    crate::services::external::official_bilibili::search_cached(&self.client, query)
+                        .await
+                }
+                "daum" => {
+                    crate::services::external::official_daum::search(&self.client, query).await
+                }
+                "qidian" => {
+                    crate::services::external::official_qidian::search(&self.client, query).await
+                }
+                "ridibooks" => {
+                    crate::services::external::official_ridibooks::search(&self.client, query).await
+                }
+                "mangaup" => {
+                    crate::services::external::official_mangaup::search(&self.client, query).await
+                }
                 _ => Ok(Vec::new()),
             }
         })
+    }
+}
+
+/// Alphapolis search returns both novel and manga hits in one list, tagged by an
+/// id prefix (`novel/...` vs `manga/official/...`). Keep only ids that match the
+/// item's `media_type`; every other source (and unknown media type) is unaffected
+/// where it matters. Pure + total: never panics.
+fn hit_matches_media_type(source: &str, id: &str, media_type: &str) -> bool {
+    if source != "alphapolis" {
+        return true;
+    }
+    match media_type {
+        "novel" => id.starts_with("novel/"),
+        "manga" => id.starts_with("manga/official/"),
+        _ => false,
     }
 }
 
@@ -154,6 +201,7 @@ pub async fn resolve_and_bind(
         };
         let Some(hit) = hits
             .into_iter()
+            .filter(|h| hit_matches_media_type(source, &h.id, media_type))
             .find(|h| all.iter().any(|c| official_title::titles_match(&h.title, c)))
         else {
             continue;
@@ -182,18 +230,57 @@ mod tests {
 
     #[test]
     fn maps_media_types_to_sources() {
-        assert_eq!(official_source_for_media_type("manhua"), &["kuaikan"][..]);
-        assert_eq!(official_source_for_media_type("manhwa"), &["kakao", "naver"][..]);
-        assert_eq!(official_source_for_media_type("manga"), &["mangaplus"][..]);
+        // bilibili is last in `manhua` (guest quota), others by priority.
+        assert_eq!(
+            official_source_for_media_type("manhua"),
+            &["kuaikan", "bilibili"][..]
+        );
+        assert_eq!(
+            official_source_for_media_type("manhwa"),
+            &["kakao", "naver", "daum", "ridibooks"][..]
+        );
+        assert_eq!(
+            official_source_for_media_type("manga"),
+            &["mangaplus", "comicwalker", "mangaup", "alphapolis"][..]
+        );
+        assert_eq!(
+            official_source_for_media_type("novel"),
+            &["syosetu", "kakuyomu", "qidian", "ridibooks", "alphapolis"][..]
+        );
     }
 
     #[test]
     fn rejects_non_official_media_types() {
-        assert!(official_source_for_media_type("novel").is_empty());
         assert!(official_source_for_media_type("comic").is_empty());
         assert!(official_source_for_media_type("other-comics").is_empty());
         assert!(official_source_for_media_type("anime").is_empty());
         assert!(official_source_for_media_type("").is_empty());
+    }
+
+    #[test]
+    fn alphapolis_hits_are_filtered_by_media_type_prefix() {
+        // novel item keeps `novel/...` and drops manga hits.
+        assert!(hit_matches_media_type("alphapolis", "novel/381661058", "novel"));
+        assert!(!hit_matches_media_type(
+            "alphapolis",
+            "manga/official/407000825",
+            "novel"
+        ));
+        // manga item keeps `manga/official/...` and drops novel hits.
+        assert!(hit_matches_media_type(
+            "alphapolis",
+            "manga/official/407000825",
+            "manga"
+        ));
+        assert!(!hit_matches_media_type(
+            "alphapolis",
+            "novel/381661058",
+            "manga"
+        ));
+        // Unknown media type drops everything (never panics).
+        assert!(!hit_matches_media_type("alphapolis", "novel/1", "other"));
+        // Non-alphapolis sources are untouched.
+        assert!(hit_matches_media_type("kuaikan", "12345", "manhua"));
     }
 
     #[test]
