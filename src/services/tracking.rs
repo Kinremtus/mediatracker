@@ -130,6 +130,24 @@ impl TrackingService {
         .await?;
 
         tx.commit().await?;
+
+        // Official-source hook: if a binding already exists (drawer-from-search
+        // flow), enrich right now so the counter/badge is correct on the next
+        // render. Raise-only + silent on error, same as the 6h cycle.
+        let _ = crate::services::chapter_enrich::enrich_chapter_count(
+            &self.db,
+            &media.provider,
+            &media.external_id,
+            &media.media_type,
+        )
+        .await;
+        let _ = crate::services::chapter_meta_enrich::enrich_official_meta_for_key(
+            &self.db,
+            &media.provider,
+            &media.external_id,
+        )
+        .await;
+
         Ok(entry)
     }
 

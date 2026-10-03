@@ -1030,6 +1030,25 @@ pub async fn get_chapters(
         });
     }
 
+    // Official-source titles/dates/schedule (async, non-blocking). Reads the
+    // binding; no binding -> immediate no-op, zero network.
+    {
+        let db = state.db.clone();
+        let prov = mu_provider.to_string();
+        let ext_id = mu_id.to_string();
+        tokio::spawn(async move {
+            if let Err(e) =
+                crate::services::chapter_meta_enrich::enrich_official_meta_for_key(
+                    &db, &prov, &ext_id,
+                )
+                .await
+            {
+                tracing::warn!(provider=%prov, external_id=%ext_id, error=%e,
+                    "official metadata enrichment failed");
+            }
+        });
+    }
+
     let all = query.all.unwrap_or(false);
     let total = chapters.len();
     let (chapters, windowed) = if !all && total > CHAPTER_WINDOW {
