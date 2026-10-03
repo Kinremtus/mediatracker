@@ -9,9 +9,13 @@
 //! All failures are non-fatal: the caller treats an empty result (or an `Err`)
 //! as "no official match".
 
+use crate::services::external::official_meta::{self, ChapterMeta, OfficialMeta};
 use crate::services::official_types::OfficialHit;
 
 pub const NAVER_SEARCH_BASE: &str = "https://series.naver.com/search/search.series";
+
+const NAVER_VOLUME_LIST: &str = "https://series.naver.com/comic/volumeList.series";
+const NAVER_NOTICE_AJAX: &str = "https://m.series.naver.com/comic/moreNotiDetail.series";
 
 /// Browser-like User-Agent; the endpoint rejects obvious bot clients.
 const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
@@ -115,6 +119,127 @@ fn clean_title(inner: &str) -> String {
     }
 }
 
+/// Fetch up to 20 volume pages (30 rows each), stopping at the first empty
+/// page. Chapters are renumbered globally so page 2 continues where page 1
+/// ended. The schedule comes from the notice AJAX fragment; every network or
+/// parse failure is silently ignored (empty result / `None`).
+pub async fn fetch_meta(
+    client: &reqwest::Client,
+    product_no: &str,
+) -> anyhow::Result<OfficialMeta> {
+    let mut chapters: Vec<ChapterMeta> = Vec::new();
+    let mut schedule: Option<String> = None;
+
+    for page in 1..=20u32 {
+        let mut url = url::Url::parse(NAVER_VOLUME_LIST)?;
+        url.query_pairs_mut()
+            .append_pair("productNo", product_no)
+            .append_pair("page", &page.to_string());
+        let body = client
+            .get(url)
+            .header(reqwest::header::USER_AGENT, UA)
+            .send()
+            .await?
+            .error_for_status()?
+            .text()
+            .await?;
+        let rows = parse_volume_list(&body);
+        if rows.is_empty() {
+            break;
+        }
+        chapters.extend(rows);
+    }
+
+    // `parse_volume_list` numbers each page from 1; renumber across all pages.
+    for (i, chapter) in chapters.iter_mut().enumerate() {
+        chapter.number_x100 = ((i + 1) * 100) as i32;
+    }
+
+    let mut url = url::Url::parse(NAVER_NOTICE_AJAX)?;
+    url.query_pairs_mut().append_pair("productNo", product_no);
+    let notice = client
+        .get(url)
+        .header(reqwest::header::USER_AGENT, UA)
+        .send()
+        .await
+        .ok()
+        .and_then(|r| r.error_for_status().ok());
+    if let Some(resp) = notice
+        && let Ok(body) = resp.text().await
+    {
+        schedule = parse_naver_notice(&body);
+    }
+
+    Ok(OfficialMeta {
+        source: "naver".to_string(),
+        count: (!chapters.is_empty()).then_some(chapters.len() as i32),
+        chapters,
+        update_schedule: schedule,
+        next_update_at: None,
+    })
+}
+
+/// Parse the volumeList AJAX response. The live endpoint returns JSON, not
+/// HTML: `{"resultData":[{"productName":..,"volumeName":..,
+/// "lastVolumeUpdateDate":"2016-04-29 17:32:44",..},..]}`. The title is
+/// `productName` (fallback `volumeName`) and the release date is the
+/// `YYYY-MM-DD` prefix of `lastVolumeUpdateDate`. Malformed or truncated input
+/// yields an empty vector - never a panic.
+pub fn parse_volume_list(html: &str) -> Vec<ChapterMeta> {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(html) else {
+        return Vec::new();
+    };
+    let Some(items) = value.get("resultData").and_then(|v| v.as_array()) else {
+        return Vec::new();
+    };
+    let mut rows = Vec::new();
+    for item in items {
+        let Some(title) = episode_title(item) else {
+            continue;
+        };
+        let date = item
+            .get("lastVolumeUpdateDate")
+            .and_then(|v| v.as_str())
+            .and_then(|s| s.get(..10))
+            .and_then(official_meta::parse_date);
+        if let Some(mut chapter) = ChapterMeta::from_f64(rows.len() as f64 + 1.0) {
+            chapter.title = Some(title);
+            chapter.release_date = date;
+            rows.push(chapter);
+        }
+    }
+    rows
+}
+
+/// Episode title from a volumeList JSON row: `productName`, else `volumeName`.
+/// Empty/absent names are rejected.
+fn episode_title(item: &serde_json::Value) -> Option<String> {
+    let name = item
+        .get("productName")
+        .and_then(|v| v.as_str())
+        .or_else(|| item.get("volumeName").and_then(|v| v.as_str()))?
+        .trim();
+    if name.is_empty() {
+        None
+    } else {
+        Some(name.to_string())
+    }
+}
+
+/// Schedule text from a notice block. The marker is `연재 공지` (Naver encodes
+/// the space as `&nbsp;`, so it is replaced before the search). A `_notice`
+/// block without that marker (e.g. `<li class="_notice">이용안내</li>`) is not a
+/// schedule and returns `None`.
+pub fn parse_naver_notice(html: &str) -> Option<String> {
+    let notice = official_meta::between(html, "class=\"_notice\"", "</li>").unwrap_or(html);
+    let spaced = notice.replace("&nbsp;", " ");
+    let text = official_meta::strip_tags(&spaced);
+    let idx = text.find("연재 공지")?;
+    let after = &text[idx..];
+    let rest = after.split_once(':').map(|(_, tail)| tail).unwrap_or(after);
+    official_meta::normalize_schedule(rest)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -178,5 +303,30 @@ mod tests {
         assert!(parse_search("").is_empty());
         let cut = FIXTURE.find("com_srch").unwrap_or(0);
         assert!(parse_search(&FIXTURE[..cut]).is_empty());
+    }
+
+    #[test]
+    fn parse_volume_list_fixture() {
+        let html = include_str!("../../../tests/fixtures/naver_volume_list.html");
+        let rows = parse_volume_list(html);
+        assert!(!rows.is_empty());
+        assert!(rows.iter().all(|r| r.number_x100 > 0));
+    }
+
+    #[test]
+    fn parse_naver_notice_fixture() {
+        let html = include_str!("../../../tests/fixtures/naver_notice.html");
+        let s = parse_naver_notice(html).expect("schedule");
+        assert!(s.contains("매주"), "got {s}");
+    }
+
+    #[test]
+    fn notice_without_schedule_is_none() {
+        assert_eq!(parse_naver_notice("<li class=\"_notice\">이용안내</li>"), None);
+    }
+
+    #[test]
+    fn truncated_volume_list_no_panic() {
+        assert!(parse_volume_list("<li><a>hi").is_empty());
     }
 }
