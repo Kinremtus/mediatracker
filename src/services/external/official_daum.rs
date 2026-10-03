@@ -194,6 +194,18 @@ mod tests {
     }
 
     #[test]
+    fn decorator_without_ongoing_status_has_no_schedule() {
+        // Real decorator bodies carry `status:"SELLING"` while the free-text
+        // `onGoingStatus` is absent -> schedule must stay None (never invent).
+        let body = r#"{"status":"SELLING","content":{"id":4620}}"#;
+        assert!(official_meta::json_string_field(body, "onGoingStatus").is_none());
+        let body = r#"{"status":"SELLING","onGoingStatus":""}"#;
+        let schedule = official_meta::json_string_field(body, "onGoingStatus")
+            .and_then(|s| official_meta::normalize_schedule(&s));
+        assert!(schedule.is_none());
+    }
+
+    #[test]
     fn parses_search_fixture() {
         let json = include_str!("../../../tests/fixtures/daum_search.json");
         let hits = parse_search(json);
