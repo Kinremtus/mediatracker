@@ -3,6 +3,7 @@ pub mod anime_identity;
 pub mod auth;
 pub mod backfill;
 pub mod chapter_enrich;
+pub mod chapter_meta_enrich;
 pub mod chapters;
 pub mod cleanup;
 pub mod email;
