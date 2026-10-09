@@ -145,6 +145,7 @@ impl TrackingService {
             &self.db,
             &media.provider,
             &media.external_id,
+            None,
         )
         .await;
 

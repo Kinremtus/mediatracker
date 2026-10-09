@@ -236,6 +236,7 @@ async fn refresh_group(db: &PgPool, items: Vec<MediaItemRow>, provider: Provider
                             &db,
                             &item.provider,
                             &ext_id,
+                            None,
                         )
                         .await;
                     }

@@ -761,6 +761,7 @@ pub async fn post_chapter_refresh(
                 &state.db,
                 &form.provider,
                 &form.external_id,
+                None,
             )
             .await;
             applied

@@ -11,6 +11,7 @@ mod common;
 
 use std::sync::{Arc, Mutex};
 
+use mediatracker::routes::media::chapter_counts;
 use mediatracker::services::chapters::{
     ChapterTitleGap, count_read, get_chapter, get_chapter_states, get_chapters,
     list_titles_needing_chapter_titles, set_manual_chapters, set_read, store_chapters_mu,
@@ -577,6 +578,65 @@ async fn enrich_skeleton_lands_under_the_resolved_key() {
     assert_eq!(chapters, Some(5));
     assert!(!manual);
     assert_eq!(source.as_deref(), Some("auto:bilibili"));
+}
+
+// --- g) drawer counts read the resolved key ---------------------------------
+
+/// Drawer badge counts: one query, main/bonus split, under the resolved key.
+#[tokio::test]
+async fn drawer_counts_split_main_and_bonus_under_the_official_key() {
+    let (ctx, _user_id) = setup().await;
+    let mu_id = "910000040";
+    add_media_item(&ctx.pool, mu_id, "manhua").await;
+    bind(&ctx.pool, mu_id, "bilibili", "mc-counts-1").await;
+
+    insert_chapter(
+        &ctx.pool,
+        "bilibili",
+        "mc-counts-1",
+        100,
+        "official_bilibili",
+        false,
+    )
+    .await;
+    insert_chapter(
+        &ctx.pool,
+        "bilibili",
+        "mc-counts-1",
+        200,
+        "official_bilibili",
+        false,
+    )
+    .await;
+    insert_chapter(
+        &ctx.pool,
+        "bilibili",
+        "mc-counts-1",
+        0,
+        "official_bilibili",
+        true,
+    )
+    .await;
+
+    assert_eq!(
+        chapter_counts(&ctx.pool, "mangaupdates", mu_id, "manhua").await,
+        (2, 1),
+        "main and bonus rows under the official key must be split"
+    );
+
+    // Non-chapter media types never touch the table.
+    assert_eq!(
+        chapter_counts(&ctx.pool, "mangaupdates", mu_id, "movie").await,
+        (0, 0),
+        "a movie drawer has no chapter counts"
+    );
+
+    // An unknown key degrades to zero instead of erroring.
+    assert_eq!(
+        chapter_counts(&ctx.pool, "mangaupdates", "910000041", "manhua").await,
+        (0, 0),
+        "an unknown key must degrade to zero"
+    );
 }
 
 // --- f) bulk-enrichment / backfill selections see the resolved rows ---------

@@ -4,9 +4,13 @@
 
 mod common;
 
+use std::sync::{Arc, Mutex};
+
 use chrono::NaiveDate;
-use mediatracker::services::chapter_meta_enrich::apply_meta;
-use mediatracker::services::external::official_meta::{ChapterMeta, OfficialMeta};
+use mediatracker::services::chapter_meta_enrich::{
+    MetaFetcher, apply_meta, enrich_official_meta_for_key, enrich_official_meta_with,
+};
+use mediatracker::services::external::official_meta::{ChapterMeta, MetaFuture, OfficialMeta};
 
 const PROVIDER: &str = "mangaupdates";
 const EXTERNAL_ID: &str = "1";
@@ -555,4 +559,106 @@ async fn empty_chapter_list_keeps_stored_bonus_rows() {
         vec![(0, SOURCE.to_string())],
         "an answer without chapters must not wipe already-stored bonuses"
     );
+}
+
+/// Offline chain fetcher: returns a canned `OfficialMeta` and records which
+/// source ids the chain asked for (no network).
+struct FixtureMetaFetcher {
+    meta: OfficialMeta,
+    seen: Arc<Mutex<Vec<(String, String)>>>,
+}
+
+impl FixtureMetaFetcher {
+    fn new(meta: OfficialMeta) -> Self {
+        Self {
+            meta,
+            seen: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    fn seen(&self) -> Vec<(String, String)> {
+        self.seen.lock().unwrap().clone()
+    }
+}
+
+impl MetaFetcher for FixtureMetaFetcher {
+    fn fetch<'a>(&'a self, source: &'a str, source_id: &'a str) -> MetaFuture<'a> {
+        let seen = self.seen.clone();
+        let meta = self.meta.clone();
+        let source = source.to_string();
+        let source_id = source_id.to_string();
+        Box::pin(async move {
+            seen.lock().unwrap().push((source, source_id));
+            Ok(meta)
+        })
+    }
+}
+
+/// Prod regression: the drawer rendered before the title was tracked (no
+/// `media_items` row), so `enrich_official_meta_for_key` bailed out with Ok(0)
+/// and the MU skeleton (271) stayed the only chapter source. With the drawer's
+/// `media_type` hint the chain must run anyway and write the official rows
+/// under the resolved key; only the counter/schedule stay deferred.
+#[tokio::test]
+async fn drawer_preview_without_media_items_row_still_writes_official_rows() {
+    let ctx = common::TestContext::new().await;
+    bind(&ctx, SOURCE, SOURCE_ID).await;
+
+    let mut m = meta(Some("Official"), None, Some("매주 금요일"));
+    m.count = Some(281);
+    m.chapters = vec![main_chapter(100), bonus_chapter(0)];
+    let fetcher = FixtureMetaFetcher::new(m);
+
+    let written = enrich_official_meta_with(&ctx.pool, PROVIDER, EXTERNAL_ID, "manhua", &fetcher)
+        .await
+        .expect("chain must run without a media_items row");
+    assert!(written > 0, "official rows must be written");
+
+    assert_eq!(
+        fetcher.seen(),
+        vec![(SOURCE.to_string(), SOURCE_ID.to_string())],
+        "the chain must fetch the bound source id"
+    );
+
+    let rows = chapter_rows(&ctx).await;
+    assert_eq!(rows.len(), 2, "one main row + one bonus row");
+    assert!(
+        rows.iter()
+            .all(|(p, e, _, _, _)| p == SOURCE && e == SOURCE_ID),
+        "every row must land under the resolved official key, got {rows:?}"
+    );
+
+    let items: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM media_items")
+        .fetch_one(&ctx.pool)
+        .await
+        .expect("count media_items");
+    assert_eq!(items, 0, "the preview must not create a media_items row");
+}
+
+/// Old behaviour kept: no media_type hint and no row -> no-op, zero network.
+#[tokio::test]
+async fn for_key_without_row_and_hint_stays_a_no_op() {
+    let ctx = common::TestContext::new().await;
+    bind(&ctx, SOURCE, SOURCE_ID).await;
+
+    let written = enrich_official_meta_for_key(&ctx.pool, PROVIDER, EXTERNAL_ID, None)
+        .await
+        .expect("a missing media_items row is a normal state");
+    assert_eq!(written, 0, "without a hint a missing row must stay a no-op");
+    assert!(
+        chapter_rows(&ctx).await.is_empty(),
+        "a no-op must not write chapter rows"
+    );
+}
+
+/// The hint alone is not enough: with no meta-capable binding the chain finds
+/// nothing and stays a no-op (zero network).
+#[tokio::test]
+async fn for_key_with_hint_and_without_binding_is_a_no_op() {
+    let ctx = common::TestContext::new().await;
+
+    let written = enrich_official_meta_for_key(&ctx.pool, PROVIDER, EXTERNAL_ID, Some("manhua"))
+        .await
+        .expect("a missing binding is a normal state");
+    assert_eq!(written, 0);
 }

@@ -6,7 +6,9 @@
 //! ([`official_resolve::chapter_key`]): a meta-capable binding wins, otherwise
 //! the MangaUpdates identity key. Every `media_items` update (counter,
 //! schedule) stays on the identity key, so a drawer preview — no `media_items`
-//! row yet — still stores chapters and defers only the counter/schedule.
+//! row yet — still stores chapters and defers only the counter/schedule: the
+//! drawer passes its `media_type` hint to [`enrich_official_meta_for_key`], so
+//! the preview no longer needs the row to start the chain.
 //!
 //! Raise-only semantics are preserved: `apply_meta` never lowers
 //! `media_items.chapters` and never overrides `chapters_manual = TRUE`.
@@ -14,7 +16,7 @@
 use sqlx::PgPool;
 
 use crate::services::chapter_enrich::raised_value;
-use crate::services::external::official_meta::{self, OfficialMeta};
+use crate::services::external::official_meta::{self, MetaFuture, OfficialMeta};
 use crate::services::official_resolve::chapter_key;
 use crate::services::source_ids;
 
@@ -217,6 +219,21 @@ pub fn is_useful_meta(meta: &OfficialMeta) -> bool {
         || meta.next_update_at.is_some()
 }
 
+/// One chain step: fetch a source's detail by its bound id. Injectable so the
+/// whole chain (binding lookup + `apply_meta`) can run offline from tests —
+/// same idea as `chapter_enrich::enrich_with_providers`.
+pub trait MetaFetcher: Send + Sync {
+    fn fetch<'a>(&'a self, source: &'a str, source_id: &'a str) -> MetaFuture<'a>;
+}
+
+/// Production fetcher: the shared HTTP client dispatches through
+/// `official_meta::fetch_source`.
+impl MetaFetcher for reqwest::Client {
+    fn fetch<'a>(&'a self, source: &'a str, source_id: &'a str) -> MetaFuture<'a> {
+        Box::pin(official_meta::fetch_source(source, self, source_id))
+    }
+}
+
 /// Resolve the highest-priority bound source for `media_type`, fetch its detail
 /// and apply it. No binding -> no network. Errors -> silent no-op. An empty
 /// answer is skipped (debug log) so the next bound source is still tried.
@@ -227,13 +244,25 @@ pub async fn enrich_official_meta(
     media_type: &str,
 ) -> anyhow::Result<usize> {
     let client = crate::services::external::http_client();
+    enrich_official_meta_with(db, provider, external_id, media_type, &client).await
+}
+
+/// [`enrich_official_meta`] with an injectable fetcher, so tests can exercise
+/// the chain without a network round-trip.
+pub async fn enrich_official_meta_with(
+    db: &PgPool,
+    provider: &str,
+    external_id: &str,
+    media_type: &str,
+    fetcher: &dyn MetaFetcher,
+) -> anyhow::Result<usize> {
     let sources = crate::services::official_resolve::official_source_for_media_type(media_type);
     for source in sources {
         let Some(bound) = source_ids::get_source_id(db, provider, external_id, source).await?
         else {
             continue;
         };
-        let meta = match official_meta::fetch_source(source, &client, &bound).await {
+        let meta = match fetcher.fetch(source, &bound).await {
             Ok(m) => m,
             Err(e) => {
                 tracing::warn!(provider, external_id, source, error = %e,
@@ -259,32 +288,41 @@ pub async fn enrich_official_meta(
     Ok(0)
 }
 
-/// Convenience wrapper for callers that only have a db + key (drawer/add hook).
-/// Discovers media_type from `media_items`; a missing row is a no-op.
+/// Convenience wrapper for callers that only have a db + key. `media_type`
+/// carries the drawer's hint: `Some(mt)` enriches immediately (drawer preview,
+/// no `media_items` row yet); `None` discovers the type from `media_items` and
+/// a missing row stays a no-op.
 pub async fn enrich_official_meta_for_key(
     db: &PgPool,
     provider: &str,
     external_id: &str,
+    media_type: Option<&str>,
 ) -> anyhow::Result<usize> {
-    let media_type: Option<String> = sqlx::query_scalar(
-        "SELECT media_type FROM media_items WHERE provider = $1 AND external_id = $2",
-    )
-    .bind(provider)
-    .bind(external_id)
-    .fetch_optional(db)
-    .await?;
-    match media_type {
-        Some(mt) => enrich_official_meta(db, provider, external_id, &mt).await,
-        // Normal case: the item is not in the tracker yet (drawer/add flow).
+    let media_type = match media_type {
+        Some(mt) => mt.to_string(),
         None => {
-            tracing::debug!(
-                provider,
-                external_id,
-                "official_meta: no media_items row, nothing to enrich"
-            );
-            Ok(0)
+            let discovered: Option<String> = sqlx::query_scalar(
+                "SELECT media_type FROM media_items WHERE provider = $1 AND external_id = $2",
+            )
+            .bind(provider)
+            .bind(external_id)
+            .fetch_optional(db)
+            .await?;
+            match discovered {
+                Some(mt) => mt,
+                // Normal case: the item is not in the tracker yet (add flow).
+                None => {
+                    tracing::debug!(
+                        provider,
+                        external_id,
+                        "official_meta: no media_items row, nothing to enrich"
+                    );
+                    return Ok(0);
+                }
+            }
         }
-    }
+    };
+    enrich_official_meta(db, provider, external_id, &media_type).await
 }
 
 #[cfg(test)]

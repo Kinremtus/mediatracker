@@ -233,35 +233,58 @@ fn mu_web_url(item: &CreateMediaItem) -> Option<String> {
         .then(|| format!("{MU_WEB_BASE}/series.html?id={}", item.external_id))
 }
 
-/// Bonus chapters for the drawer badge. The rows live under the RESOLVED key
-/// (official source when bound), so the incoming MangaUpdates identity key is
-/// resolved first — same rule every `services::chapters` reader uses.
-/// A failed lookup degrades to 0: the badge is decorative, never a denominator.
-async fn count_bonus_chapters(
+/// Main/bonus chapter counts for the drawer badge, read in ONE query under the
+/// RESOLVED key (official source when bound) — same rule every
+/// `services::chapters` reader uses, so the incoming MangaUpdates identity key
+/// is resolved first. A failed lookup degrades to `(0, 0)`: the badge is
+/// decorative, never a denominator.
+pub async fn chapter_counts(
     db: &sqlx::PgPool,
     provider: &str,
     external_id: &str,
     media_type: &str,
-) -> i64 {
-    // Early exit: only chapter-based media types can have bonus chapters.
+) -> (i64, i64) {
+    // Early exit: only chapter-based media types have chapter rows.
     if !is_chapter_type(media_type) {
-        return 0;
+        return (0, 0);
     }
     let (kp, ke) = crate::services::official_resolve::chapter_key(db, provider, external_id).await;
-    match sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FILTER (WHERE is_bonus) FROM series_chapters \
-         WHERE provider = $1 AND external_id = $2",
+    match sqlx::query_as::<_, (i64, i64)>(
+        "SELECT COUNT(*) FILTER (WHERE NOT is_bonus), COUNT(*) FILTER (WHERE is_bonus) \
+         FROM series_chapters WHERE provider = $1 AND external_id = $2",
     )
     .bind(&kp)
     .bind(&ke)
     .fetch_one(db)
     .await
     {
-        Ok(n) => n,
+        Ok(counts) => counts,
         Err(e) => {
-            tracing::debug!(provider, external_id, error = %e, "media: bonus chapter count failed");
-            0
+            tracing::debug!(provider, external_id, error = %e, "media: chapter counts failed");
+            (0, 0)
         }
+    }
+}
+
+/// Итоговый счётчик глав для бейджа drawer'а.
+///
+/// `db_count` — счётчик из `item.total_count()` (после предпочтения
+/// stored-значения в `resolve_card_data`); `main_rows` — число официальных
+/// main-строк; `manual` — флаг `media_items.chapters_manual`.
+///
+/// Правило: официальные строки поднимают устаревший счётчик (MU-preview 271
+/// -> 281 строк; для tracked счётчик уже поднят, `max` безвреден), но
+/// ручной счёт — ground truth из админки и никогда не перебивается
+/// (manual=45 < строк 81 -> остаётся 45).
+fn effective_total_count(db_count: Option<i32>, main_rows: i64, manual: bool) -> Option<i32> {
+    if manual {
+        return db_count;
+    }
+    if main_rows > 0 {
+        let main_rows = i32::try_from(main_rows).unwrap_or(i32::MAX);
+        Some(db_count.map_or(main_rows, |c| c.max(main_rows)))
+    } else {
+        db_count
     }
 }
 
@@ -361,9 +384,37 @@ pub async fn get_media_drawer_content(
                 Some((id, status, prog, rat)) => (Some(id), Some(status), Some(prog), rat),
                 None => (None, None, None, None),
             };
-            let total_count = item.total_count();
-            let bonus_count =
-                count_bonus_chapters(&state.db, &provider, &external_id, &item.media_type).await;
+            // Inline enrich BEFORE the counts are read: the drawer may render
+            // before the title is tracked (no `media_items` row), so pass the
+            // media_type hint and let the official rows land under the resolved
+            // key right now (precedent: `enrich_chapter_count` in
+            // `get_chapters`). Any failure is a silent no-op.
+            if is_chapter_type(&item.media_type) {
+                let _ = crate::services::chapter_meta_enrich::enrich_official_meta_for_key(
+                    &state.db,
+                    &provider,
+                    &external_id,
+                    Some(&item.media_type),
+                )
+                .await;
+            }
+            let (main_rows, bonus_count) =
+                chapter_counts(&state.db, &provider, &external_id, &item.media_type).await;
+            // Badge = main chapters. For an untracked preview the MU counter
+            // (the skeleton length) is stale, so the higher of the two wins:
+            // untracked MU 271 -> 281 official rows; tracked -> the db counter
+            // is already raised and `max` is harmless. A manual count
+            // (`chapters_manual=TRUE`) is ground truth and is never raised.
+            let manual = if main_rows > 0 {
+                crate::services::chapters::get_chapter_meta(&state.db, &provider, &external_id)
+                    .await
+                    .ok()
+                    .flatten()
+                    .is_some_and(|(_, manual, _)| manual)
+            } else {
+                false
+            };
+            let total_count = effective_total_count(item.total_count(), main_rows, manual);
             let progress_unit = item.progress_unit_ru().to_string();
             let star_classes = MediaDrawerTemplate::compute_star_classes(rating);
             let rating_display = match rating {
@@ -1074,24 +1125,6 @@ pub async fn get_chapters(
         });
     }
 
-    // Official-source titles/dates/schedule (async, non-blocking). Reads the
-    // binding; no binding -> immediate no-op, zero network.
-    {
-        let db = state.db.clone();
-        let prov = mu_provider.to_string();
-        let ext_id = mu_id.to_string();
-        tokio::spawn(async move {
-            if let Err(e) = crate::services::chapter_meta_enrich::enrich_official_meta_for_key(
-                &db, &prov, &ext_id,
-            )
-            .await
-            {
-                tracing::warn!(provider=%prov, external_id=%ext_id, error=%e,
-                    "official metadata enrichment failed");
-            }
-        });
-    }
-
     // Bonus chapters are a separate catalogue (design :109): the window and the
     // "Все главы (N)" denominator apply to MAIN chapters only, and the bonus
     // block is rendered in full below them regardless of `all`.
@@ -1462,5 +1495,32 @@ mod tests {
             episode_window_range(&eps, 4, true, EPISODE_WINDOW),
             (0, 10, false)
         );
+    }
+
+    #[test]
+    fn effective_total_count_manual_skips_overlay() {
+        // Ground truth из админки: manual=45 при 81 официальной строке -> 45.
+        assert_eq!(effective_total_count(Some(45), 81, true), Some(45));
+        // Manual при строках меньше счётчика тоже не трогаем.
+        assert_eq!(effective_total_count(Some(100), 81, true), Some(100));
+        // Manual без счётчика: не выдумываем из строк.
+        assert_eq!(effective_total_count(None, 81, true), None);
+    }
+
+    #[test]
+    fn effective_total_count_non_manual_raises_to_rows() {
+        // Untracked MU-preview: stale 271 -> 281 официальных строки.
+        assert_eq!(effective_total_count(Some(271), 281, false), Some(281));
+        // Счётчик выше строк — остаётся счётчик.
+        assert_eq!(effective_total_count(Some(300), 281, false), Some(300));
+        // Нет счётчика — берём строки.
+        assert_eq!(effective_total_count(None, 281, false), Some(281));
+    }
+
+    #[test]
+    fn effective_total_count_without_rows_keeps_db_count() {
+        assert_eq!(effective_total_count(Some(50), 0, false), Some(50));
+        assert_eq!(effective_total_count(None, 0, false), None);
+        assert_eq!(effective_total_count(Some(50), 0, true), Some(50));
     }
 }
