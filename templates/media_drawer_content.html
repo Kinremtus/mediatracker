@@ -42,7 +42,7 @@
             {% if let Some(sl) = status_label %}<span class="drawer-meta-badge {{ status_class }}">{{ sl }}</span>{% endif %}
             <span class="drawer-meta-badge">{{ item.primary_label() }}</span>
             {% if let Some(y) = item.display_year() %}<span class="drawer-meta-badge">{{ y }}</span>{% endif %}
-            {% if let Some(tc) = total_count %}<span class="drawer-meta-badge">{{ tc }} {{ progress_unit }}</span>{% endif %}
+            {% if let Some(tc) = total_count %}<span class="drawer-meta-badge">{{ tc }} {{ progress_unit }}</span>{% endif %}{% if bonus_count > 0 %}<span class="drawer-meta-badge drawer-meta-badge--bonus">{% if bonus_count == 1 %}+{{ bonus_count }} бонусная{% else %}+{{ bonus_count }} бонусных{% endif %}</span>{% endif %}
         </div>
 
         {% if item.score.is_some() %}
@@ -195,7 +195,7 @@
 {% if item.media_type == "manga" || item.media_type == "manhwa" || item.media_type == "manhua" || item.media_type == "novel" || item.media_type == "other-comics" || item.media_type == "comic" %}
 <div class="drawer-divider"></div>
 <div class="drawer-section">
-    <div class="drawer-section-label">Главы{% if let Some(tc) = total_count %} · {{ tc }}{% endif %}</div>
+    <div class="drawer-section-label">Главы{% if let Some(tc) = total_count %} · {{ tc }}{% endif %}{% if bonus_count > 0 %} <span class="drawer-section-label-bonus">{% if bonus_count == 1 %}+{{ bonus_count }} бонусная{% else %}+{{ bonus_count }} бонусных{% endif %}</span>{% endif %}</div>
     <div class="drawer-chapters"
          hx-get="/api/manga/{{ item.provider }}/{{ item.external_id }}/chapters?media_type={{ item.media_type }}"
          hx-trigger="revealed once"

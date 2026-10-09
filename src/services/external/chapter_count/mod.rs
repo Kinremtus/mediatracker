@@ -112,8 +112,7 @@ mod registry_tests {
         assert!(manhwa.iter().any(|p| p.name() == "naver"));
         let names: Vec<&str> = manhwa.iter().map(|p| p.name()).collect();
         assert!(
-            names.iter().position(|n| *n == "kakao")
-                < names.iter().position(|n| *n == "naver"),
+            names.iter().position(|n| *n == "kakao") < names.iter().position(|n| *n == "naver"),
             "kakao must be tried before naver"
         );
         assert!(!manhwa.iter().any(|p| p.name() == "syosetu"));
@@ -128,10 +127,6 @@ mod registry_tests {
                 .iter()
                 .any(|p| p.name() == "kuaikan")
         );
-        assert!(
-            providers_for("manhua")
-                .iter()
-                .any(|p| p.name() == "mh5")
-        );
+        assert!(providers_for("manhua").iter().any(|p| p.name() == "mh5"));
     }
 }

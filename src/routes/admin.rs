@@ -474,32 +474,47 @@ pub async fn post_enrich_chapters(
 
     let db: &PgPool = &state.db;
 
-    let query = if let (Some(provider), Some(external_id)) = (form.provider, form.external_id) {
-        // Single manga
-        sqlx::query("SELECT provider, external_id FROM media_items WHERE provider = $1 AND external_id = $2 AND media_type IN ('manga','manhwa','manhua','novel','other-comics')")
-            .bind(&provider)
-            .bind(&external_id)
-            .fetch_all(db)
-            .await
-    } else {
-        // All manga-like items without titles
-        sqlx::query(
-            r#"
-            SELECT mi.provider, mi.external_id FROM media_items mi
-            WHERE mi.media_type IN ('manga','manhwa','manhua','novel','other-comics')
-            AND NOT EXISTS (
-                SELECT 1 FROM series_chapters sc
-                WHERE sc.provider = mi.provider AND sc.external_id = mi.external_id
-                AND (sc.title_en IS NOT NULL OR sc.title_ru IS NOT NULL)
-                LIMIT 1
+    // Only `(provider, external_id)` is needed downstream; the shared selection
+    // also returns the title, used for logging.
+    let selection: Result<Vec<(String, String)>, sqlx::Error> = match form {
+        EnrichChaptersForm {
+            provider: Some(provider),
+            external_id: Some(external_id),
+        } => {
+            // Single manga
+            sqlx::query("SELECT provider, external_id FROM media_items WHERE provider = $1 AND external_id = $2 AND media_type IN ('manga','manhwa','manhua','novel','other-comics','comic')")
+                .bind(provider)
+                .bind(external_id)
+                .fetch_all(db)
+                .await
+                .map(|rows| {
+                    rows.iter()
+                        .map(|row| (row.get(0), row.get(1)))
+                        .collect()
+                })
+        }
+        _ => {
+            // All manga-like items without any chapter title. The predicate is
+            // evaluated on the RESOLVED key (see
+            // `chapters::list_titles_needing_chapter_titles`): bound titles keep
+            // their rows under the official source key, so comparing them to the
+            // `media_items` key would call every one of them untitled.
+            crate::services::chapters::list_titles_needing_chapter_titles(
+                db,
+                None,
+                crate::services::chapters::ChapterTitleGap::NoTitledRows,
+                None,
             )
-            "#,
-        )
-        .fetch_all(db)
-        .await
+            .await
+            .map(|rows| {
+                rows.into_iter()
+                    .map(|(provider, external_id, _title)| (provider, external_id))
+                    .collect()
+            })
+        }
     };
 
-    let rows = match query {
+    let rows = match selection {
         Ok(r) => r,
         Err(e) => {
             return render_with_error(&state, &user, format!("DB error: {}", e)).await;
@@ -518,8 +533,7 @@ pub async fn post_enrich_chapters(
         let db: &PgPool = &bg_state.db;
         let mut enriched = 0usize;
         let mut failed = 0usize;
-        for row in rows {
-            let (provider, external_id): (String, String) = (row.get(0), row.get(1));
+        for (provider, external_id) in rows {
             match enrich_from_mangadex(db, &provider, &external_id).await {
                 Ok(count) => enriched += count,
                 Err(e) => {

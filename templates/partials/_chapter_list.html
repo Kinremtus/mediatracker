@@ -1,12 +1,14 @@
 <div class="chapter-list-wrapper">
-{% if chapters.is_empty() %}
+{% if chapters.is_empty() && bonus_chapters.is_empty() %}
 <div class="chapter-list-empty">Главы не загружены</div>
 {% else %}
+{% if !chapters.is_empty() %}
 <div class="chapter-list">
     {% for chapter in chapters %}
     {% include "partials/_chapter_item.html" %}
     {% endfor %}
 </div>
+{% endif %}
 {% if windowed %}
 <button type="button" class="chapter-list-more"
         hx-get="/api/manga/{{ provider }}/{{ external_id }}/chapters?all=true"
@@ -14,6 +16,16 @@
         hx-swap="outerHTML">
     Все главы ({{ total }})
 </button>
+{% endif %}
+{# Bonus chapters: own section, rendered in full (never windowed) and never
+   counted in the "Все главы (N)" denominator — design :109. #}
+{% if !bonus_chapters.is_empty() %}
+<div class="chapter-list-bonus-label">Бонусные главы ({{ bonus_chapters.len() }})</div>
+<div class="chapter-list chapter-list--bonus">
+    {% for chapter in bonus_chapters %}
+    {% include "partials/_chapter_item.html" %}
+    {% endfor %}
+</div>
 {% endif %}
 {% endif %}
 </div>

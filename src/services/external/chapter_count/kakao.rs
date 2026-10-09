@@ -104,7 +104,7 @@ impl ChapterCountProvider for KakaoProvider {
 
 #[cfg(test)]
 mod tests {
-    use super::{chapter_total, KakaoResponse};
+    use super::{KakaoResponse, chapter_total};
 
     fn parse(raw: &str) -> Option<i64> {
         chapter_total(&serde_json::from_str::<KakaoResponse>(raw).unwrap())
@@ -112,7 +112,8 @@ mod tests {
 
     #[test]
     fn parses_nested_on_sale_count() {
-        let raw = r#"{"result":{"total_count":157,"series_item":{"on_sale_count":157}},"result_code":0}"#;
+        let raw =
+            r#"{"result":{"total_count":157,"series_item":{"on_sale_count":157}},"result_code":0}"#;
         assert_eq!(parse(raw), Some(157));
     }
 

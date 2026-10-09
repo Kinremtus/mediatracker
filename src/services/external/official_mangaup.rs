@@ -79,7 +79,10 @@ pub fn parse_chapters(value: &serde_json::Value) -> Vec<ChapterMeta> {
     let mut rows: Vec<(Option<String>, Option<chrono::NaiveDate>)> = list
         .iter()
         .map(|ch| {
-            let title = ch.get("mainName").and_then(|v| v.as_str()).map(str::to_string);
+            let title = ch
+                .get("mainName")
+                .and_then(|v| v.as_str())
+                .map(str::to_string);
             let release_date = ch
                 .get("published")
                 .and_then(|v| v.as_str())
@@ -94,6 +97,7 @@ pub fn parse_chapters(value: &serde_json::Value) -> Vec<ChapterMeta> {
             number_x100: ((i + 1) * 100) as i32,
             title,
             release_date,
+            is_bonus: false,
         })
         .collect()
 }
@@ -167,11 +171,19 @@ mod tests {
         );
         assert_eq!(m.chapters[65].title.as_deref(), Some("Chapter 25.5"));
         assert_eq!(
-            m.chapters[65].release_date.map(|d| d.to_string()).as_deref(),
+            m.chapters[65]
+                .release_date
+                .map(|d| d.to_string())
+                .as_deref(),
             Some("2025-12-03")
         );
         // Sequential numbering 1..=66 (number_x100 = n * 100).
-        assert!(m.chapters.iter().enumerate().all(|(i, c)| c.number_x100 == ((i + 1) * 100) as i32));
+        assert!(
+            m.chapters
+                .iter()
+                .enumerate()
+                .all(|(i, c)| c.number_x100 == ((i + 1) * 100) as i32)
+        );
         // No schedule keys in this payload — nothing is invented.
         assert!(m.update_schedule.is_none());
         assert!(m.next_update_at.is_none());
@@ -198,7 +210,10 @@ mod tests {
         );
         assert!(hits.iter().all(|h| !h.id.is_empty() && !h.title.is_empty()));
         // Ids double as the /manga/{id} path segment: digits only.
-        assert!(hits.iter().all(|h| h.id.chars().all(|c| c.is_ascii_digit())));
+        assert!(
+            hits.iter()
+                .all(|h| h.id.chars().all(|c| c.is_ascii_digit()))
+        );
         // No duplicates.
         let mut ids: Vec<_> = hits.iter().map(|h| h.id.clone()).collect();
         ids.sort();

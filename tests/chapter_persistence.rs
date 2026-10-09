@@ -55,7 +55,7 @@ async fn insert_chapter(ctx: &common::TestContext, chapter_number: i32) {
             (provider, external_id, chapter_number)
         VALUES
             ('mangaupdates', $1, $2)
-        ON CONFLICT (provider, external_id, chapter_number) DO NOTHING
+        ON CONFLICT (provider, external_id, chapter_number) WHERE NOT is_bonus DO NOTHING
         "#,
     )
     .bind(series_str())

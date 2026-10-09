@@ -201,7 +201,10 @@ mod tests {
     #[test]
     fn pick_comicwalker_accepts_latin() {
         let candidates = ["One Piece".to_string(), "원피스".to_string()];
-        assert_eq!(pick_candidate(&candidates, "comicwalker"), Some("One Piece"));
+        assert_eq!(
+            pick_candidate(&candidates, "comicwalker"),
+            Some("One Piece")
+        );
     }
 
     #[test]

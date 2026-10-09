@@ -28,6 +28,10 @@ struct MediaDrawerTemplate {
     progress: Option<i32>,
     rating: Option<f64>,
     total_count: Option<i32>,
+    /// Bonus chapters under the RESOLVED key. Kept separate from
+    /// `total_count` so the drawer badge stays "main chapters only"
+    /// (design :107) and the bonus part is an explicit "+N бонусных".
+    bonus_count: i64,
     progress_unit: String,
     mal_id: Option<i64>,
     has_progress: bool,
@@ -229,6 +233,38 @@ fn mu_web_url(item: &CreateMediaItem) -> Option<String> {
         .then(|| format!("{MU_WEB_BASE}/series.html?id={}", item.external_id))
 }
 
+/// Bonus chapters for the drawer badge. The rows live under the RESOLVED key
+/// (official source when bound), so the incoming MangaUpdates identity key is
+/// resolved first — same rule every `services::chapters` reader uses.
+/// A failed lookup degrades to 0: the badge is decorative, never a denominator.
+async fn count_bonus_chapters(
+    db: &sqlx::PgPool,
+    provider: &str,
+    external_id: &str,
+    media_type: &str,
+) -> i64 {
+    // Early exit: only chapter-based media types can have bonus chapters.
+    if !is_chapter_type(media_type) {
+        return 0;
+    }
+    let (kp, ke) = crate::services::official_resolve::chapter_key(db, provider, external_id).await;
+    match sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FILTER (WHERE is_bonus) FROM series_chapters \
+         WHERE provider = $1 AND external_id = $2",
+    )
+    .bind(&kp)
+    .bind(&ke)
+    .fetch_one(db)
+    .await
+    {
+        Ok(n) => n,
+        Err(e) => {
+            tracing::debug!(provider, external_id, error = %e, "media: bonus chapter count failed");
+            0
+        }
+    }
+}
+
 pub async fn get_media_detail(
     user: CurrentUser,
     State(state): State<AppState>,
@@ -326,6 +362,8 @@ pub async fn get_media_drawer_content(
                 None => (None, None, None, None),
             };
             let total_count = item.total_count();
+            let bonus_count =
+                count_bonus_chapters(&state.db, &provider, &external_id, &item.media_type).await;
             let progress_unit = item.progress_unit_ru().to_string();
             let star_classes = MediaDrawerTemplate::compute_star_classes(rating);
             let rating_display = match rating {
@@ -364,6 +402,7 @@ pub async fn get_media_drawer_content(
                     progress,
                     rating,
                     total_count,
+                    bonus_count,
                     progress_unit,
                     has_progress,
                     role: user.role,
@@ -820,9 +859,13 @@ pub async fn set_episode_watched(
 #[template(path = "partials/_chapter_list.html")]
 struct ChapterListPartial {
     chapters: Vec<crate::services::chapters::StoredChapter>,
+    /// Bonus chapters, always rendered in full below the main list and never
+    /// consumed by the CHAPTER_WINDOW slice (design :109).
+    bonus_chapters: Vec<crate::services::chapters::StoredChapter>,
     provider: String,
     external_id: String,
     windowed: bool,
+    /// Main (non-bonus) chapter count — the "Все главы (N)" denominator.
     total: usize,
 }
 
@@ -918,7 +961,8 @@ pub async fn get_chapters(
 
     let mut details: Option<CreateMediaItem> = None;
     if is_chapter_type(&media_type)
-        && !crate::services::official_resolve::official_source_for_media_type(&media_type).is_empty()
+        && !crate::services::official_resolve::official_source_for_media_type(&media_type)
+            .is_empty()
     {
         // Candidates come from the local row (title + associated_titles). When
         // there is no local row, fetch MangaUpdates details once and share it
@@ -1037,11 +1081,10 @@ pub async fn get_chapters(
         let prov = mu_provider.to_string();
         let ext_id = mu_id.to_string();
         tokio::spawn(async move {
-            if let Err(e) =
-                crate::services::chapter_meta_enrich::enrich_official_meta_for_key(
-                    &db, &prov, &ext_id,
-                )
-                .await
+            if let Err(e) = crate::services::chapter_meta_enrich::enrich_official_meta_for_key(
+                &db, &prov, &ext_id,
+            )
+            .await
             {
                 tracing::warn!(provider=%prov, external_id=%ext_id, error=%e,
                     "official metadata enrichment failed");
@@ -1049,17 +1092,25 @@ pub async fn get_chapters(
         });
     }
 
+    // Bonus chapters are a separate catalogue (design :109): the window and the
+    // "Все главы (N)" denominator apply to MAIN chapters only, and the bonus
+    // block is rendered in full below them regardless of `all`.
+    let (mut main_chapters, bonus_chapters): (
+        Vec<crate::services::chapters::StoredChapter>,
+        Vec<crate::services::chapters::StoredChapter>,
+    ) = chapters.into_iter().partition(|c| !c.is_bonus);
+
     let all = query.all.unwrap_or(false);
-    let total = chapters.len();
-    let (chapters, windowed) = if !all && total > CHAPTER_WINDOW {
+    let total = main_chapters.len();
+    let windowed = !all && total > CHAPTER_WINDOW;
+    if windowed {
         let start = total - CHAPTER_WINDOW;
-        (chapters.into_iter().skip(start).collect::<Vec<_>>(), true)
-    } else {
-        (chapters, false)
-    };
+        main_chapters.drain(..start);
+    }
 
     let html = ChapterListPartial {
-        chapters,
+        chapters: main_chapters,
+        bonus_chapters,
         provider: mu_provider.to_string(),
         external_id: mu_id.to_string(),
         windowed,

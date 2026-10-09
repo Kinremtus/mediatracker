@@ -71,7 +71,9 @@ pub fn parse_search(html: &str) -> Vec<OfficialHit> {
         let inner = &body[..end];
         rest = &body[end + 4..];
 
-        let Some(id) = href_product_no(tag) else { continue };
+        let Some(id) = href_product_no(tag) else {
+            continue;
+        };
         if hits.iter().any(|h| h.id == id) {
             continue;
         }
@@ -322,7 +324,10 @@ mod tests {
 
     #[test]
     fn notice_without_schedule_is_none() {
-        assert_eq!(parse_naver_notice("<li class=\"_notice\">이용안내</li>"), None);
+        assert_eq!(
+            parse_naver_notice("<li class=\"_notice\">이용안내</li>"),
+            None
+        );
     }
 
     #[test]

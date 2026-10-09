@@ -20,7 +20,7 @@ use mediatracker::services::external::chapter_count::{
     ChapterCount, ChapterCountFuture, ChapterCountProvider,
 };
 use mediatracker::services::official_resolve::{
-    official_source_for_media_type, resolve_and_bind, OfficialSearch, ResolveOutcome,
+    OfficialSearch, ResolveOutcome, official_source_for_media_type, resolve_and_bind,
 };
 use mediatracker::services::official_types::OfficialHit;
 use mediatracker::services::source_ids::{get_source_id, set_source_id};
@@ -424,7 +424,10 @@ async fn raise_only_keeps_higher_count() {
 
     let applied = enrich_with_providers(&ctx.pool, "mangaupdates", &series, vec![provider]).await;
 
-    assert_eq!(applied, None, "157 is lower than 200, so nothing is applied");
+    assert_eq!(
+        applied, None,
+        "157 is lower than 200, so nothing is applied"
+    );
     assert_eq!(
         chapter_count(&ctx.pool, &series).await,
         Some(200),
@@ -547,10 +550,8 @@ async fn existing_naver_binding_short_circuits() {
         .await
         .expect("pre-bind naver");
 
-    let search = FixtureSearch::with_sources(&[(
-        "naver",
-        vec![hit("10319749", "왕의 힘으로 회귀한다")],
-    )]);
+    let search =
+        FixtureSearch::with_sources(&[("naver", vec![hit("10319749", "왕의 힘으로 회귀한다")])]);
     let calls = search.calls();
 
     let outcome = resolve_and_bind(
@@ -581,10 +582,7 @@ async fn existing_naver_binding_short_circuits() {
 async fn no_match_anywhere_binds_nothing() {
     let ctx = setup().await;
     let series = SERIES_ID.to_string();
-    let search = FixtureSearch::with_sources(&[
-        ("kakao", vec![]),
-        ("naver", vec![]),
-    ]);
+    let search = FixtureSearch::with_sources(&[("kakao", vec![]), ("naver", vec![])]);
     let calls = search.calls();
 
     let outcome = resolve_and_bind(

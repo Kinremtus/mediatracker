@@ -5,6 +5,7 @@
 use std::future::Future;
 use std::pin::Pin;
 
+use crate::services::external::official_meta::SOURCES_WITH_META;
 use crate::services::official_title;
 use crate::services::official_types::OfficialHit;
 
@@ -30,6 +31,24 @@ pub fn official_source_for_media_type(media_type: &str) -> &'static [&'static st
         _ => &[],
     }
 }
+
+/// Global fallback order used when the title has no `media_items` row yet
+/// (drawer preview, chapters written before the item was added).
+///
+/// Must stay identical to the `supports_meta` global ranks of
+/// `migrations/028_chapter_ownership.sql` (bilibili=1 ... qidian=10).
+pub const GLOBAL_SOURCE_ORDER: &[&str] = &[
+    "bilibili",
+    "naver",
+    "daum",
+    "ridibooks",
+    "comicwalker",
+    "mangaup",
+    "alphapolis",
+    "syosetu",
+    "kakuyomu",
+    "qidian",
+];
 
 /// Network abstraction so tests can inject a fixture-backed searcher.
 pub trait OfficialSearch: Send + Sync {
@@ -97,13 +116,15 @@ impl OfficialSearch for HttpOfficialSearch {
                     Ok(hits)
                 }
                 "comicwalker" => {
-                    crate::services::external::official_comicwalker::search(&self.client, query).await
+                    crate::services::external::official_comicwalker::search(&self.client, query)
+                        .await
                 }
                 "kakuyomu" => {
                     crate::services::external::official_kakuyomu::search(&self.client, query).await
                 }
                 "alphapolis" => {
-                    crate::services::external::official_alphapolis::search(&self.client, query).await
+                    crate::services::external::official_alphapolis::search(&self.client, query)
+                        .await
                 }
                 // Bilibili has a tiny guest quota: use the cached/cooldown path.
                 "bilibili" => {
@@ -202,7 +223,10 @@ pub async fn resolve_and_bind(
         let Some(hit) = hits
             .into_iter()
             .filter(|h| hit_matches_media_type(source, &h.id, media_type))
-            .find(|h| all.iter().any(|c| official_title::titles_match(&h.title, c)))
+            .find(|h| {
+                all.iter()
+                    .any(|c| official_title::titles_match(&h.title, c))
+            })
         else {
             continue;
         };
@@ -222,6 +246,84 @@ pub async fn resolve_and_bind(
         }
     }
     None
+}
+
+/// Key `(provider, external_id)` under which the `series_chapters` rows of a
+/// title live (design :51-54): the source's own key when it has a meta-capable
+/// binding, otherwise the MangaUpdates identity key (MU skeleton chapters).
+///
+/// - Input is the MU key; any other provider is returned unchanged, so a second
+///   resolution pass is a no-op (idempotence).
+/// - Candidate bindings are filtered through [`SOURCES_WITH_META`], then ranked
+///   by `official_source_for_media_type(media_type)` of the `media_items` row.
+///   A supported binding outside that chain still wins (after every chained
+///   source), ranked by [`GLOBAL_SOURCE_ORDER`] — same rule as migration 028.
+/// - No `media_items` row (drawer preview) -> [`GLOBAL_SOURCE_ORDER`].
+/// - No meta-capable binding -> the MU key. That is the normal fallback for a MU
+///   title, hence `debug` and not `warn`.
+pub async fn chapter_key(db: &sqlx::PgPool, provider: &str, external_id: &str) -> (String, String) {
+    let mu_key = (provider.to_string(), external_id.to_string());
+    if provider != "mangaupdates" {
+        return mu_key;
+    }
+
+    let bindings = match crate::services::source_ids::list_source_ids(db, provider, external_id)
+        .await
+    {
+        Ok(bindings) => bindings,
+        Err(e) => {
+            tracing::warn!(provider, external_id, error = %e, "official_resolve: binding lookup failed, keeping MU key");
+            return mu_key;
+        }
+    };
+
+    // A failed lookup is a DB problem, not an expected state: log it and fall
+    // back to the global order (same outcome as a missing row).
+    let media_type = match sqlx::query_scalar::<_, String>(
+        "SELECT media_type FROM media_items WHERE provider = $1 AND external_id = $2",
+    )
+    .bind(provider)
+    .bind(external_id)
+    .fetch_optional(db)
+    .await
+    {
+        Ok(media_type) => media_type,
+        Err(e) => {
+            tracing::warn!(provider, external_id, error = %e, "official_resolve: media_items lookup failed, using global order");
+            None
+        }
+    };
+
+    // Priority: the media_type chain first, then any other meta-capable source
+    // by global rank. Chain entries without a fetch_source arm (kuaikan,
+    // kakao, mangaplus) are dropped here - otherwise the key would point at a
+    // source whose chapters are written under another one.
+    let mut order: Vec<&str> = media_type
+        .as_deref()
+        .map(official_source_for_media_type)
+        .unwrap_or(&[])
+        .iter()
+        .copied()
+        .filter(|s| SOURCES_WITH_META.contains(s))
+        .collect();
+    for &source in GLOBAL_SOURCE_ORDER {
+        if !order.contains(&source) {
+            order.push(source);
+        }
+    }
+
+    for source in order {
+        if let Some(binding) = bindings.iter().find(|b| b.source == source) {
+            return (binding.source.clone(), binding.source_id.clone());
+        }
+    }
+
+    tracing::debug!(
+        provider,
+        external_id,
+        "official_resolve: no meta-capable binding, chapters stay under the MU key"
+    );
+    mu_key
 }
 
 #[cfg(test)]
@@ -260,7 +362,11 @@ mod tests {
     #[test]
     fn alphapolis_hits_are_filtered_by_media_type_prefix() {
         // novel item keeps `novel/...` and drops manga hits.
-        assert!(hit_matches_media_type("alphapolis", "novel/381661058", "novel"));
+        assert!(hit_matches_media_type(
+            "alphapolis",
+            "novel/381661058",
+            "novel"
+        ));
         assert!(!hit_matches_media_type(
             "alphapolis",
             "manga/official/407000825",

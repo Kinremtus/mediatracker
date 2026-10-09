@@ -63,6 +63,16 @@ pub async fn enrich_with_providers(
         return None;
     }
 
+    // The skeleton must land under the RESOLVED chapter key (official source
+    // when bound), exactly like every reader in `services::chapters`. Writing
+    // it under the incoming MU key would create `origin='mu'` rows no reader
+    // can see and the batch 8 orphan cleanup never touches. `chapter_key` is
+    // idempotent and a no-op for non-MU providers, so the raise-only
+    // behaviour of those titles is unchanged. Everything else in this
+    // function keeps using the MU identity key.
+    let (skeleton_provider, skeleton_external_id) =
+        crate::services::official_resolve::chapter_key(db, provider, external_id).await;
+
     for p in providers {
         // Layer 3: providers use their OWN ids. Never fall back to the skeleton
         // external_id — a missing binding means "do not query this provider".
@@ -132,9 +142,13 @@ pub async fn enrich_with_providers(
                 continue;
             }
         }
-        if let Err(e) =
-            crate::services::chapters::ensure_chapter_skeleton(&mut tx, provider, external_id, next)
-                .await
+        if let Err(e) = crate::services::chapters::ensure_chapter_skeleton(
+            &mut tx,
+            &skeleton_provider,
+            &skeleton_external_id,
+            next,
+        )
+        .await
         {
             tracing::debug!(provider, external_id, error = %e, "chapter_enrich: skeleton extend failed");
             continue;

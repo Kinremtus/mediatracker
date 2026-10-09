@@ -86,6 +86,7 @@ pub fn parse_episodes(json: &str) -> Vec<ChapterMeta> {
             number_x100: ((i + 1) * 100) as i32,
             title,
             release_date,
+            is_bonus: false,
         })
         .collect()
 }
@@ -115,7 +116,9 @@ fn collect_episode_lists(
 }
 
 /// Rows of one candidate array; `None` when the array is not an episode list.
-fn episode_rows(items: &[serde_json::Value]) -> Option<Vec<(Option<String>, Option<chrono::NaiveDate>)>> {
+fn episode_rows(
+    items: &[serde_json::Value],
+) -> Option<Vec<(Option<String>, Option<chrono::NaiveDate>)>> {
     let first = items.first()?.as_object()?;
     if !first.contains_key("updateDate")
         || !(first.contains_key("title") || first.contains_key("episodeTitle"))
@@ -180,7 +183,10 @@ pub fn parse_search(html: &str) -> Vec<OfficialHit> {
             .or_else(|| official_meta::json_string_field(seg, "workTitle"))
             .unwrap_or_default();
         if !name.is_empty() && !hits.iter().any(|h| h.id == code) {
-            hits.push(OfficialHit { id: code, title: name });
+            hits.push(OfficialHit {
+                id: code,
+                title: name,
+            });
         }
     }
     hits
@@ -203,11 +209,7 @@ mod tests {
         assert!(m.chapters[0].release_date.is_some());
         assert!(m.chapters[0].title.is_some());
         // Date-sorted ascending.
-        let dates: Vec<_> = m
-            .chapters
-            .iter()
-            .filter_map(|c| c.release_date)
-            .collect();
+        let dates: Vec<_> = m.chapters.iter().filter_map(|c| c.release_date).collect();
         let mut sorted = dates.clone();
         sorted.sort();
         assert_eq!(dates, sorted);

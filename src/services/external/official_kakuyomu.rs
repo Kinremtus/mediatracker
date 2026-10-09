@@ -85,6 +85,7 @@ pub fn parse_episodes(json: &str) -> Vec<ChapterMeta> {
             number_x100: ((i + 1) * 100) as i32,
             title,
             release_date,
+            is_bonus: false,
         })
         .collect()
 }
@@ -192,11 +193,7 @@ mod tests {
         assert!(m.chapters[0].title.is_some());
         assert!(m.chapters[0].release_date.is_some());
         // Oldest-first on the fixture: dates ascend.
-        let dates: Vec<_> = m
-            .chapters
-            .iter()
-            .filter_map(|c| c.release_date)
-            .collect();
+        let dates: Vec<_> = m.chapters.iter().filter_map(|c| c.release_date).collect();
         let mut sorted = dates.clone();
         sorted.sort();
         assert_eq!(dates, sorted);

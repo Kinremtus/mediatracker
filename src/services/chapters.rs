@@ -1,6 +1,7 @@
 use crate::services::external::mangadex::{
     MangaDexChapter, MangaDexMangaAttributes, MangaDexService,
 };
+use crate::services::official_resolve::chapter_key;
 use sqlx::PgPool;
 use std::collections::HashMap;
 
@@ -13,6 +14,9 @@ pub struct StoredChapter {
     pub title_ru: Option<String>,
     pub release_date: Option<chrono::NaiveDate>,
     pub read: bool,
+    /// Bonus rows ('00' prologue, non-numeric special, duplicate number). They
+    /// are excluded from the read-progress denominator (design :111).
+    pub is_bonus: bool,
 }
 
 impl StoredChapter {
@@ -79,10 +83,17 @@ pub fn parse_chapter(s: &str) -> Option<i32> {
 /// scale) and an existing value is never lowered. Runs inside the caller's
 /// transaction via the passed connection so the card denominator can never
 /// disagree with the rows.
+///
+/// The two keys differ on purpose: `media_items` is keyed by the incoming
+/// (MangaUpdates) identity, while the chapter rows live under the resolved key
+/// (design :73-78). Updating `media_items` by the resolved key would match no
+/// row at all and silently leave the denominator stale.
 async fn sync_media_items_chapters(
     conn: &mut sqlx::PgConnection,
-    provider: &str,
-    external_id: &str,
+    media_provider: &str,
+    media_external_id: &str,
+    rows_provider: &str,
+    rows_external_id: &str,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
@@ -91,7 +102,7 @@ async fn sync_media_items_chapters(
         FROM (
             SELECT ((MAX(chapter_number) + 99) / 100) AS max_ch
             FROM series_chapters
-            WHERE provider = $1 AND external_id = $2
+            WHERE provider = $3 AND external_id = $4
         ) AS sub
         WHERE media_items.provider = $1
           AND media_items.external_id = $2
@@ -99,8 +110,10 @@ async fn sync_media_items_chapters(
           AND sub.max_ch > COALESCE(media_items.chapters, 0)
         "#,
     )
-    .bind(provider)
-    .bind(external_id)
+    .bind(media_provider)
+    .bind(media_external_id)
+    .bind(rows_provider)
+    .bind(rows_external_id)
     .execute(conn)
     .await?;
     Ok(())
@@ -109,6 +122,11 @@ async fn sync_media_items_chapters(
 /// `(chapters, chapters_manual, chapters_source)` for one media item, or `None`
 /// when the item is unknown. The drawer uses this to surface the manual override
 /// over a live provider fetch.
+///
+/// No key resolution here on purpose: this reads the `media_items` row itself,
+/// which is always keyed by the incoming (MangaUpdates) identity. There is
+/// nothing to resolve — the official key would point at a row that does not
+/// exist (design :73-78).
 #[allow(clippy::type_complexity)]
 pub async fn get_chapter_meta(
     pool: &PgPool,
@@ -128,6 +146,10 @@ pub async fn get_chapter_meta(
 /// Insert skeleton rows for every integer chapter `1..=n` (stored x100) under
 /// `(provider, external_id)`. Idempotent (`ON CONFLICT DO NOTHING`). Used so a
 /// manual count larger than the MangaUpdates skeleton can be rendered and ticked.
+///
+/// The caller is responsible for passing the **resolved** key (see
+/// `official_resolve::chapter_key`): this function only takes a connection, not a
+/// pool, so it cannot resolve by itself.
 pub(crate) async fn ensure_chapter_skeleton(
     conn: &mut sqlx::PgConnection,
     provider: &str,
@@ -141,7 +163,7 @@ pub(crate) async fn ensure_chapter_skeleton(
     sqlx::query(
         "INSERT INTO series_chapters (provider, external_id, chapter_number) \
          SELECT $1, $2, u.chapter_number FROM UNNEST($3::int[]) AS u(chapter_number) \
-         ON CONFLICT (provider, external_id, chapter_number) DO NOTHING",
+           ON CONFLICT (provider, external_id, chapter_number) WHERE NOT is_bonus DO NOTHING",
     )
     .bind(provider)
     .bind(external_id)
@@ -161,6 +183,11 @@ pub async fn set_manual_chapters(
     chapters: i32,
 ) -> Result<(), sqlx::Error> {
     let chapters = chapters.max(0);
+    // Resolve before opening the transaction: `chapter_key` needs a pool, and a
+    // read outside the tx is cheaper than pinning a connection for it. The
+    // manual value itself still lands on the `media_items` row, which is keyed
+    // by the incoming (MangaUpdates) identity.
+    let (key_provider, key_external_id) = chapter_key(pool, provider, external_id).await;
     let mut tx = pool.begin().await?;
     sqlx::query(
         "UPDATE media_items \
@@ -173,7 +200,10 @@ pub async fn set_manual_chapters(
     .bind(chapters)
     .execute(&mut *tx)
     .await?;
-    ensure_chapter_skeleton(&mut tx, provider, external_id, chapters).await?;
+    // The skeleton must join the resolved rows, otherwise ticking a chapter the
+    // manual count added would find no `series_chapters` row to attach progress
+    // to.
+    ensure_chapter_skeleton(&mut tx, &key_provider, &key_external_id, chapters).await?;
     tx.commit().await?;
     Ok(())
 }
@@ -218,6 +248,10 @@ pub async fn store_chapters_mu(
     }
 
     let external_id = series_id.to_string();
+    // Chapter rows live under the resolved key: with a meta-capable binding the
+    // official source owns that key, so the MU skeleton is a fallback written
+    // into the same rows (design :73-78).
+    let (key_provider, key_external_id) = chapter_key(pool, "mangaupdates", &external_id).await;
     // Chapter 1 -> 100, chapter 2 -> 200, … (fraction goes in the low digits).
     let chapter_numbers: Vec<i32> = (1..=latest_chapter).map(|ch| ch * 100).collect();
 
@@ -226,16 +260,35 @@ pub async fn store_chapters_mu(
     // transaction so the card denominator can never disagree with the rows.
     let mut tx = pool.begin().await?;
 
+    // Official enrichment runs asynchronously and writes `origin='official_*'`
+    // rows under the same resolved key. If they are already there, the fallback
+    // skeleton must not overwrite/pad them with `origin='mu'` rows
+    // (design :102-103). The check happens inside the transaction so a
+    // concurrent apply_meta either wins before this point or loses after it.
+    let (official_rows,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM series_chapters \
+         WHERE provider = $1 AND external_id = $2 AND origin <> 'mu'",
+    )
+    .bind(&key_provider)
+    .bind(&key_external_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if official_rows > 0 {
+        // Dropping the transaction rolls back: nothing was written.
+        return Ok(0);
+    }
+
     let result = sqlx::query(
         r#"
         INSERT INTO series_chapters
             (provider, external_id, chapter_number)
-        SELECT 'mangaupdates', $1, u.chapter_number
-        FROM UNNEST($2::int[]) AS u(chapter_number)
-        ON CONFLICT (provider, external_id, chapter_number) DO NOTHING
+        SELECT $1, $2, u.chapter_number
+        FROM UNNEST($3::int[]) AS u(chapter_number)
+          ON CONFLICT (provider, external_id, chapter_number) WHERE NOT is_bonus DO NOTHING
         "#,
     )
-    .bind(&external_id)
+    .bind(&key_provider)
+    .bind(&key_external_id)
     .bind(&chapter_numbers)
     .execute(&mut *tx)
     .await?;
@@ -243,9 +296,19 @@ pub async fn store_chapters_mu(
     let count = result.rows_affected();
 
     // Sync media_items.chapters so the tracking card denominator matches the
-    // stored rows (same helper the MangaDex enrichment path uses).
+    // stored rows (same helper the MangaDex enrichment path uses). The
+    // `media_items` row is addressed by the ORIGINAL MangaUpdates identity
+    // (there is no row under the official key), while the row source is the
+    // resolved key the skeleton was just written to.
     if count > 0 {
-        sync_media_items_chapters(&mut tx, "mangaupdates", &external_id).await?;
+        sync_media_items_chapters(
+            &mut tx,
+            "mangaupdates",
+            &external_id,
+            &key_provider,
+            &key_external_id,
+        )
+        .await?;
     }
 
     tx.commit().await?;
@@ -260,6 +323,9 @@ pub async fn get_chapters(
     external_id: &str,
     user_id: uuid::Uuid,
 ) -> Result<Vec<StoredChapter>, sqlx::Error> {
+    // Callers always pass the MangaUpdates identity key; the rows themselves
+    // live under the resolved key (official source when bound).
+    let (key_provider, key_external_id) = chapter_key(pool, provider, external_id).await;
     #[allow(clippy::type_complexity)]
     let rows: Vec<(
         i32,
@@ -268,10 +334,11 @@ pub async fn get_chapters(
         Option<String>,
         Option<chrono::NaiveDate>,
         bool,
+        bool,
     )> = sqlx::query_as(
         r#"
         SELECT sc.chapter_number, sc.volume, sc.title_en, sc.title_ru,
-               sc.release_date, COALESCE(p.read, FALSE)
+               sc.release_date, COALESCE(p.read, FALSE), sc.is_bonus
         FROM series_chapters sc
         LEFT JOIN user_chapter_progress p
             ON p.user_id = $3
@@ -282,8 +349,8 @@ pub async fn get_chapters(
         ORDER BY sc.chapter_number ASC
         "#,
     )
-    .bind(provider)
-    .bind(external_id)
+    .bind(&key_provider)
+    .bind(&key_external_id)
     .bind(user_id)
     .fetch_all(pool)
     .await?;
@@ -291,13 +358,16 @@ pub async fn get_chapters(
     Ok(rows
         .into_iter()
         .map(
-            |(chapter_number, volume, title_en, title_ru, release_date, read)| StoredChapter {
-                chapter_number,
-                volume,
-                title_en,
-                title_ru,
-                release_date,
-                read,
+            |(chapter_number, volume, title_en, title_ru, release_date, read, is_bonus)| {
+                StoredChapter {
+                    chapter_number,
+                    volume,
+                    title_en,
+                    title_ru,
+                    release_date,
+                    read,
+                    is_bonus,
+                }
             },
         )
         .collect())
@@ -312,6 +382,7 @@ pub async fn get_chapter(
     chapter_number: i32,
     user_id: uuid::Uuid,
 ) -> Result<Option<StoredChapter>, sqlx::Error> {
+    let (key_provider, key_external_id) = chapter_key(pool, provider, external_id).await;
     #[allow(clippy::type_complexity)]
     let row: Option<(
         i32,
@@ -320,10 +391,11 @@ pub async fn get_chapter(
         Option<String>,
         Option<chrono::NaiveDate>,
         bool,
+        bool,
     )> = sqlx::query_as(
         r#"
         SELECT sc.chapter_number, sc.volume, sc.title_en, sc.title_ru,
-               sc.release_date, COALESCE(p.read, FALSE)
+               sc.release_date, COALESCE(p.read, FALSE), sc.is_bonus
         FROM series_chapters sc
         LEFT JOIN user_chapter_progress p
             ON p.user_id = $4
@@ -333,21 +405,24 @@ pub async fn get_chapter(
         WHERE sc.provider = $1 AND sc.external_id = $2 AND sc.chapter_number = $3
         "#,
     )
-    .bind(provider)
-    .bind(external_id)
+    .bind(&key_provider)
+    .bind(&key_external_id)
     .bind(chapter_number)
     .bind(user_id)
     .fetch_optional(pool)
     .await?;
 
     Ok(row.map(
-        |(chapter_number, volume, title_en, title_ru, release_date, read)| StoredChapter {
-            chapter_number,
-            volume,
-            title_en,
-            title_ru,
-            release_date,
-            read,
+        |(chapter_number, volume, title_en, title_ru, release_date, read, is_bonus)| {
+            StoredChapter {
+                chapter_number,
+                volume,
+                title_en,
+                title_ru,
+                release_date,
+                read,
+                is_bonus,
+            }
         },
     ))
 }
@@ -365,8 +440,13 @@ pub async fn set_read(
     chapter_number: i32,
     read: bool,
 ) -> Result<bool, sqlx::Error> {
+    // Progress rows must sit on the same key as the `series_chapters` rows they
+    // mirror, otherwise the tick would create a progress row the chapter list
+    // never joins against.
+    let (key_provider, key_external_id) = chapter_key(pool, provider, external_id).await;
     let result = if read {
-        // Bulk-fill every skeleton chapter <= N (existing behaviour).
+        // Bulk-fill every skeleton chapter <= N (existing behaviour). The
+        // inserted key comes from `sc.*`, i.e. the already-resolved one.
         let bulk = sqlx::query(
             r#"
             INSERT INTO user_chapter_progress
@@ -382,14 +462,15 @@ pub async fn set_read(
             "#,
         )
         .bind(user_id)
-        .bind(provider)
-        .bind(external_id)
+        .bind(&key_provider)
+        .bind(&key_external_id)
         .bind(chapter_number)
         .execute(pool)
         .await?;
 
         // Manual override raises the ceiling past the auto skeleton: record the
         // exact clicked chapter even when no `series_chapters` row exists for it.
+        // `media_items` is keyed by the incoming identity, NOT the resolved key.
         let manual: bool = sqlx::query_scalar(
             "SELECT COALESCE(chapters_manual, FALSE) FROM media_items \
              WHERE provider = $1 AND external_id = $2",
@@ -412,8 +493,8 @@ pub async fn set_read(
                 "#,
             )
             .bind(user_id)
-            .bind(provider)
-            .bind(external_id)
+            .bind(&key_provider)
+            .bind(&key_external_id)
             .bind(chapter_number)
             .execute(pool)
             .await?
@@ -434,8 +515,8 @@ pub async fn set_read(
             "#,
         )
         .bind(user_id)
-        .bind(provider)
-        .bind(external_id)
+        .bind(&key_provider)
+        .bind(&key_external_id)
         .bind(chapter_number)
         .execute(pool)
         .await?;
@@ -452,6 +533,7 @@ pub async fn count_read(
     provider: &str,
     external_id: &str,
 ) -> Result<i32, sqlx::Error> {
+    let (key_provider, key_external_id) = chapter_key(pool, provider, external_id).await;
     let row: (Option<i32>,) = sqlx::query_as(
         r#"
         SELECT MAX(sc.chapter_number)
@@ -464,11 +546,15 @@ pub async fn count_read(
         WHERE sc.provider = $2
           AND sc.external_id = $3
           AND p.read = TRUE
+          -- Read progress is measured over main chapters only: bonus rows
+          -- ('00' prologue, special, duplicate number) would push the ratio
+          -- past the real main-chapter count (design :111).
+          AND NOT sc.is_bonus
         "#,
     )
     .bind(user_id)
-    .bind(provider)
-    .bind(external_id)
+    .bind(&key_provider)
+    .bind(&key_external_id)
     .fetch_one(pool)
     .await?;
     // chapter_number is stored as ch * 100, so divide back for display
@@ -485,6 +571,7 @@ pub async fn get_chapter_states(
     provider: &str,
     external_id: &str,
 ) -> Result<Vec<(i32, bool)>, sqlx::Error> {
+    let (key_provider, key_external_id) = chapter_key(pool, provider, external_id).await;
     let rows: Vec<(i32, bool)> = sqlx::query_as(
         r#"
         SELECT sc.chapter_number, COALESCE(p.read, FALSE)
@@ -499,8 +586,8 @@ pub async fn get_chapter_states(
         "#,
     )
     .bind(user_id)
-    .bind(provider)
-    .bind(external_id)
+    .bind(&key_provider)
+    .bind(&key_external_id)
     .fetch_all(pool)
     .await?;
     Ok(rows)
@@ -611,6 +698,11 @@ fn build_md_rows(chapters: &[MangaDexChapter]) -> Vec<MdChapterRow> {
 /// Insert missing chapters and COALESCE-fill existing ones in one statement.
 /// `(provider, external_id, chapter_number)` is the dedup key, so repeated
 /// enrichment is idempotent and never overwrites a filled column with NULL.
+///
+/// The incoming key is the MangaUpdates identity; the rows are written under the
+/// resolved key so MangaDex titles join the same rows the reader sees
+/// (resolution happens here, inside the function, so no caller has to remember
+/// it).
 pub async fn upsert_series_chapters(
     pool: &PgPool,
     provider: &str,
@@ -620,6 +712,7 @@ pub async fn upsert_series_chapters(
     if rows.is_empty() {
         return Ok(0);
     }
+    let (key_provider, key_external_id) = chapter_key(pool, provider, external_id).await;
     let chapter_numbers: Vec<i32> = rows.iter().map(|r| r.chapter_number).collect();
     let title_en: Vec<Option<String>> = rows.iter().map(|r| r.title_en.clone()).collect();
     let title_ru: Vec<Option<String>> = rows.iter().map(|r| r.title_ru.clone()).collect();
@@ -635,15 +728,15 @@ pub async fn upsert_series_chapters(
         SELECT $1, $2, u.chapter_number, u.title_en, u.title_ru, u.volume, u.release_date
         FROM UNNEST($3::int[], $4::text[], $5::text[], $6::int[], $7::date[])
             AS u(chapter_number, title_en, title_ru, volume, release_date)
-        ON CONFLICT (provider, external_id, chapter_number) DO UPDATE
+        ON CONFLICT (provider, external_id, chapter_number) WHERE NOT is_bonus DO UPDATE
         SET title_en = COALESCE(series_chapters.title_en, EXCLUDED.title_en),
             title_ru = COALESCE(series_chapters.title_ru, EXCLUDED.title_ru),
             volume = COALESCE(series_chapters.volume, EXCLUDED.volume),
             release_date = COALESCE(series_chapters.release_date, EXCLUDED.release_date)
         "#,
     )
-    .bind(provider)
-    .bind(external_id)
+    .bind(&key_provider)
+    .bind(&key_external_id)
     .bind(&chapter_numbers)
     .bind(&title_en)
     .bind(&title_ru)
@@ -652,8 +745,17 @@ pub async fn upsert_series_chapters(
     .execute(&mut *tx)
     .await?;
     // Enrichment inserts/merges rows but historically never refreshed the
-    // counter; sync it in the same transaction so it can never drift.
-    sync_media_items_chapters(&mut tx, provider, external_id).await?;
+    // counter; sync it in the same transaction so it can never drift. The
+    // `media_items` row is addressed by the ORIGINAL identity (no row exists
+    // under the resolved key), the row source is the resolved key.
+    sync_media_items_chapters(
+        &mut tx,
+        provider,
+        external_id,
+        &key_provider,
+        &key_external_id,
+    )
+    .await?;
     tx.commit().await?;
 
     Ok(result.rows_affected() as usize)
@@ -711,10 +813,151 @@ pub async fn enrich_from_mangadex(
         return Ok(0);
     }
 
-    // `provider` stays 'mangaupdates' even for MangaDex-sourced rows: it is the
-    // storage key (provider='mangaupdates', external_id=MU series id).
+    // `provider` here is still the incoming MangaUpdates identity: the title
+    // lookup above and the counter sync inside `upsert_series_chapters` are both
+    // `media_items` queries and must stay on it. The chapter rows themselves are
+    // written under the resolved key — the resolution happens INSIDE
+    // `upsert_series_chapters`, deliberately, so no caller can forget it.
     let affected = upsert_series_chapters(pool, provider, external_id, &rows).await?;
     Ok(affected)
+}
+
+/// Media types that own a chapter list, i.e. the candidate set of the MangaDex
+/// chapter-title passes. Same list as the hand-written queries this selection
+/// replaced (`routes/admin.rs`, `bin/backfill_chapters.rs`).
+const CHAPTER_MEDIA_TYPES: [&str; 6] = [
+    "manga",
+    "manhwa",
+    "manhua",
+    "novel",
+    "other-comics",
+    "comic",
+];
+
+/// Which chapter rows of a title are still missing provider metadata.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChapterTitleGap {
+    /// No stored row carries `title_en`/`title_ru` (this includes a title with
+    /// no rows at all) — the admin bulk pass, which enriches from scratch.
+    NoTitledRows,
+    /// At least one stored row has no title — the MangaDex backfill pass, which
+    /// only fills the gaps. Implies that rows exist.
+    UntitledRows,
+}
+
+/// `(provider, external_id, title)` of one title queued for chapter enrichment.
+pub type ChapterTitleCandidate = (String, String, String);
+
+/// Titles that still need a MangaDex chapter-title pass, oldest first.
+///
+/// The predicate cannot stay a `NOT EXISTS`/`EXISTS` subquery against
+/// `media_items.provider/external_id`: the rows of a bound title live under the
+/// resolved key (`official_resolve::chapter_key`, design :73-78), so comparing
+/// them to the incoming MangaUpdates key matches nothing once migration 028 has
+/// re-keyed them. The mismatch is silent in both directions — the admin pass
+/// would re-enrich already titled titles, and the backfill would skip exactly
+/// the titles that still have untitled rows. Candidates are therefore resolved
+/// one by one through the same resolver every reader/writer uses.
+///
+/// Cost: one `chapter_key` (two indexed queries, one for a non-MU provider) plus
+/// one predicate query per candidate, so roughly three round trips per manga-like
+/// title instead of a single statement. That is the price of keeping a single
+/// resolver; both call sites are manual, infrequent operations.
+///
+/// `limit` is applied **after** the predicate, and that placement is unchanged:
+/// the old single-statement query put both `EXISTS` subqueries in the `WHERE`
+/// clause ahead of its `LIMIT`, so the limit truncated an already filtered set
+/// in exactly the same way. What actually changed is the *key* the predicate is
+/// evaluated against — it used to be the MangaUpdates-derived key of the bound
+/// title, now it is the resolved `chapter_key` — and that changes which
+/// `media_items` rows pass the "does this title already have such chapters"
+/// test, not where the `LIMIT` sits.
+pub async fn list_titles_needing_chapter_titles(
+    pool: &PgPool,
+    provider: Option<&str>,
+    gap: ChapterTitleGap,
+    limit: Option<usize>,
+) -> Result<Vec<ChapterTitleCandidate>, sqlx::Error> {
+    let media_types: Vec<String> = CHAPTER_MEDIA_TYPES
+        .iter()
+        .map(|t| (*t).to_string())
+        .collect();
+    let candidates: Vec<ChapterTitleCandidate> = sqlx::query_as(
+        r#"
+        SELECT provider, external_id, title
+        FROM media_items
+        WHERE ($1::text IS NULL OR provider = $1)
+          AND media_type = ANY($2::text[])
+        ORDER BY created_at ASC, external_id ASC
+        "#,
+    )
+    .bind(provider)
+    .bind(&media_types)
+    .fetch_all(pool)
+    .await?;
+
+    let mut selected: Vec<ChapterTitleCandidate> = Vec::new();
+    for (provider, external_id, title) in candidates {
+        if limit.is_some_and(|l| selected.len() >= l) {
+            break;
+        }
+        // Resolve inside the loop: the chapter rows belong to the resolved key,
+        // not to the incoming identity key.
+        let (key_provider, key_external_id) = chapter_key(pool, &provider, &external_id).await;
+        if chapter_title_gap_present(pool, &key_provider, &key_external_id, gap).await? {
+            selected.push((provider, external_id, title));
+        }
+    }
+    Ok(selected)
+}
+
+/// Whether the rows stored under the resolved key match `gap`. See
+/// [`ChapterTitleGap`].
+async fn chapter_title_gap_present(
+    pool: &PgPool,
+    provider: &str,
+    external_id: &str,
+    gap: ChapterTitleGap,
+) -> Result<bool, sqlx::Error> {
+    match gap {
+        ChapterTitleGap::NoTitledRows => {
+            // The old `NOT EXISTS (titled row)`: a title with no rows at all
+            // qualifies, and so does one whose rows are all bare numbers.
+            let titled: bool = sqlx::query_scalar(
+                r#"
+                SELECT EXISTS (
+                    SELECT 1 FROM series_chapters
+                    WHERE provider = $1 AND external_id = $2
+                      AND (title_en IS NOT NULL OR title_ru IS NOT NULL)
+                )
+                "#,
+            )
+            .bind(provider)
+            .bind(external_id)
+            .fetch_one(pool)
+            .await?;
+            Ok(!titled)
+        }
+        // The old `EXISTS rows AND EXISTS untitled rows`: an untitled row cannot
+        // exist without rows, so this single probe carries both halves. It is
+        // true both when no row carries a title and when only some do.
+        ChapterTitleGap::UntitledRows => {
+            let untitled: bool = sqlx::query_scalar(
+                r#"
+                SELECT EXISTS (
+                    SELECT 1 FROM series_chapters
+                    WHERE provider = $1 AND external_id = $2
+                      AND title_en IS NULL AND title_ru IS NULL
+                )
+                "#,
+            )
+            .bind(provider)
+            .bind(external_id)
+            .fetch_one(pool)
+            .await?;
+            Ok(untitled)
+        }
+    }
 }
 
 /// Normalize a title for comparison: lowercase, strip apostrophes (so
@@ -890,6 +1133,7 @@ mod tests {
             title_ru: None,
             release_date: None,
             read: false,
+            is_bonus: false,
         };
         assert_eq!(ch.formatted(), "10.5");
 
@@ -900,6 +1144,7 @@ mod tests {
             title_ru: None,
             release_date: None,
             read: true,
+            is_bonus: true,
         };
         assert_eq!(ch2.formatted(), "2");
     }

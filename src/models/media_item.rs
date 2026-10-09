@@ -879,10 +879,7 @@ mod tests {
             Some("MangaPlus")
         );
         assert_eq!(chapter_source_label(Some("auto:syosetu")), Some("Syosetu"));
-        assert_eq!(
-            chapter_source_label(Some("auto:kuaikan")),
-            Some("Kuaikan")
-        );
+        assert_eq!(chapter_source_label(Some("auto:kuaikan")), Some("Kuaikan"));
         assert_eq!(chapter_source_label(Some("auto:mh5")), Some("MH5"));
         assert_eq!(
             chapter_source_label(Some("auto:mangaupdates")),

@@ -69,6 +69,7 @@ pub fn parse_episodes(html: &str) -> Vec<ChapterMeta> {
                 number_x100: ((rows.len() + 1) * 100) as i32,
                 title,
                 release_date: date,
+                is_bonus: false,
             });
         }
     }
@@ -120,8 +121,7 @@ pub fn parse_search(html: &str) -> Vec<OfficialHit> {
         };
         for entry in books {
             let book = entry.get("book").unwrap_or(entry);
-            let Some(id) = id_string(book.get("id")).or_else(|| id_string(entry.get("id")))
-            else {
+            let Some(id) = id_string(book.get("id")).or_else(|| id_string(entry.get("id"))) else {
                 continue;
             };
             let Some(title) = book
@@ -163,7 +163,10 @@ mod tests {
         let m = parse_detail(html);
         assert_eq!(m.source, "ridibooks");
         assert!(m.chapters.is_empty(), "fixture carries no chapter rows");
-        assert!(m.update_schedule.is_none(), "ridibooks has no schedule field");
+        assert!(
+            m.update_schedule.is_none(),
+            "ridibooks has no schedule field"
+        );
         assert!(m.next_update_at.is_none());
         assert!(m.count.is_none());
     }

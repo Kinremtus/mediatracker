@@ -72,11 +72,7 @@ pub fn parse_total(html: &str) -> Option<i32> {
     let gt = after_open.find('>')?;
     let after = &after_open[gt + 1..];
     let e = after.find("</strong>")?;
-    after[..e]
-        .trim()
-        .parse::<i32>()
-        .ok()
-        .filter(|n| *n > 0)
+    after[..e].trim().parse::<i32>().ok().filter(|n| *n > 0)
 }
 
 #[cfg(test)]

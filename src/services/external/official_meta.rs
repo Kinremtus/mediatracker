@@ -13,9 +13,14 @@ use chrono::NaiveDate;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChapterMeta {
     /// Chapter number scaled x100 (matches `series_chapters.chapter_number`).
+    /// `0` when the source reports no number (bonus prologue / extra).
     pub number_x100: i32,
     pub title: Option<String>,
     pub release_date: Option<NaiveDate>,
+    /// True for bonus rows (`00` prologues, non-numeric specials, repeated
+    /// numbers). Only `official_bilibili` classifies rows today; every other
+    /// source reports its plain numbered rows as `false`.
+    pub is_bonus: bool,
 }
 
 /// Everything one official source can tell us about a title.
@@ -41,9 +46,26 @@ impl ChapterMeta {
             number_x100: scaled,
             title: None,
             release_date: None,
+            is_bonus: false,
         })
     }
 }
+
+/// Sources with a real arm in `fetch_source` (each source here has a working fetch).
+/// kuaikan/kakao/mangaplus are intentionally absent: they have no arm -> Ok(default) (empty response).
+/// Must stay identical to the `supports_meta` list in `migrations/028_chapter_ownership.sql`.
+pub const SOURCES_WITH_META: &[&str] = &[
+    "bilibili",
+    "naver",
+    "daum",
+    "ridibooks",
+    "comicwalker",
+    "mangaup",
+    "alphapolis",
+    "syosetu",
+    "kakuyomu",
+    "qidian",
+];
 
 /// Fetch one source's detail, dispatched by the binding name. Unknown/absent
 /// source -> empty `OfficialMeta` (never an error, so callers stay silent).
@@ -72,7 +94,9 @@ pub async fn fetch_source(
         "ridibooks" => {
             crate::services::external::official_ridibooks::fetch_meta(client, source_id).await
         }
-        "mangaup" => crate::services::external::official_mangaup::fetch_meta(client, source_id).await,
+        "mangaup" => {
+            crate::services::external::official_mangaup::fetch_meta(client, source_id).await
+        }
         _ => Ok(OfficialMeta::default()),
     }
 }
@@ -200,8 +224,7 @@ pub fn normalize_schedule(raw: &str) -> Option<String> {
 }
 
 /// Boxed future returned by [`MetaSource::fetch`] (mirrors `SearchFuture`).
-pub type MetaFuture<'a> =
-    Pin<Box<dyn Future<Output = anyhow::Result<OfficialMeta>> + Send + 'a>>;
+pub type MetaFuture<'a> = Pin<Box<dyn Future<Output = anyhow::Result<OfficialMeta>> + Send + 'a>>;
 
 /// A guest-accessible official source of chapter metadata.
 pub trait MetaSource: Send + Sync {
@@ -216,7 +239,14 @@ mod tests {
 
     #[test]
     fn between_extracts() {
-        assert_eq!(between("<li class=\"_notice\">A</li>", "class=\"_notice\">", "</li>"), Some("A"));
+        assert_eq!(
+            between(
+                "<li class=\"_notice\">A</li>",
+                "class=\"_notice\">",
+                "</li>"
+            ),
+            Some("A")
+        );
         assert_eq!(between("no markers", "x", "y"), None);
     }
 
@@ -256,7 +286,10 @@ mod tests {
 
     #[test]
     fn normalize_schedule_drops_unknown() {
-        assert_eq!(normalize_schedule(" 매주 월요일 "), Some("매주 월요일".to_string()));
+        assert_eq!(
+            normalize_schedule(" 매주 월요일 "),
+            Some("매주 월요일".to_string())
+        );
         assert_eq!(normalize_schedule("未定"), None);
         assert_eq!(normalize_schedule(""), None);
     }

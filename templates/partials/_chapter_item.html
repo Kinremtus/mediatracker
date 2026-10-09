@@ -1,4 +1,4 @@
-<div class="chapter-item {% if chapter.read %}chapter-item--read{% endif %}"
+<div class="chapter-item {% if chapter.read %}chapter-item--read{% endif %}{% if chapter.is_bonus %} chapter-item--bonus{% endif %}"
      id="chapter-{{ chapter.chapter_number }}"
      data-chapter-n="{{ chapter.chapter_number }}">
     <form class="chapter-item-form"
@@ -13,7 +13,7 @@
         </button>
     </form>
     <div class="chapter-item-number">
-        {% if chapter.volume.is_some() %}<span class="chapter-item-volume">T{{ chapter.volume.unwrap() }}</span> {% endif %}Гл. {{ chapter.formatted() }}
+        {% if chapter.is_bonus %}<span class="chapter-item-bonus-tag">бонус</span> {% endif %}{% if chapter.volume.is_some() %}<span class="chapter-item-volume">T{{ chapter.volume.unwrap() }}</span> {% endif %}Гл. {{ chapter.formatted() }}
     </div>
     <div class="chapter-item-content">
         {% if let Some(en) = chapter.title_en %}

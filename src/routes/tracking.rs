@@ -621,8 +621,9 @@ pub async fn post_add_to_tracking(
         Ok(_) => {
             // Enrich when ANY official source for this media type is already
             // bound (bounded, non-fatal - never fails the add).
-            let sources =
-                crate::services::official_resolve::official_source_for_media_type(&media.media_type);
+            let sources = crate::services::official_resolve::official_source_for_media_type(
+                &media.media_type,
+            );
             let mut has_binding = false;
             for &source in sources {
                 if let Ok(Some(_)) = crate::services::source_ids::get_source_id(

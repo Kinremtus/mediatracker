@@ -20,10 +20,12 @@ const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
 const REFERER: &str = "https://webtoon.kakao.com";
 
 /// Decorator (schedule) + paginated episode list for `content_id`.
-pub async fn fetch_meta(client: &reqwest::Client, content_id: &str) -> anyhow::Result<OfficialMeta> {
-    let decorator = format!(
-        "https://gateway-kw.kakao.com/decorator/v1/decorator/contents/{content_id}"
-    );
+pub async fn fetch_meta(
+    client: &reqwest::Client,
+    content_id: &str,
+) -> anyhow::Result<OfficialMeta> {
+    let decorator =
+        format!("https://gateway-kw.kakao.com/decorator/v1/decorator/contents/{content_id}");
     let body = client
         .get(&decorator)
         .header(reqwest::header::USER_AGENT, UA)
@@ -78,19 +80,13 @@ pub fn parse_episodes(json: &str, base: usize) -> Vec<ChapterMeta> {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
         return Vec::new();
     };
-    let Some(list) = value
-        .pointer("/data/episodes")
-        .and_then(|v| v.as_array())
-    else {
+    let Some(list) = value.pointer("/data/episodes").and_then(|v| v.as_array()) else {
         return Vec::new();
     };
     list.iter()
         .enumerate()
         .map(|(i, ep)| {
-            let title = ep
-                .get("title")
-                .and_then(|v| v.as_str())
-                .map(str::to_string);
+            let title = ep.get("title").and_then(|v| v.as_str()).map(str::to_string);
             let release_date = ep
                 .get("serialStartDateTime")
                 .or_else(|| ep.get("date"))
@@ -101,6 +97,7 @@ pub fn parse_episodes(json: &str, base: usize) -> Vec<ChapterMeta> {
                 number_x100: ((base + i + 1) * 100) as i32,
                 title,
                 release_date,
+                is_bonus: false,
             }
         })
         .collect()

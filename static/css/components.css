@@ -1022,6 +1022,31 @@
     opacity: 0.55;
 }
 
+/* --- Bonus chapters (batch 7): own section below the main list --- */
+.chapter-list-bonus-label {
+    padding: 8px 10px 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--muted-foreground);
+}
+.chapter-list--bonus .chapter-item {
+    opacity: 0.85;
+}
+.chapter-item-bonus-tag {
+    font-size: 10px;
+    background: color-mix(in srgb, var(--in_progress) 18%, transparent);
+    color: var(--in_progress);
+    padding: 1px 4px;
+    border-radius: var(--radius-sm);
+}
+
+.chapter-item--bonus {
+    background: color-mix(in srgb, var(--surface) 92%, var(--muted-foreground) 8%);
+    border-color: color-mix(in srgb, var(--border) 80%, var(--muted-foreground) 20%);
+}
+
 /* --- TMDB Season rows (accordion layout) --- */
 .season-row {
     border: 1px solid var(--border);
@@ -2248,6 +2273,10 @@ body.drawer-open {
     background: var(--secondary);
     color: var(--muted-foreground);
 }
+.drawer-meta-badge--bonus {
+    background: color-mix(in srgb, var(--in_progress) 18%, transparent);
+    color: var(--in_progress);
+}
 
 .drawer-meta-badge.status-completed,
 .badge.badge-status.status-completed {
@@ -2321,6 +2350,11 @@ body.drawer-open {
     letter-spacing: 0.03em;
     color: var(--muted-foreground);
     margin-bottom: 0.5rem;
+}
+.drawer-section-label-bonus {
+    text-transform: none;
+    letter-spacing: 0;
+    opacity: 0.85;
 }
 .drawer-section-toggle {
     display: flex;

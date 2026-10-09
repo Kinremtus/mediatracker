@@ -35,6 +35,7 @@ fn meta(
             number_x100: 100,
             title: title.map(str::to_string),
             release_date,
+            is_bonus: false,
         }],
         count: Some(1),
         update_schedule: update_schedule.map(str::to_string),
@@ -55,7 +56,12 @@ impl ChapterCountProvider for FixedProvider {
 
     fn fetch<'a>(&'a self, _external_id: &'a str) -> ChapterCountFuture<'a> {
         let total = self.total;
-        Box::pin(async move { Ok(Some(ChapterCount { total, source: "auto:test" })) })
+        Box::pin(async move {
+            Ok(Some(ChapterCount {
+                total,
+                source: "auto:test",
+            }))
+        })
     }
 
     fn media_types(&self) -> &'static [&'static str] {
@@ -82,7 +88,12 @@ async fn setup(chapters: i32) -> common::TestContext {
 
 async fn chapter_row(
     pool: &sqlx::PgPool,
-) -> (Option<String>, Option<NaiveDate>, Option<String>, Option<NaiveDate>) {
+) -> (
+    Option<String>,
+    Option<NaiveDate>,
+    Option<String>,
+    Option<NaiveDate>,
+) {
     sqlx::query_as(
         "SELECT title_en, release_date, update_schedule, next_update_at \
          FROM series_chapters sc \
@@ -97,9 +108,7 @@ async fn chapter_row(
     .expect("read chapter + schedule row")
 }
 
-async fn item_columns(
-    pool: &sqlx::PgPool,
-) -> (Option<i32>, Option<String>, Option<NaiveDate>) {
+async fn item_columns(pool: &sqlx::PgPool) -> (Option<i32>, Option<String>, Option<NaiveDate>) {
     sqlx::query_as(
         "SELECT chapters, update_schedule, next_update_at \
          FROM media_items WHERE provider = $1 AND external_id = $2",
@@ -161,7 +170,13 @@ async fn apply_meta_coalesce_and_schedule_semantics() {
         &ctx.pool,
         PROVIDER,
         EXTERNAL_ID,
-        &meta(Some("Official"), Some(date), Some("매주 월요일"), Some(next)),
+        "test",
+        &meta(
+            Some("Official"),
+            Some(date),
+            Some("매주 월요일"),
+            Some(next),
+        ),
     )
     .await
     .expect("first apply_meta");
@@ -178,6 +193,7 @@ async fn apply_meta_coalesce_and_schedule_semantics() {
         &ctx.pool,
         PROVIDER,
         EXTERNAL_ID,
+        "test",
         &meta(
             Some("Clobber Attempt"),
             Some(later),
@@ -189,9 +205,17 @@ async fn apply_meta_coalesce_and_schedule_semantics() {
     .expect("second apply_meta");
 
     let (title, release, schedule, next_at) = chapter_row(&ctx.pool).await;
-    assert_eq!(title.as_deref(), Some("Official"), "non-NULL title survives");
+    assert_eq!(
+        title.as_deref(),
+        Some("Official"),
+        "non-NULL title survives"
+    );
     assert_eq!(release, Some(date), "non-NULL date survives");
-    assert_eq!(schedule.as_deref(), Some("毎週 金曜日 19:00"), "non-empty schedule updates");
+    assert_eq!(
+        schedule.as_deref(),
+        Some("毎週 金曜日 19:00"),
+        "non-empty schedule updates"
+    );
     assert_eq!(next_at, Some(next), "None next_update_at does not erase");
 
     // 3. A source without a schedule must not wipe the stored one.
@@ -199,6 +223,7 @@ async fn apply_meta_coalesce_and_schedule_semantics() {
         &ctx.pool,
         PROVIDER,
         EXTERNAL_ID,
+        "test",
         &meta(None, None, None, None),
     )
     .await
@@ -223,38 +248,52 @@ async fn chapters_count_is_raise_only() {
         .expect("bind source id");
 
     // Lower reading (60 < 100): no write at all.
-    let applied =
-        enrich_with_providers(&ctx.pool, PROVIDER, EXTERNAL_ID, vec![Arc::new(FixedProvider {
+    let applied = enrich_with_providers(
+        &ctx.pool,
+        PROVIDER,
+        EXTERNAL_ID,
+        vec![Arc::new(FixedProvider {
             name: "kakao",
             total: 60,
-        })])
-        .await;
+        })],
+    )
+    .await;
     assert_eq!(applied, None, "a lower reading must be ignored");
     let (chapters, _, _) = item_columns(&ctx.pool).await;
     assert_eq!(chapters, Some(100), "lower reading must not lower chapters");
 
-    // `apply_meta` never writes `chapters` at all.
+    // `apply_meta` follows the same raise-only rule: a lower official count is
+    // ignored, the schedule is still written.
     let date = NaiveDate::from_ymd_opt(2026, 9, 30).unwrap();
     apply_meta(
         &ctx.pool,
         PROVIDER,
         EXTERNAL_ID,
+        "test",
         &meta(Some("Official"), Some(date), Some("不定时更新"), None),
     )
     .await
     .expect("apply_meta");
     let (chapters, schedule, _) = item_columns(&ctx.pool).await;
-    assert_eq!(chapters, Some(100), "apply_meta must not touch chapters");
+    assert_eq!(
+        chapters,
+        Some(100),
+        "a lower official count must not lower chapters"
+    );
     assert_eq!(schedule.as_deref(), Some("不定时更新"));
 
     // Sanity: a higher reading still raises (the invariance is raise-only,
     // not freeze).
-    let applied =
-        enrich_with_providers(&ctx.pool, PROVIDER, EXTERNAL_ID, vec![Arc::new(FixedProvider {
+    let applied = enrich_with_providers(
+        &ctx.pool,
+        PROVIDER,
+        EXTERNAL_ID,
+        vec![Arc::new(FixedProvider {
             name: "kakao",
             total: 120,
-        })])
-        .await;
+        })],
+    )
+    .await;
     assert_eq!(applied, Some(120));
     let (chapters, _, _) = item_columns(&ctx.pool).await;
     assert_eq!(chapters, Some(120), "a higher reading still raises");
@@ -267,6 +306,9 @@ fn registry_accepts_every_known_source_and_rejects_narou() {
     for source in KNOWN_SOURCES {
         assert!(is_known_source(source), "{source} must be a known source");
     }
-    assert!(!is_known_source("narou"), "narou reuses syosetu and must not be bindable");
+    assert!(
+        !is_known_source("narou"),
+        "narou reuses syosetu and must not be bindable"
+    );
     assert!(!is_known_source(""), "empty source is never known");
 }

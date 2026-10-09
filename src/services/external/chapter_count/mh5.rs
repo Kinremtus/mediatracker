@@ -89,7 +89,10 @@ mod tests {
 
     #[test]
     fn no_marker_yields_none() {
-        assert_eq!(max_chapter("<html><body>no chapters here</body></html>"), None);
+        assert_eq!(
+            max_chapter("<html><body>no chapters here</body></html>"),
+            None
+        );
     }
 
     #[test]

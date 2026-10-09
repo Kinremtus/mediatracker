@@ -86,7 +86,8 @@ pub fn field_values<'a>(bytes: &'a [u8], target: u32) -> Vec<WireValue<'a>> {
 pub fn message_field(bytes: &[u8], target: u32) -> Option<&[u8]> {
     let mut result = None;
     let _ = walk_fields(bytes, &mut |number, value| {
-        if result.is_none() && number == target
+        if result.is_none()
+            && number == target
             && let WireValue::Bytes(payload) = value
         {
             result = Some(payload);

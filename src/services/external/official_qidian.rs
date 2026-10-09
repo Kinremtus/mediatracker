@@ -67,7 +67,9 @@ pub fn parse_catalog(html: &str) -> Vec<ChapterMeta> {
             .unwrap_or(after.len());
         let cid = &after[cid_start..cid_end];
         // Anchor body runs up to its `</a>` (contains attrs + children).
-        let Some(a_end) = after.find("</a>") else { break };
+        let Some(a_end) = after.find("</a>") else {
+            break;
+        };
         let anchor = &after[..a_end];
         rest = &after[a_end + 4..];
         // The header shortcut (`_lastChapterUT`) and non-row anchors are out.
@@ -141,7 +143,9 @@ pub fn parse_search(html: &str) -> Vec<OfficialHit> {
             .find(|c: char| !c.is_ascii_digit())
             .unwrap_or(after.len());
         let id = &after[..id_end];
-        let Some(a_end) = after.find("</a>") else { break };
+        let Some(a_end) = after.find("</a>") else {
+            break;
+        };
         let anchor = &after[..a_end];
         rest = &after[a_end + 4..];
         if id.is_empty() || hits.iter().any(|h| h.id == id) {

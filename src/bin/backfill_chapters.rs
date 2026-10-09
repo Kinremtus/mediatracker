@@ -12,7 +12,9 @@
 use anyhow::{Result, anyhow};
 use clap::Parser;
 use mediatracker::config::Config;
-use mediatracker::services::chapters::enrich_from_mangadex;
+use mediatracker::services::chapters::{
+    ChapterTitleGap, enrich_from_mangadex, list_titles_needing_chapter_titles,
+};
 use sqlx::{PgPool, Row};
 use std::time::Duration;
 use tracing::{info, warn};
@@ -60,51 +62,48 @@ async fn main() -> Result<()> {
         args.force, args.provider, args.limit
     );
 
-    let rows = if let Some(ext_id) = args.external_id {
+    let rows: Vec<(String, String, String)> = if let Some(ext_id) = args.external_id {
         // Single manga
         sqlx::query(
             "SELECT provider, external_id, title FROM media_items \
              WHERE provider = $1 AND external_id = $2 \
-             AND media_type IN ('manga','manhwa','manhua','novel','other-comics')",
+             AND media_type IN ('manga','manhwa','manhua','novel','other-comics','comic')",
         )
         .bind(&args.provider)
         .bind(&ext_id)
         .fetch_all(&pool)
         .await?
+        .iter()
+        .map(|row| (row.get(0), row.get(1), row.get(2)))
+        .collect()
     } else if args.force {
         // All manga-like items from provider
         sqlx::query(
             "SELECT provider, external_id, title FROM media_items \
              WHERE provider = $1 \
-             AND media_type IN ('manga','manhwa','manhua','novel','other-comics') \
+             AND media_type IN ('manga','manhwa','manhua','novel','other-comics','comic') \
              ORDER BY created_at ASC LIMIT $2",
         )
         .bind(&args.provider)
         .bind(args.limit as i64)
         .fetch_all(&pool)
         .await?
+        .iter()
+        .map(|row| (row.get(0), row.get(1), row.get(2)))
+        .collect()
     } else {
-        // Only items where chapters exist but lack titles
-        sqlx::query(
-            r#"
-            SELECT mi.provider, mi.external_id, mi.title FROM media_items mi
-            WHERE mi.provider = $1
-              AND mi.media_type IN ('manga','manhwa','manhua','novel','other-comics')
-              AND EXISTS (
-                  SELECT 1 FROM series_chapters sc
-                  WHERE sc.provider = mi.provider AND sc.external_id = mi.external_id
-              )
-              AND EXISTS (
-                  SELECT 1 FROM series_chapters sc
-                  WHERE sc.provider = mi.provider AND sc.external_id = mi.external_id
-                  AND sc.title_en IS NULL AND sc.title_ru IS NULL
-              )
-            ORDER BY mi.created_at ASC LIMIT $2
-            "#,
+        // Only items whose chapter rows still have untitled entries. The
+        // predicate runs on the RESOLVED key (see
+        // `chapters::list_titles_needing_chapter_titles`): a bound title keeps
+        // its rows under the official source key, so matching them against the
+        // `media_items` key would skip exactly those titles. `limit` is applied
+        // after the predicate, not to the raw candidate list.
+        list_titles_needing_chapter_titles(
+            &pool,
+            Some(&args.provider),
+            ChapterTitleGap::UntitledRows,
+            Some(args.limit),
         )
-        .bind(&args.provider)
-        .bind(args.limit as i64)
-        .fetch_all(&pool)
         .await?
     };
 
@@ -118,14 +117,10 @@ async fn main() -> Result<()> {
     let mut enriched = 0usize;
     let mut failed = 0usize;
 
-    for row in &rows {
-        let provider: String = row.get(0);
-        let external_id: String = row.get(1);
-        let title: String = row.get(2);
-
+    for (provider, external_id, title) in &rows {
         info!("Enriching: {} ({})", title, external_id);
 
-        match enrich_from_mangadex(&pool, &provider, &external_id).await {
+        match enrich_from_mangadex(&pool, provider, external_id).await {
             Ok(count) => {
                 enriched += count;
                 info!("  -> enriched {} chapters", count);

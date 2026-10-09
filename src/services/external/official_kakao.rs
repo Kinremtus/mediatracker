@@ -104,8 +104,7 @@ mod tests {
 
     #[test]
     fn accepts_string_series_id() {
-        let body =
-            r#"{"result":{"list":[{"series_id":"abc","title":"T","category_uid":10}]}}"#;
+        let body = r#"{"result":{"list":[{"series_id":"abc","title":"T","category_uid":10}]}}"#;
         let hits = parse_search(body);
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].id, "abc");
