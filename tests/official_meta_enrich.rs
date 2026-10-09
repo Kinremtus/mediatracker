@@ -406,7 +406,6 @@ async fn chapters_are_stored_without_a_media_items_row() {
     bind(&ctx, SOURCE, SOURCE_ID).await;
 
     let m = meta(Some("Preview"), None, Some("매주 금요일"));
-    // meta() already sets count: Some(1); explicit assignment removed as dead
     let written = apply_meta(&ctx.pool, PROVIDER, EXTERNAL_ID, SOURCE, &m)
         .await
         .expect("apply_meta without media_items");
@@ -489,8 +488,10 @@ async fn empty_chapter_list_deletes_nothing() {
     assert_eq!(numbers, vec![100, 700], "no answer, no cleanup");
 }
 
-/// Bonus rows have no unique key, so a re-apply must rewrite this source's
-/// bonuses instead of duplicating them — and a manual bonus must survive.
+/// Bonus rows have no conflict target (the partial unique index covers main
+/// rows only), so a re-apply must rewrite this source's bonuses instead of
+/// duplicating them — and a manual bonus must survive. Each source bonus gets
+/// its own negative counter (migration 029); the manual one keeps its number.
 #[tokio::test]
 async fn reapply_rewrites_bonus_rows_instead_of_duplicating_them() {
     let ctx = setup().await;
@@ -522,8 +523,8 @@ async fn reapply_rewrites_bonus_rows_instead_of_duplicating_them() {
         .collect();
     assert_eq!(
         bonuses,
-        vec![(0, "bilibili".to_string()), (0, "manual".to_string()),],
-        "the manual bonus is kept next to the source's own bonus"
+        vec![(-100, "bilibili".to_string()), (0, "manual".to_string()),],
+        "the source bonus gets a negative counter, the manual bonus is kept next to it"
     );
 }
 
@@ -556,8 +557,101 @@ async fn empty_chapter_list_keeps_stored_bonus_rows() {
         .collect();
     assert_eq!(
         bonuses,
-        vec![(0, SOURCE.to_string())],
+        vec![(-100, SOURCE.to_string())],
         "an answer without chapters must not wipe already-stored bonuses"
+    );
+}
+
+/// Every bonus row gets its own negative counter (oldest-first), so a single
+/// bonus can be marked read on its own; main rows keep their positive number.
+#[tokio::test]
+async fn bonus_rows_get_distinct_negative_numbers() {
+    let ctx = setup().await;
+
+    let mut m = meta(None, None, None);
+    m.chapters = vec![
+        main_chapter(100),
+        bonus_chapter(0),
+        bonus_chapter(0),
+        main_chapter(200),
+    ];
+    apply_meta(&ctx.pool, PROVIDER, EXTERNAL_ID, SOURCE, &m)
+        .await
+        .expect("apply_meta");
+
+    let mut bonuses: Vec<i32> = chapter_rows(&ctx)
+        .await
+        .into_iter()
+        .filter(|(_, _, _, _, is_bonus)| *is_bonus)
+        .map(|(_, _, n, _, _)| n)
+        .collect();
+    bonuses.sort();
+    assert_eq!(
+        bonuses,
+        vec![-200, -100],
+        "two bonus rows must get two distinct negative counters"
+    );
+}
+
+/// A numbered bonus keeps its original number as the display label; unnumbered
+/// specials get a running counter. The stored key stays a hidden negative.
+#[tokio::test]
+async fn bonus_labels_use_original_number_or_counter() {
+    let ctx = setup().await;
+
+    let mut m = meta(None, None, None);
+    m.chapters = vec![
+        main_chapter(100),
+        bonus_chapter(4950), // "49.5"
+        bonus_chapter(0),    // unnumbered special
+        bonus_chapter(0),    // unnumbered special
+    ];
+    apply_meta(&ctx.pool, PROVIDER, EXTERNAL_ID, SOURCE, &m)
+        .await
+        .expect("apply_meta");
+
+    let rows: Vec<(i32, Option<String>)> = sqlx::query_as(
+        "SELECT chapter_number, chapter_label FROM series_chapters \
+         WHERE is_bonus ORDER BY chapter_number ASC",
+    )
+    .fetch_all(&ctx.pool)
+    .await
+    .expect("read bonus rows");
+
+    assert_eq!(
+        rows,
+        vec![
+            (-300, Some("49.5".to_string())),
+            (-200, Some("1".to_string())),
+            (-100, Some("2".to_string())),
+        ],
+        "numbered bonus keeps its number, unnumbered get 1,2,3..."
+    );
+}
+
+/// A bonus that duplicates a main number keeps that number as its label.
+#[tokio::test]
+async fn duplicate_number_bonus_keeps_its_number_as_label() {
+    let ctx = setup().await;
+
+    let mut m = meta(None, None, None);
+    m.chapters = vec![main_chapter(200), bonus_chapter(200), main_chapter(300)];
+    apply_meta(&ctx.pool, PROVIDER, EXTERNAL_ID, SOURCE, &m)
+        .await
+        .expect("apply_meta");
+
+    let rows: Vec<(i32, Option<String>)> = sqlx::query_as(
+        "SELECT chapter_number, chapter_label FROM series_chapters \
+         WHERE is_bonus ORDER BY chapter_number ASC",
+    )
+    .fetch_all(&ctx.pool)
+    .await
+    .expect("read bonus rows");
+
+    assert_eq!(
+        rows,
+        vec![(-100, Some("2".to_string()))],
+        "the duplicate keeps its original number as the display label"
     );
 }
 

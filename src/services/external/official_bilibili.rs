@@ -112,6 +112,10 @@ struct EpisodeRow {
     title: Option<String>,
     release_date: Option<chrono::NaiveDate>,
     number: Option<i32>,
+    /// Original x100 number when `short_title` is numeric but not a plain
+    /// integer >= 1 (`49.5` -> 4950, `199.51` -> 19951); `None` otherwise.
+    /// Feeds the bonus display label (never the main sequence).
+    fractional_x100: Option<i32>,
 }
 
 /// `short_title` -> `Some(n)` for a plain integer `>= 1`. Everything else —
@@ -156,6 +160,12 @@ fn episode_rows(items: &[serde_json::Value]) -> Vec<ChapterMeta> {
                 title,
                 release_date: date,
                 number: episode_number(item),
+                fractional_x100: item
+                    .get("short_title")
+                    .and_then(|v| v.as_str())
+                    .map(str::trim)
+                    .and_then(crate::services::chapters::parse_chapter)
+                    .filter(|x| *x > 0),
             }
         })
         .collect();
@@ -167,8 +177,15 @@ fn episode_rows(items: &[serde_json::Value]) -> Vec<ChapterMeta> {
                 Some(n) => !seen.insert(n),
                 None => true,
             };
+            // Main and duplicate-numbered bonuses keep the whole number; a
+            // numeric special ('49.5') keeps its original x100; everything else
+            // is 0 (unnumbered). `apply_meta` turns this into the display label.
+            let number_x100 = match row.number {
+                Some(n) => n * 100,
+                None => row.fractional_x100.unwrap_or(0),
+            };
             ChapterMeta {
-                number_x100: row.number.unwrap_or(0) * 100,
+                number_x100,
                 title: row.title,
                 release_date: row.release_date,
                 is_bonus,
@@ -453,8 +470,9 @@ mod tests {
         // ... but `count` is the number of MAIN chapters only.
         // Пересчитано по факту фикстуры: 596 rows = 399 distinct numeric
         // short_titles >= 1 (main) + 197 bonus rows (番外NN / `.5` chapters /
-        // `第N坑` placeholders / notices). The fixture has no duplicate
-        // numeric short_title, so all 197 bonus rows are non-numeric specials.
+        // `第N坑` placeholders / notices). The fixture has no duplicate numeric
+        // short_title, so the 197 bonus rows are numeric `.5` specials and
+        // non-numeric placeholders/notices.
         assert_eq!(main_count(&m.chapters), 399);
         assert_eq!(m.chapters.iter().filter(|c| !c.is_bonus).count(), 399);
         assert_eq!(m.chapters.iter().filter(|c| c.is_bonus).count(), 197);

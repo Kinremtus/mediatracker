@@ -1022,9 +1022,25 @@
     opacity: 0.55;
 }
 
-/* --- Bonus chapters (batch 7): own section below the main list --- */
-.chapter-list-bonus-label {
+/* --- Bonus chapters: own section below the main list, collapsed by default --- */
+.chapter-list-bonus-details {
+    margin-top: 4px;
+}
+.chapter-list-bonus-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     padding: 8px 10px 4px;
+    cursor: pointer;
+    list-style: none;
+}
+.chapter-list-bonus-summary::-webkit-details-marker {
+    display: none;
+}
+.chapter-list-bonus-details[open] .drawer-section-arrow {
+    transform: rotate(180deg);
+}
+.chapter-list-bonus-label {
     font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
@@ -2513,6 +2529,15 @@ body.drawer-open {
     font-size: 14px;
     font-weight: 500;
     color: var(--foreground);
+}
+
+/* Separate bonus-chapter counter (some readers skip bonuses). */
+.drawer-progress-bonus {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--muted-foreground);
+    padding-left: 0.5rem;
+    border-left: 1px solid var(--border);
 }
 
 .drawer-btn-increment {

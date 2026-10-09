@@ -836,6 +836,28 @@ struct MessagePartial {
     error: Option<String>,
 }
 
+/// `ProgressRow` plus the separate bonus-chapter counter. `from_entry` is sync
+/// (no DB); the bonus counts live in `series_chapters`, so resolve them here.
+async fn progress_row_with_bonus(
+    state: &AppState,
+    user_id: Uuid,
+    ewm: &TrackingEntryWithMedia,
+) -> ProgressRow {
+    let row = ProgressRow::from_entry(ewm);
+    if !row.has_progress {
+        return row;
+    }
+    let (read, total) = crate::services::chapters::bonus_progress(
+        &state.db,
+        user_id,
+        &ewm.media.provider,
+        &ewm.media.external_id,
+    )
+    .await
+    .unwrap_or((0, 0));
+    row.with_bonus(read, total)
+}
+
 pub async fn htmx_update_tracking(
     user: CurrentUser,
     State(state): State<AppState>,
@@ -872,7 +894,9 @@ pub async fn htmx_update_tracking(
                 // full card partial; the drawer chips discard it (hx-swap
                 // none), the card swaps it in.
                 let html = if form.increment.is_some() {
-                    ProgressRow::from_entry(&ewm).render()
+                    progress_row_with_bonus(&state, user.id, &ewm)
+                        .await
+                        .render()
                 } else {
                     TrackingCardPartial {
                         entry_with_media: ewm,
@@ -908,10 +932,15 @@ pub async fn get_progress_row(
     Path(id): Path<Uuid>,
 ) -> Response {
     match state.tracking.get_entry_with_media(user.id, id).await {
-        Ok(Some(ewm)) => Html(ProgressRow::from_entry(&ewm).render().unwrap_or_else(|e| {
-            tracing::error!(error = %e, "template render failed");
-            String::from("Internal Server Error")
-        }))
+        Ok(Some(ewm)) => Html(
+            progress_row_with_bonus(&state, user.id, &ewm)
+                .await
+                .render()
+                .unwrap_or_else(|e| {
+                    tracing::error!(error = %e, "template render failed");
+                    String::from("Internal Server Error")
+                }),
+        )
         .into_response(),
         Ok(None) => (axum::http::StatusCode::NOT_FOUND, "Not found").into_response(),
         Err(e) => super::internal_error("tracking: progress row", e),

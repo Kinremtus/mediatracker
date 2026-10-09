@@ -64,6 +64,10 @@ pub struct ProgressRow {
     pub status_display: String,
     /// Whether this media type has a progress row at all.
     pub has_progress: bool,
+    /// Read bonus chapters (own counter; 0 when the title has none).
+    pub bonus_read: i32,
+    /// Total bonus chapters; the row hides the bonus part when this is 0.
+    pub bonus_total: i32,
 }
 
 impl ProgressRow {
@@ -92,7 +96,17 @@ impl ProgressRow {
             can_decrement: progress_display > 0,
             status_display: status_display.into(),
             has_progress,
+            bonus_read: 0,
+            bonus_total: 0,
         }
+    }
+
+    /// Attach the separate bonus-chapter counter (`read / total`). Callers that
+    /// have the DB at hand set this; the row hides the bonus part when total is 0.
+    pub fn with_bonus(mut self, read: i32, total: i32) -> Self {
+        self.bonus_read = read;
+        self.bonus_total = total;
+        self
     }
 
     /// Build the row from a tracking entry joined with its media row.

@@ -63,11 +63,10 @@ pub async fn apply_meta(
     let mut written = 0usize;
     let mut tx = db.begin().await?;
 
-    // Bonus rows intentionally share their chapter_number (duplicate episode
-    // numbers are stored as bonuses) and the partial unique index covers main
-    // rows only -> wipe this source's own bonus rows first, so a re-apply
-    // rewrites them instead of duplicating them. `origin='manual'` bonuses and
-    // other sources' bonuses are never touched.
+    // The partial unique index covers main rows only, so a bonus INSERT has no
+    // conflict target: a re-apply would duplicate the source's bonus rows.
+    // Wipe this source's own bonuses first so a re-apply rewrites them instead.
+    // `origin='manual'` bonuses and other sources' bonuses are never touched.
     //
     // Guarded by the same non-empty check as the orphan cleanup: an answer
     // without episodes (schedule-only meta, `is_useful_meta` still lets it
@@ -85,12 +84,33 @@ pub async fn apply_meta(
         .await?;
     }
 
+    // Bonus rows get a distinct NEGATIVE key -(total - i) * 100 in source order,
+    // so `ORDER BY chapter_number ASC` lists them oldest-first, plus a display
+    // label: the original number ('49.5', duplicate '2') or a running counter
+    // for unnumbered specials (migration 029). Main rows keep their positive
+    // x100 number and a NULL label. A re-apply reproduces the same keys/labels.
+    let bonus_total = meta.chapters.iter().filter(|c| c.is_bonus).count() as i32;
+    let mut bonus_i = 0i32;
+    let mut unnumbered = 0i32;
     for ch in &meta.chapters {
+        let (chapter_number, chapter_label): (i32, Option<String>) = if ch.is_bonus {
+            let key = -(bonus_total - bonus_i) * 100;
+            bonus_i += 1;
+            let label = if ch.number_x100 > 0 {
+                crate::services::chapters::format_chapter(ch.number_x100)
+            } else {
+                unnumbered += 1;
+                unnumbered.to_string()
+            };
+            (key, Some(label))
+        } else {
+            (ch.number_x100, None)
+        };
         let res = sqlx::query(
             r#"
             INSERT INTO series_chapters
-                (provider, external_id, chapter_number, title_en, release_date, origin, is_bonus)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+                (provider, external_id, chapter_number, chapter_label, title_en, release_date, origin, is_bonus)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             ON CONFLICT (provider, external_id, chapter_number) WHERE NOT is_bonus DO UPDATE
             SET title_en     = COALESCE(series_chapters.title_en,     EXCLUDED.title_en),
                 release_date = COALESCE(series_chapters.release_date, EXCLUDED.release_date),
@@ -99,7 +119,8 @@ pub async fn apply_meta(
         )
         .bind(&ch_provider)
         .bind(&ch_id)
-        .bind(ch.number_x100)
+        .bind(chapter_number)
+        .bind(chapter_label)
         .bind(ch.title.as_deref())
         .bind(ch.release_date)
         .bind(source)

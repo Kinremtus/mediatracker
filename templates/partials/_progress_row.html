@@ -15,6 +15,9 @@
             hx-swap="outerHTML">−</button>
     {% endif %}
     <span class="drawer-progress-text">{{ progress_display }}{{ total_display }} {{ progress_unit }}</span>
+    {% if bonus_total > 0 %}
+    <span class="drawer-progress-bonus">{{ bonus_read }} / {{ bonus_total }} бонусных</span>
+    {% endif %}
     {% if can_increment %}
     <button class="drawer-btn-increment" data-increment="increment"
             hx-post="/tracking/{{ tid }}/htmx"

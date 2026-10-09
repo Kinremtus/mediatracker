@@ -1,7 +1,7 @@
 mod common;
 
 use mediatracker::services::chapters::{
-    count_read, format_chapter, get_chapter, get_chapters, parse_chapter, set_read,
+    bonus_progress, count_read, format_chapter, get_chapter, get_chapters, parse_chapter, set_read,
     store_chapters_mu, update_progress_from_read,
 };
 use uuid::Uuid;
@@ -376,4 +376,126 @@ async fn fractional_chapter_roundtrip() {
         .expect("get 10.5 again")
         .expect("must exist");
     assert!(ch.read);
+}
+
+/// Regression (prod 2026-10-09): bonus rows used to share chapter_number 0, so
+/// the bulk-fill `INSERT ... SELECT ... ON CONFLICT DO UPDATE` crashed with
+/// "cannot affect row a second time" -> the handler returned an empty body and
+/// the clicked chapter vanished. Bonus rows must be excluded from bulk-fill.
+#[tokio::test]
+async fn set_read_bulk_fill_ignores_bonus_rows() {
+    let (ctx, user_id) = setup().await;
+    for n in 1..=3 {
+        insert_chapter(&ctx, n * 100).await;
+    }
+    // Two bonus rows carrying the legacy shared number 0 (the partial unique
+    // index covers main rows only, so this is allowed).
+    for _ in 0..2 {
+        sqlx::query(
+            "INSERT INTO series_chapters (provider, external_id, chapter_number, is_bonus) \
+             VALUES ('mangaupdates', $1, 0, TRUE)",
+        )
+        .bind(series_str())
+        .execute(&ctx.pool)
+        .await
+        .expect("insert bonus row");
+    }
+
+    let updated = set_read(&ctx.pool, user_id, "mangaupdates", &series_str(), 200, true)
+        .await
+        .expect("bulk-fill must not crash on bonus rows");
+    assert!(updated, "the main chapter must be marked");
+    assert_eq!(read_progress_read(&ctx, user_id, 200).await, Some(true));
+    assert_eq!(
+        read_progress_read(&ctx, user_id, 0).await,
+        None,
+        "bonus rows must not be bulk-filled"
+    );
+}
+
+/// A single bonus row (negative counter, migration 029) flips on its own and
+/// never joins the main cascade.
+#[tokio::test]
+async fn set_read_flips_bonus_row_individually() {
+    let (ctx, user_id) = setup().await;
+    insert_chapter(&ctx, 100).await;
+    sqlx::query(
+        "INSERT INTO series_chapters (provider, external_id, chapter_number, is_bonus) \
+         VALUES ('mangaupdates', $1, -100, TRUE)",
+    )
+    .bind(series_str())
+    .execute(&ctx.pool)
+    .await
+    .expect("insert bonus row");
+
+    set_read(
+        &ctx.pool,
+        user_id,
+        "mangaupdates",
+        &series_str(),
+        -100,
+        true,
+    )
+    .await
+    .expect("mark bonus");
+    assert_eq!(read_progress_read(&ctx, user_id, -100).await, Some(true));
+
+    // Marking the main chapter read must not touch the bonus.
+    set_read(&ctx.pool, user_id, "mangaupdates", &series_str(), 100, true)
+        .await
+        .expect("mark main");
+    assert_eq!(read_progress_read(&ctx, user_id, -100).await, Some(true));
+
+    // Un-checking the bonus must flip only the bonus, not the main cascade.
+    set_read(
+        &ctx.pool,
+        user_id,
+        "mangaupdates",
+        &series_str(),
+        -100,
+        false,
+    )
+    .await
+    .expect("unmark bonus");
+    assert_eq!(read_progress_read(&ctx, user_id, -100).await, Some(false));
+    assert_eq!(read_progress_read(&ctx, user_id, 100).await, Some(true));
+}
+
+/// `bonus_progress` reports read/total bonus chapters, independent of main.
+#[tokio::test]
+async fn bonus_progress_counts_read_bonus_only() {
+    let (ctx, user_id) = setup().await;
+    insert_chapter(&ctx, 100).await;
+    for key in [-100, -200] {
+        sqlx::query(
+            "INSERT INTO series_chapters \
+                 (provider, external_id, chapter_number, is_bonus, chapter_label) \
+             VALUES ('mangaupdates', $1, $2, TRUE, $3)",
+        )
+        .bind(series_str())
+        .bind(key)
+        .bind((-key / 100).to_string())
+        .execute(&ctx.pool)
+        .await
+        .expect("insert bonus row");
+    }
+
+    set_read(
+        &ctx.pool,
+        user_id,
+        "mangaupdates",
+        &series_str(),
+        -100,
+        true,
+    )
+    .await
+    .expect("mark bonus");
+    set_read(&ctx.pool, user_id, "mangaupdates", &series_str(), 100, true)
+        .await
+        .expect("mark main");
+
+    let (read, total) = bonus_progress(&ctx.pool, user_id, "mangaupdates", &series_str())
+        .await
+        .expect("bonus progress");
+    assert_eq!((read, total), (1, 2), "one of two bonuses is read");
 }

@@ -17,15 +17,21 @@
     Все главы ({{ total }})
 </button>
 {% endif %}
-{# Bonus chapters: own section, rendered in full (never windowed) and never
-   counted in the "Все главы (N)" denominator — design :109. #}
+{# Bonus chapters: own section, collapsed by default (native <details>, no JS),
+   rendered in full (never windowed) and never counted in the "Все главы (N)"
+   denominator — design :109. #}
 {% if !bonus_chapters.is_empty() %}
-<div class="chapter-list-bonus-label">Бонусные главы ({{ bonus_chapters.len() }})</div>
-<div class="chapter-list chapter-list--bonus">
-    {% for chapter in bonus_chapters %}
-    {% include "partials/_chapter_item.html" %}
-    {% endfor %}
-</div>
+<details class="chapter-list-bonus-details">
+    <summary class="chapter-list-bonus-summary">
+        <span class="chapter-list-bonus-label">Бонусные главы ({{ bonus_chapters.len() }})</span>
+        <span class="drawer-section-arrow">▾</span>
+    </summary>
+    <div class="chapter-list chapter-list--bonus">
+        {% for chapter in bonus_chapters %}
+        {% include "partials/_chapter_item.html" %}
+        {% endfor %}
+    </div>
+</details>
 {% endif %}
 {% endif %}
 </div>

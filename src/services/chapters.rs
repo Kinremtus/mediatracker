@@ -17,11 +17,23 @@ pub struct StoredChapter {
     /// Bonus rows ('00' prologue, non-numeric special, duplicate number). They
     /// are excluded from the read-progress denominator (design :111).
     pub is_bonus: bool,
+    /// Display label for bonus rows (original number '49.5' or the counter for
+    /// unnumbered specials, migration 029); `None` for main rows.
+    pub label: Option<String>,
 }
 
 impl StoredChapter {
     pub fn formatted(&self) -> String {
-        format_chapter(self.chapter_number)
+        if self.is_bonus {
+            // `apply_meta` sets the label (original number or counter). The
+            // fallback covers pre-apply rows: show the key's magnitude
+            // (`saturating_abs` avoids the i32::MIN overflow panic).
+            self.label
+                .clone()
+                .unwrap_or_else(|| format_chapter(self.chapter_number.saturating_abs()))
+        } else {
+            format_chapter(self.chapter_number)
+        }
     }
 }
 
@@ -335,10 +347,11 @@ pub async fn get_chapters(
         Option<chrono::NaiveDate>,
         bool,
         bool,
+        Option<String>,
     )> = sqlx::query_as(
         r#"
         SELECT sc.chapter_number, sc.volume, sc.title_en, sc.title_ru,
-               sc.release_date, COALESCE(p.read, FALSE), sc.is_bonus
+               sc.release_date, COALESCE(p.read, FALSE), sc.is_bonus, sc.chapter_label
         FROM series_chapters sc
         LEFT JOIN user_chapter_progress p
             ON p.user_id = $3
@@ -358,7 +371,7 @@ pub async fn get_chapters(
     Ok(rows
         .into_iter()
         .map(
-            |(chapter_number, volume, title_en, title_ru, release_date, read, is_bonus)| {
+            |(chapter_number, volume, title_en, title_ru, release_date, read, is_bonus, label)| {
                 StoredChapter {
                     chapter_number,
                     volume,
@@ -367,6 +380,7 @@ pub async fn get_chapters(
                     release_date,
                     read,
                     is_bonus,
+                    label,
                 }
             },
         )
@@ -392,10 +406,11 @@ pub async fn get_chapter(
         Option<chrono::NaiveDate>,
         bool,
         bool,
+        Option<String>,
     )> = sqlx::query_as(
         r#"
         SELECT sc.chapter_number, sc.volume, sc.title_en, sc.title_ru,
-               sc.release_date, COALESCE(p.read, FALSE), sc.is_bonus
+               sc.release_date, COALESCE(p.read, FALSE), sc.is_bonus, sc.chapter_label
         FROM series_chapters sc
         LEFT JOIN user_chapter_progress p
             ON p.user_id = $4
@@ -413,7 +428,7 @@ pub async fn get_chapter(
     .await?;
 
     Ok(row.map(
-        |(chapter_number, volume, title_en, title_ru, release_date, read, is_bonus)| {
+        |(chapter_number, volume, title_en, title_ru, release_date, read, is_bonus, label)| {
             StoredChapter {
                 chapter_number,
                 volume,
@@ -422,6 +437,7 @@ pub async fn get_chapter(
                 release_date,
                 read,
                 is_bonus,
+                label,
             }
         },
     ))
@@ -430,6 +446,10 @@ pub async fn get_chapter(
 /// Writes go to `user_chapter_progress` keyed by `(user_id, provider,
 /// external_id, chapter_number)`. The catalog table `series_chapters`
 /// is only read as the source of real chapter numbers.
+///
+/// Main chapters (chapter_number >= 0) cascade: read N fills 1..N, unread N
+/// clears N..max. Bonus chapters (chapter_number < 0, migration 029) are flipped
+/// individually and never join the main cascade.
 ///
 /// Returns `true` if at least one progress row was inserted/updated.
 pub async fn set_read(
@@ -444,32 +464,46 @@ pub async fn set_read(
     // mirror, otherwise the tick would create a progress row the chapter list
     // never joins against.
     let (key_provider, key_external_id) = chapter_key(pool, provider, external_id).await;
+    // Bonus rows are keyed by a distinct negative chapter_number (migration
+    // 029): `is_bonus` == chapter_number < 0. They never take part in the main
+    // bulk-fill cascade - both because they are not main progress and because a
+    // naive `chapter_number <= N` SELECT would pull in every bonus row (all
+    // previously 0) and crash the INSERT with "cannot affect row a second time".
+    let is_bonus = chapter_number < 0;
     let result = if read {
-        // Bulk-fill every skeleton chapter <= N (existing behaviour). The
-        // inserted key comes from `sc.*`, i.e. the already-resolved one.
-        let bulk = sqlx::query(
-            r#"
-            INSERT INTO user_chapter_progress
-                (user_id, provider, external_id, chapter_number, read, read_at)
-            SELECT $1, sc.provider, sc.external_id, sc.chapter_number, TRUE, NOW()
-            FROM series_chapters sc
-            WHERE sc.provider = $2
-              AND sc.external_id = $3
-              AND sc.chapter_number <= $4
-            ON CONFLICT (user_id, provider, external_id, chapter_number) DO UPDATE
-            SET read = TRUE,
-                read_at = NOW()
-            "#,
-        )
-        .bind(user_id)
-        .bind(&key_provider)
-        .bind(&key_external_id)
-        .bind(chapter_number)
-        .execute(pool)
-        .await?;
+        // Bulk-fill every MAIN skeleton chapter <= N. The inserted key comes
+        // from `sc.*`, i.e. the already-resolved one. Bonus rows are excluded:
+        // their progress is written one-by-one below.
+        let bulk = if is_bonus {
+            Default::default()
+        } else {
+            sqlx::query(
+                r#"
+                INSERT INTO user_chapter_progress
+                    (user_id, provider, external_id, chapter_number, read, read_at)
+                SELECT $1, sc.provider, sc.external_id, sc.chapter_number, TRUE, NOW()
+                FROM series_chapters sc
+                WHERE sc.provider = $2
+                  AND sc.external_id = $3
+                  AND sc.chapter_number <= $4
+                  AND NOT sc.is_bonus
+                ON CONFLICT (user_id, provider, external_id, chapter_number) DO UPDATE
+                SET read = TRUE,
+                    read_at = NOW()
+                "#,
+            )
+            .bind(user_id)
+            .bind(&key_provider)
+            .bind(&key_external_id)
+            .bind(chapter_number)
+            .execute(pool)
+            .await?
+        };
 
-        // Manual override raises the ceiling past the auto skeleton: record the
-        // exact clicked chapter even when no `series_chapters` row exists for it.
+        // Direct write for the clicked row when the bulk-fill cannot cover it.
+        // Two distinct cases:
+        //  - a manual-override ceiling beyond the skeleton (existing behaviour);
+        //  - an individual bonus row (bulk-fill never touches bonuses).
         // `media_items` is keyed by the incoming identity, NOT the resolved key.
         let manual: bool = sqlx::query_scalar(
             "SELECT COALESCE(chapters_manual, FALSE) FROM media_items \
@@ -481,7 +515,33 @@ pub async fn set_read(
         .await?
         .unwrap_or(false);
 
-        let direct = if manual {
+        let direct = if is_bonus {
+            // Only an EXISTING bonus row may be written. `provider`/`external_id`
+            // come from the request path and `user_chapter_progress` has no FK to
+            // `series_chapters`, so a blind VALUES insert would let a client mint
+            // arbitrary progress rows.
+            sqlx::query(
+                r#"
+                INSERT INTO user_chapter_progress
+                    (user_id, provider, external_id, chapter_number, read, read_at)
+                SELECT $1, sc.provider, sc.external_id, sc.chapter_number, TRUE, NOW()
+                FROM series_chapters sc
+                WHERE sc.provider = $2
+                  AND sc.external_id = $3
+                  AND sc.chapter_number = $4
+                  AND sc.is_bonus
+                ON CONFLICT (user_id, provider, external_id, chapter_number) DO UPDATE
+                SET read = TRUE,
+                    read_at = NOW()
+                "#,
+            )
+            .bind(user_id)
+            .bind(&key_provider)
+            .bind(&key_external_id)
+            .bind(chapter_number)
+            .execute(pool)
+            .await?
+        } else if manual {
             sqlx::query(
                 r#"
                 INSERT INTO user_chapter_progress
@@ -503,23 +563,46 @@ pub async fn set_read(
         };
         (bulk, direct)
     } else {
-        let r = sqlx::query(
-            r#"
-            UPDATE user_chapter_progress
-            SET read = FALSE,
-                read_at = NULL
-            WHERE user_id = $1
-              AND provider = $2
-              AND external_id = $3
-              AND chapter_number >= $4
-            "#,
-        )
-        .bind(user_id)
-        .bind(&key_provider)
-        .bind(&key_external_id)
-        .bind(chapter_number)
-        .execute(pool)
-        .await?;
+        // Un-checking a main chapter cascades to every chapter above it; a bonus
+        // row is flipped on its own (its negative number must not sweep the
+        // main chapters that sit above it).
+        let r = if is_bonus {
+            sqlx::query(
+                r#"
+                UPDATE user_chapter_progress
+                SET read = FALSE,
+                    read_at = NULL
+                WHERE user_id = $1
+                  AND provider = $2
+                  AND external_id = $3
+                  AND chapter_number = $4
+                "#,
+            )
+            .bind(user_id)
+            .bind(&key_provider)
+            .bind(&key_external_id)
+            .bind(chapter_number)
+            .execute(pool)
+            .await?
+        } else {
+            sqlx::query(
+                r#"
+                UPDATE user_chapter_progress
+                SET read = FALSE,
+                    read_at = NULL
+                WHERE user_id = $1
+                  AND provider = $2
+                  AND external_id = $3
+                  AND chapter_number >= $4
+                "#,
+            )
+            .bind(user_id)
+            .bind(&key_provider)
+            .bind(&key_external_id)
+            .bind(chapter_number)
+            .execute(pool)
+            .await?
+        };
         (r, Default::default())
     };
     Ok(result.0.rows_affected() > 0 || result.1.rows_affected() > 0)
@@ -560,6 +643,38 @@ pub async fn count_read(
     // chapter_number is stored as ch * 100, so divide back for display
     // (integer division floors fractional progress, e.g. 10.5 -> 10).
     Ok(row.0.map(|v| v / 100).unwrap_or(0))
+}
+
+/// Read/total counts for BONUS chapters under the resolved key: `(read, total)`.
+/// The main fraction keeps using `count_read` + the media counter; this powers
+/// the separate "Y / N бонусных" part of the progress row.
+pub async fn bonus_progress(
+    pool: &PgPool,
+    user_id: uuid::Uuid,
+    provider: &str,
+    external_id: &str,
+) -> Result<(i32, i32), sqlx::Error> {
+    let (key_provider, key_external_id) = chapter_key(pool, provider, external_id).await;
+    let row: (i64, i64) = sqlx::query_as(
+        r#"
+        SELECT
+            COUNT(*) FILTER (WHERE sc.is_bonus AND COALESCE(p.read, FALSE)),
+            COUNT(*) FILTER (WHERE sc.is_bonus)
+        FROM series_chapters sc
+        LEFT JOIN user_chapter_progress p
+            ON p.user_id = $1
+           AND p.provider = sc.provider
+           AND p.external_id = sc.external_id
+           AND p.chapter_number = sc.chapter_number
+        WHERE sc.provider = $2 AND sc.external_id = $3
+        "#,
+    )
+    .bind(user_id)
+    .bind(&key_provider)
+    .bind(&key_external_id)
+    .fetch_one(pool)
+    .await?;
+    Ok((row.0 as i32, row.1 as i32))
 }
 
 /// Get all (chapter_number, read) pairs for a manga and user, ordered
@@ -1134,6 +1249,7 @@ mod tests {
             release_date: None,
             read: false,
             is_bonus: false,
+            label: None,
         };
         assert_eq!(ch.formatted(), "10.5");
 
@@ -1145,8 +1261,25 @@ mod tests {
             release_date: None,
             read: true,
             is_bonus: true,
+            label: Some("2".to_string()),
         };
-        assert_eq!(ch2.formatted(), "2");
+        assert_eq!(ch2.formatted(), "2", "a numbered bonus shows its label");
+
+        let ch3 = StoredChapter {
+            chapter_number: -300,
+            volume: None,
+            title_en: None,
+            title_ru: None,
+            release_date: None,
+            read: false,
+            is_bonus: true,
+            label: None,
+        };
+        assert_eq!(
+            ch3.formatted(),
+            "3",
+            "an unnumbered bonus shows its counter"
+        );
     }
 
     #[test]

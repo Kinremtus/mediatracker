@@ -32,6 +32,9 @@ struct MediaDrawerTemplate {
     /// `total_count` so the drawer badge stays "main chapters only"
     /// (design :107) and the bonus part is an explicit "+N бонусных".
     bonus_count: i64,
+    /// Read/total bonus chapters for the progress row's separate counter.
+    bonus_read: i32,
+    bonus_total: i32,
     progress_unit: String,
     mal_id: Option<i64>,
     has_progress: bool,
@@ -427,6 +430,19 @@ pub async fn get_media_drawer_content(
             // Single source of truth for the "− N / M unit +1" row. The HTMX
             // progress endpoints build the same view model, so the buttons
             // can never drift out of sync with the value.
+            // Bonus chapters get their own counter (some readers skip them).
+            let (bonus_read, bonus_total) = if is_chapter_type(&item.media_type) {
+                crate::services::chapters::bonus_progress(
+                    &state.db,
+                    user.id,
+                    &provider,
+                    &external_id,
+                )
+                .await
+                .unwrap_or((0, 0))
+            } else {
+                (0, 0)
+            };
             let progress_row = ProgressRow::compute(
                 tracking_id.unwrap_or_else(Uuid::nil),
                 &item.media_type,
@@ -434,12 +450,15 @@ pub async fn get_media_drawer_content(
                 item.progress_unit_ru(),
                 progress,
                 status_display.clone(),
-            );
+            )
+            .with_bonus(bonus_read, bonus_total);
             let has_progress = progress_row.has_progress;
             let progress_display = progress_row.progress_display;
             let total_display = progress_row.total_display.clone();
             let can_increment = progress_row.can_increment;
             let can_decrement = progress_row.can_decrement;
+            let bonus_read = progress_row.bonus_read;
+            let bonus_total = progress_row.bonus_total;
             let parsed = parse_description(item.description.as_deref());
             let status_label = derived_status_label(item.status.as_deref(), item.completed);
             let status_class = status_label.map(derived_status_class).unwrap_or("");
@@ -454,6 +473,8 @@ pub async fn get_media_drawer_content(
                     rating,
                     total_count,
                     bonus_count,
+                    bonus_read,
+                    bonus_total,
                     progress_unit,
                     has_progress,
                     role: user.role,
