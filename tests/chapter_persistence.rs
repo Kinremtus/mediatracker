@@ -2,7 +2,7 @@ mod common;
 
 use mediatracker::services::chapters::{
     bonus_progress, count_read, format_chapter, get_chapter, get_chapters, parse_chapter, set_read,
-    store_chapters_mu, update_progress_from_read,
+    step_bonus_read, store_chapters_mu, update_progress_from_read,
 };
 use uuid::Uuid;
 
@@ -498,4 +498,55 @@ async fn bonus_progress_counts_read_bonus_only() {
         .await
         .expect("bonus progress");
     assert_eq!((read, total), (1, 2), "one of two bonuses is read");
+}
+
+/// `step_bonus_read(+1)` marks the oldest unread bonus; `-1` unmarks the newest
+/// read one. The counter stays derived from the same flags the checkboxes write.
+#[tokio::test]
+async fn step_bonus_read_marks_oldest_unread_and_unmarks_newest_read() {
+    let (ctx, user_id) = setup().await;
+    for key in [-300, -200, -100] {
+        sqlx::query(
+            "INSERT INTO series_chapters \
+                 (provider, external_id, chapter_number, is_bonus, chapter_label) \
+             VALUES ('mangaupdates', $1, $2, TRUE, $3)",
+        )
+        .bind(series_str())
+        .bind(key)
+        .bind((-key / 100).to_string())
+        .execute(&ctx.pool)
+        .await
+        .expect("insert bonus row");
+    }
+
+    assert!(
+        step_bonus_read(&ctx.pool, user_id, "mangaupdates", &series_str(), 1)
+            .await
+            .expect("step +1")
+    );
+    assert_eq!(read_progress_read(&ctx, user_id, -300).await, Some(true));
+
+    assert!(
+        step_bonus_read(&ctx.pool, user_id, "mangaupdates", &series_str(), 1)
+            .await
+            .expect("step +1 again")
+    );
+    assert_eq!(read_progress_read(&ctx, user_id, -200).await, Some(true));
+
+    assert!(
+        step_bonus_read(&ctx.pool, user_id, "mangaupdates", &series_str(), -1)
+            .await
+            .expect("step -1")
+    );
+    assert_eq!(
+        read_progress_read(&ctx, user_id, -200).await,
+        Some(false),
+        "the newest read bonus is unmarked first"
+    );
+    assert_eq!(read_progress_read(&ctx, user_id, -300).await, Some(true));
+
+    let (read, total) = bonus_progress(&ctx.pool, user_id, "mangaupdates", &series_str())
+        .await
+        .expect("bonus progress");
+    assert_eq!((read, total), (1, 3));
 }

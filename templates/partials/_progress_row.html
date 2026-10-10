@@ -5,7 +5,8 @@
 
    Each button swaps the *whole row* (outerHTML) with the server-rendered
    version, so +1/- always reflect the authoritative progress value: they can
-   disappear and reappear symmetrically instead of only ever disappearing. #}
+   disappear and reappear symmetrically instead of only ever disappearing.
+   Bonus chapters carry their own counter and `-`/`+1` (some readers skip them). #}
 <div class="drawer-progress-row" data-tracking-id="{{ tid }}">
     {% if can_decrement %}
     <button class="drawer-btn-increment" data-increment="decrement"
@@ -16,7 +17,23 @@
     {% endif %}
     <span class="drawer-progress-text">{{ progress_display }}{{ total_display }} {{ progress_unit }}</span>
     {% if bonus_total > 0 %}
-    <span class="drawer-progress-bonus">{{ bonus_read }} / {{ bonus_total }} бонусных</span>
+    <span class="drawer-progress-bonus">
+        {% if can_decrement_bonus %}
+        <button class="drawer-btn-increment drawer-btn-increment--sm"
+                hx-post="/tracking/{{ tid }}/htmx"
+                hx-vals='{"bonus_increment":-1}'
+                hx-target="closest .drawer-progress-row"
+                hx-swap="outerHTML">−</button>
+        {% endif %}
+        <span class="drawer-progress-bonus-text">{{ bonus_read }} / {{ bonus_total }} бонус</span>
+        {% if can_increment_bonus %}
+        <button class="drawer-btn-increment drawer-btn-increment--sm"
+                hx-post="/tracking/{{ tid }}/htmx"
+                hx-vals='{"bonus_increment":1}'
+                hx-target="closest .drawer-progress-row"
+                hx-swap="outerHTML">+1</button>
+        {% endif %}
+    </span>
     {% endif %}
     {% if can_increment %}
     <button class="drawer-btn-increment" data-increment="increment"

@@ -9,29 +9,33 @@
     {% endfor %}
 </div>
 {% endif %}
+{# Each list carries its own expand button. The query preserves the OTHER
+   list's expanded state so expanding one never collapses the other. #}
 {% if windowed %}
 <button type="button" class="chapter-list-more"
-        hx-get="/api/manga/{{ provider }}/{{ external_id }}/chapters?all=true"
+        hx-get="/api/manga/{{ provider }}/{{ external_id }}/chapters?all=true{% if !bonus_windowed %}&all_bonus=true{% endif %}"
         hx-target="closest .chapter-list-wrapper"
         hx-swap="outerHTML">
     Все главы ({{ total }})
 </button>
 {% endif %}
-{# Bonus chapters: own section, collapsed by default (native <details>, no JS),
-   rendered in full (never windowed) and never counted in the "Все главы (N)"
-   denominator — design :109. #}
+{# Bonus chapters: own section, windowed like the main list (last 5) with its
+   own expand button; never counted in the "Все главы (N)" denominator — design :109. #}
 {% if !bonus_chapters.is_empty() %}
-<details class="chapter-list-bonus-details">
-    <summary class="chapter-list-bonus-summary">
-        <span class="chapter-list-bonus-label">Бонусные главы ({{ bonus_chapters.len() }})</span>
-        <span class="drawer-section-arrow">▾</span>
-    </summary>
-    <div class="chapter-list chapter-list--bonus">
-        {% for chapter in bonus_chapters %}
-        {% include "partials/_chapter_item.html" %}
-        {% endfor %}
-    </div>
-</details>
+<div class="chapter-list-bonus-label">Бонусные главы ({{ bonus_total }})</div>
+<div class="chapter-list chapter-list--bonus">
+    {% for chapter in bonus_chapters %}
+    {% include "partials/_chapter_item.html" %}
+    {% endfor %}
+</div>
+{% if bonus_windowed %}
+<button type="button" class="chapter-list-more"
+        hx-get="/api/manga/{{ provider }}/{{ external_id }}/chapters?all_bonus=true{% if !windowed %}&all=true{% endif %}"
+        hx-target="closest .chapter-list-wrapper"
+        hx-swap="outerHTML">
+    Все бонусные главы ({{ bonus_total }})
+</button>
+{% endif %}
 {% endif %}
 {% endif %}
 </div>

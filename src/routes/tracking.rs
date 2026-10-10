@@ -774,6 +774,9 @@ pub struct UpdateTrackingForm {
     pub progress: Option<i32>,
     #[serde(default)]
     pub increment: Option<i32>,
+    /// Step the bonus read counter instead of the main progress (`±1`).
+    #[serde(default)]
+    pub bonus_increment: Option<i32>,
 }
 
 pub async fn post_update_tracking(
@@ -858,12 +861,65 @@ async fn progress_row_with_bonus(
     row.with_bonus(read, total)
 }
 
+/// `POST /tracking/{id}/htmx` with `bonus_increment=±1`: step the bonus read
+/// counter (marks/unmarks one bonus chapter) and re-render the progress row.
+/// Emits `chaptersChanged` so the drawer's bonus checkboxes patch in place.
+async fn htmx_bonus_increment(state: &AppState, user_id: Uuid, id: Uuid, delta: i32) -> Response {
+    let ewm = match state.tracking.get_entry_with_media(user_id, id).await {
+        Ok(Some(ewm)) => ewm,
+        Ok(None) => return (axum::http::StatusCode::NOT_FOUND, "Not found").into_response(),
+        Err(e) => return super::internal_error("tracking: bonus increment", e),
+    };
+
+    if delta != 0
+        && let Err(e) = crate::services::chapters::step_bonus_read(
+            &state.db,
+            user_id,
+            &ewm.media.provider,
+            &ewm.media.external_id,
+            delta,
+        )
+        .await
+    {
+        tracing::warn!(error = %e, "step_bonus_read failed");
+    }
+
+    let html = progress_row_with_bonus(state, user_id, &ewm)
+        .await
+        .render()
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "template render failed");
+            String::from("Internal Server Error")
+        });
+
+    let states = crate::services::chapters::get_chapter_states(
+        &state.db,
+        user_id,
+        &ewm.media.provider,
+        &ewm.media.external_id,
+    )
+    .await
+    .unwrap_or_default();
+    let states_json: Vec<[serde_json::Value; 2]> = states
+        .into_iter()
+        .map(|(n, r)| [serde_json::Value::from(n), serde_json::Value::from(r)])
+        .collect();
+    let trigger = serde_json::json!({ "chaptersChanged": { "states": states_json } });
+
+    let mut resp = Html(html).into_response();
+    crate::utils::set_hx_trigger(&mut resp, &trigger.to_string());
+    resp
+}
+
 pub async fn htmx_update_tracking(
     user: CurrentUser,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     Form(form): Form<UpdateTrackingForm>,
 ) -> Response {
+    if let Some(delta) = form.bonus_increment {
+        return htmx_bonus_increment(&state, user.id, id, delta).await;
+    }
     let progress = if let Some(delta) = form.increment {
         let current: i32 = sqlx::query_scalar(
             "SELECT COALESCE(progress, 0) FROM tracking_entries WHERE id = $1 AND user_id = $2",

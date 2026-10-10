@@ -68,6 +68,10 @@ pub struct ProgressRow {
     pub bonus_read: i32,
     /// Total bonus chapters; the row hides the bonus part when this is 0.
     pub bonus_total: i32,
+    /// Show the bonus `+1` only while below the bonus total.
+    pub can_increment_bonus: bool,
+    /// Show the bonus `−` only above zero.
+    pub can_decrement_bonus: bool,
 }
 
 impl ProgressRow {
@@ -98,14 +102,18 @@ impl ProgressRow {
             has_progress,
             bonus_read: 0,
             bonus_total: 0,
+            can_increment_bonus: false,
+            can_decrement_bonus: false,
         }
     }
 
-    /// Attach the separate bonus-chapter counter (`read / total`). Callers that
-    /// have the DB at hand set this; the row hides the bonus part when total is 0.
+    /// Attach the separate bonus-chapter counter (`read / total`) and its
+    /// `−`/`+1` bounds. The row hides the bonus part when total is 0.
     pub fn with_bonus(mut self, read: i32, total: i32) -> Self {
         self.bonus_read = read;
         self.bonus_total = total;
+        self.can_increment_bonus = total > 0 && read < total;
+        self.can_decrement_bonus = read > 0;
         self
     }
 

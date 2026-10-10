@@ -677,6 +677,93 @@ pub async fn bonus_progress(
     Ok((row.0 as i32, row.1 as i32))
 }
 
+/// Step the bonus read counter by one: `delta > 0` marks the oldest unread
+/// bonus chapter read, `delta < 0` unmarks the newest read one. Returns `true`
+/// when a row changed.
+///
+/// The counter shown in the progress row is the count of read bonus rows, so
+/// stepping the same flags the checkboxes write keeps the two in sync (no
+/// separate "bonus progress" number to drift).
+pub async fn step_bonus_read(
+    pool: &PgPool,
+    user_id: uuid::Uuid,
+    provider: &str,
+    external_id: &str,
+    delta: i32,
+) -> Result<bool, sqlx::Error> {
+    let (key_provider, key_external_id) = chapter_key(pool, provider, external_id).await;
+    if delta > 0 {
+        // Oldest unread bonus first (display order is oldest-first).
+        let r = sqlx::query(
+            r#"
+            INSERT INTO user_chapter_progress
+                (user_id, provider, external_id, chapter_number, read, read_at)
+            SELECT $1, sc.provider, sc.external_id, sc.chapter_number, TRUE, NOW()
+            FROM series_chapters sc
+            WHERE sc.provider = $2
+              AND sc.external_id = $3
+              AND sc.is_bonus
+              AND NOT EXISTS (
+                  SELECT 1 FROM user_chapter_progress p
+                  WHERE p.user_id = $1
+                    AND p.provider = sc.provider
+                    AND p.external_id = sc.external_id
+                    AND p.chapter_number = sc.chapter_number
+                    AND p.read
+              )
+            ORDER BY sc.chapter_number ASC
+            LIMIT 1
+            ON CONFLICT (user_id, provider, external_id, chapter_number) DO UPDATE
+            SET read = TRUE,
+                read_at = NOW()
+            "#,
+        )
+        .bind(user_id)
+        .bind(&key_provider)
+        .bind(&key_external_id)
+        .execute(pool)
+        .await?;
+        Ok(r.rows_affected() > 0)
+    } else if delta < 0 {
+        // Newest read bonus first (the last one a forward step marked).
+        let r = sqlx::query(
+            r#"
+            WITH target AS (
+                SELECT p.chapter_number
+                FROM user_chapter_progress p
+                JOIN series_chapters sc
+                  ON sc.provider = p.provider
+                 AND sc.external_id = p.external_id
+                 AND sc.chapter_number = p.chapter_number
+                WHERE p.user_id = $1
+                  AND p.provider = $2
+                  AND p.external_id = $3
+                  AND p.read
+                  AND sc.is_bonus
+                ORDER BY sc.chapter_number DESC
+                LIMIT 1
+            )
+            UPDATE user_chapter_progress p
+            SET read = FALSE,
+                read_at = NULL
+            FROM target
+            WHERE p.user_id = $1
+              AND p.provider = $2
+              AND p.external_id = $3
+              AND p.chapter_number = target.chapter_number
+            "#,
+        )
+        .bind(user_id)
+        .bind(&key_provider)
+        .bind(&key_external_id)
+        .execute(pool)
+        .await?;
+        Ok(r.rows_affected() > 0)
+    } else {
+        Ok(false)
+    }
+}
+
 /// Get all (chapter_number, read) pairs for a manga and user, ordered
 /// ASC. Used by the toggle endpoint to broadcast authoritative state
 /// via HX-Trigger.

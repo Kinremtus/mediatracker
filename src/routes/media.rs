@@ -35,6 +35,8 @@ struct MediaDrawerTemplate {
     /// Read/total bonus chapters for the progress row's separate counter.
     bonus_read: i32,
     bonus_total: i32,
+    can_increment_bonus: bool,
+    can_decrement_bonus: bool,
     progress_unit: String,
     mal_id: Option<i64>,
     has_progress: bool,
@@ -122,9 +124,13 @@ pub struct EpisodesQuery {
 
 #[derive(Deserialize)]
 pub struct ChaptersQuery {
-    /// `?all=true` returns the full list instead of the latest window.
+    /// `?all=true` returns the full main list instead of the latest window.
     #[serde(default)]
     all: Option<bool>,
+    /// `?all_bonus=true` expands the bonus list (its own window) without
+    /// touching the main window.
+    #[serde(default)]
+    all_bonus: Option<bool>,
     /// Slug passed by the drawer (`?media_type=...`) so the lazy chapter loader
     /// can run official-source verification without a second lookup when the
     /// media_items row has no value.
@@ -459,6 +465,8 @@ pub async fn get_media_drawer_content(
             let can_decrement = progress_row.can_decrement;
             let bonus_read = progress_row.bonus_read;
             let bonus_total = progress_row.bonus_total;
+            let can_increment_bonus = progress_row.can_increment_bonus;
+            let can_decrement_bonus = progress_row.can_decrement_bonus;
             let parsed = parse_description(item.description.as_deref());
             let status_label = derived_status_label(item.status.as_deref(), item.completed);
             let status_class = status_label.map(derived_status_class).unwrap_or("");
@@ -475,6 +483,8 @@ pub async fn get_media_drawer_content(
                     bonus_count,
                     bonus_read,
                     bonus_total,
+                    can_increment_bonus,
+                    can_decrement_bonus,
                     progress_unit,
                     has_progress,
                     role: user.role,
@@ -931,14 +941,18 @@ pub async fn set_episode_watched(
 #[template(path = "partials/_chapter_list.html")]
 struct ChapterListPartial {
     chapters: Vec<crate::services::chapters::StoredChapter>,
-    /// Bonus chapters, always rendered in full below the main list and never
-    /// consumed by the CHAPTER_WINDOW slice (design :109).
+    /// Bonus chapters, windowed like the main list (design :109 keeps them out
+    /// of the main denominator).
     bonus_chapters: Vec<crate::services::chapters::StoredChapter>,
     provider: String,
     external_id: String,
     windowed: bool,
     /// Main (non-bonus) chapter count — the "Все главы (N)" denominator.
     total: usize,
+    /// `true` while the bonus list shows only its last window.
+    bonus_windowed: bool,
+    /// Bonus chapter count — the "Все бонусные главы (N)" denominator.
+    bonus_total: usize,
 }
 
 #[derive(Template)]
@@ -1146,10 +1160,11 @@ pub async fn get_chapters(
         });
     }
 
-    // Bonus chapters are a separate catalogue (design :109): the window and the
-    // "Все главы (N)" denominator apply to MAIN chapters only, and the bonus
-    // block is rendered in full below them regardless of `all`.
-    let (mut main_chapters, bonus_chapters): (
+    // Bonus chapters are a separate catalogue (design :109): the main window and
+    // the "Все главы (N)" denominator apply to MAIN chapters only. The bonus
+    // list has its own window (last 5) and its own "Все бонусные главы" button,
+    // so expanding one list never collapses the other.
+    let (mut main_chapters, mut bonus_chapters): (
         Vec<crate::services::chapters::StoredChapter>,
         Vec<crate::services::chapters::StoredChapter>,
     ) = chapters.into_iter().partition(|c| !c.is_bonus);
@@ -1158,8 +1173,13 @@ pub async fn get_chapters(
     let total = main_chapters.len();
     let windowed = !all && total > CHAPTER_WINDOW;
     if windowed {
-        let start = total - CHAPTER_WINDOW;
-        main_chapters.drain(..start);
+        main_chapters.drain(..total - CHAPTER_WINDOW);
+    }
+
+    let bonus_total = bonus_chapters.len();
+    let bonus_windowed = !query.all_bonus.unwrap_or(false) && bonus_total > CHAPTER_WINDOW;
+    if bonus_windowed {
+        bonus_chapters.drain(..bonus_total - CHAPTER_WINDOW);
     }
 
     let html = ChapterListPartial {
@@ -1169,6 +1189,8 @@ pub async fn get_chapters(
         external_id: mu_id.to_string(),
         windowed,
         total,
+        bonus_windowed,
+        bonus_total,
     }
     .render()
     .unwrap_or_else(|e| {
