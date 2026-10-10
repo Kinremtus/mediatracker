@@ -12,6 +12,7 @@ mod common;
 use std::sync::{Arc, Mutex};
 
 use mediatracker::routes::media::chapter_counts;
+use mediatracker::services::chapter_meta_enrich::merge_mu_duplicates;
 use mediatracker::services::chapters::{
     ChapterTitleGap, count_read, get_chapter, get_chapter_states, get_chapters,
     list_titles_needing_chapter_titles, set_manual_chapters, set_read, store_chapters_mu,
@@ -869,5 +870,97 @@ async fn backfill_selection_finds_untitled_rows_under_the_resolved_key() {
     assert_eq!(
         rows.into_iter().map(|(_, id, _)| id).collect::<Vec<_>>(),
         vec![older.to_string()],
+    );
+}
+
+// --- merge: shadowed MU duplicates fold into the official rows -------------
+
+#[tokio::test]
+async fn merge_folds_read_mu_duplicates_into_official_parts() {
+    let (ctx, user_id) = setup().await;
+    let mu_id = "77001";
+    add_media_item(&ctx.pool, mu_id, "manhua").await;
+    bind(&ctx.pool, mu_id, "bilibili", "mc-merge").await;
+
+    // Rows live under the resolved (bilibili) key: official part rows 201/202
+    // (chapter 2 split in two) next to the old MU row 200 for chapter 2.
+    insert_chapter(&ctx.pool, "bilibili", "mc-merge", 100, "mu", false).await;
+    insert_chapter(&ctx.pool, "bilibili", "mc-merge", 200, "mu", false).await;
+    insert_chapter(&ctx.pool, "bilibili", "mc-merge", 201, "bilibili", false).await;
+    insert_chapter(&ctx.pool, "bilibili", "mc-merge", 202, "bilibili", false).await;
+
+    insert_progress(&ctx.pool, user_id, "bilibili", "mc-merge", 100, true).await;
+    insert_progress(&ctx.pool, user_id, "bilibili", "mc-merge", 200, true).await;
+
+    let removed = merge_mu_duplicates(&ctx.pool, "mangaupdates", mu_id)
+        .await
+        .expect("merge");
+    assert_eq!(removed, 1, "only the shadowed chapter-2 row folds");
+
+    // The MU row for chapter 2 is gone; both parts now carry the read state.
+    assert_eq!(
+        progress_rows(&ctx.pool, user_id, "bilibili", "mc-merge").await,
+        vec![(100, true), (201, true), (202, true)]
+    );
+    // Chapter 1's MU row stays: no official row shadows its base.
+    assert_eq!(
+        chapter_row_count(&ctx.pool, "bilibili", "mc-merge").await,
+        3
+    );
+
+    // Idempotent: nothing left to fold.
+    assert_eq!(
+        merge_mu_duplicates(&ctx.pool, "mangaupdates", mu_id)
+            .await
+            .expect("merge again"),
+        0
+    );
+}
+
+#[tokio::test]
+async fn merge_drops_unread_shadows_but_keeps_legacy_read_rows() {
+    let (ctx, _user_id) = setup().await;
+    let mu_id = "77002";
+    add_media_item(&ctx.pool, mu_id, "manhua").await;
+    bind(&ctx.pool, mu_id, "bilibili", "mc-merge2").await;
+
+    // Unread shadowed MU row: no read state to carry, so it folds away.
+    insert_chapter(&ctx.pool, "bilibili", "mc-merge2", 300, "mu", false).await;
+    insert_chapter(&ctx.pool, "bilibili", "mc-merge2", 301, "bilibili", false).await;
+    // Legacy `series_chapters.read` row without per-user progress: kept, since
+    // its read state cannot be attributed to a user.
+    sqlx::query(
+        "INSERT INTO series_chapters \
+             (provider, external_id, chapter_number, origin, read) \
+         VALUES ('bilibili', 'mc-merge2', 400, 'mu', TRUE)",
+    )
+    .execute(&ctx.pool)
+    .await
+    .expect("legacy read row");
+    insert_chapter(&ctx.pool, "bilibili", "mc-merge2", 401, "bilibili", false).await;
+
+    let removed = merge_mu_duplicates(&ctx.pool, "mangaupdates", mu_id)
+        .await
+        .expect("merge");
+    assert_eq!(
+        removed, 1,
+        "the unread shadow folds, the legacy-read row stays"
+    );
+
+    let rows: Vec<(i32, String)> = sqlx::query_as(
+        "SELECT chapter_number, origin FROM series_chapters \
+         WHERE provider = 'bilibili' AND external_id = 'mc-merge2' \
+         ORDER BY chapter_number ASC",
+    )
+    .fetch_all(&ctx.pool)
+    .await
+    .expect("read rows");
+    assert_eq!(
+        rows,
+        vec![
+            (301, "bilibili".to_string()),
+            (400, "mu".to_string()),
+            (401, "bilibili".to_string())
+        ]
     );
 }

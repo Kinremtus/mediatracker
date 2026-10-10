@@ -1,5 +1,6 @@
 pub mod anilist;
 pub mod chapter_count;
+pub mod chapter_title;
 pub mod comicvine;
 pub mod google_books;
 pub mod hardcover;
@@ -7,6 +8,7 @@ pub mod igdb;
 pub mod mal;
 pub mod mangadex;
 pub mod mangaupdates;
+pub mod nuxt_payload;
 pub mod official_alphapolis;
 pub mod official_bilibili;
 pub mod official_comicwalker;

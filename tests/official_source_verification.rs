@@ -614,11 +614,10 @@ async fn no_match_anywhere_binds_nothing() {
     );
 }
 
-/// The C-rule: a non-meta kuaikan binding must not stop the walk from trying
-/// the cached meta-capable source. Both bindings coexist afterwards (kuaikan
-/// keeps feeding the count, bilibili owns the chapter rows).
+/// kuaikan is meta-capable now: a pre-bound kuaikan binding is the winner and
+/// the walk short-circuits without any search call.
 #[tokio::test]
-async fn kuaikan_binding_still_upgrades_to_bilibili() {
+async fn bound_kuaikan_short_circuits_without_network() {
     let ctx = setup().await;
     let series = SERIES_ID.to_string();
 
@@ -646,34 +645,33 @@ async fn kuaikan_binding_still_upgrades_to_bilibili() {
     assert_eq!(
         outcome,
         Some(ResolveOutcome {
-            source: "bilibili".to_string(),
-            source_id: BILIBILI_ID.to_string(),
+            source: "kuaikan".to_string(),
+            source_id: "22928".to_string(),
         }),
-        "the meta-capable bilibili must win over the bound kuaikan"
+        "the bound meta-capable kuaikan is the winner"
     );
     assert_eq!(
         get_source_id(&ctx.pool, "mangaupdates", &series, "kuaikan")
             .await
             .unwrap(),
-        Some("22928".to_string()),
-        "the kuaikan binding is kept (auto:kuaikan count)"
+        Some("22928".to_string())
     );
     assert_eq!(
         get_source_id(&ctx.pool, "mangaupdates", &series, "bilibili")
             .await
             .unwrap(),
-        Some(BILIBILI_ID.to_string())
+        None,
+        "bilibili is never bound"
     );
 
     let calls = calls.lock().unwrap();
-    assert_eq!(calls.len(), 1, "only the cached bilibili search runs");
-    assert_eq!(calls[0].0, "bilibili");
+    assert!(calls.is_empty(), "a bound source needs no network call");
 }
 
-/// A fresh kuaikan match binds kuaikan as the fallback, then the walk still
-/// tries bilibili and upgrades to it when it matches.
+/// A fresh kuaikan match is a meta-capable match: it binds, rekeys and ends
+/// the walk - bilibili is not searched at all.
 #[tokio::test]
-async fn fresh_kuaikan_match_upgrades_to_bilibili() {
+async fn fresh_kuaikan_match_wins_and_stops_the_walk() {
     let ctx = setup().await;
     let series = SERIES_ID.to_string();
     let search = FixtureSearch::with_sources(&[
@@ -696,32 +694,37 @@ async fn fresh_kuaikan_match_upgrades_to_bilibili() {
     assert_eq!(
         outcome,
         Some(ResolveOutcome {
-            source: "bilibili".to_string(),
-            source_id: BILIBILI_ID.to_string(),
+            source: "kuaikan".to_string(),
+            source_id: "22928".to_string(),
         })
     );
     assert_eq!(
         get_source_id(&ctx.pool, "mangaupdates", &series, "kuaikan")
             .await
             .unwrap(),
-        Some("22928".to_string()),
-        "the fresh kuaikan match stays bound as the fallback"
+        Some("22928".to_string())
+    );
+    assert_eq!(
+        get_source_id(&ctx.pool, "mangaupdates", &series, "bilibili")
+            .await
+            .unwrap(),
+        None
     );
 
     let calls = calls.lock().unwrap();
     let order: Vec<&str> = calls.iter().map(|c| c.0.as_str()).collect();
-    assert_eq!(order, vec!["kuaikan", "bilibili"]);
+    assert_eq!(order, vec!["kuaikan"], "the walk stops at the meta match");
 }
 
-/// When bilibili has no matching title the freshly matched kuaikan is returned
-/// (old behaviour preserved for titles bilibili does not carry).
+/// kuaikan is tried first; when it has no match the walk still reaches the
+/// cached bilibili and binds it.
 #[tokio::test]
-async fn kuaikan_kept_when_bilibili_has_no_match() {
+async fn bilibili_is_tried_when_kuaikan_has_no_match() {
     let ctx = setup().await;
     let series = SERIES_ID.to_string();
     let search = FixtureSearch::with_sources(&[
-        ("kuaikan", vec![hit("22928", "妖神记")]),
-        ("bilibili", vec![]),
+        ("kuaikan", vec![]),
+        ("bilibili", vec![hit(BILIBILI_ID, "妖神记")]),
     ]);
     let calls = search.calls();
 
@@ -739,12 +742,13 @@ async fn kuaikan_kept_when_bilibili_has_no_match() {
     assert_eq!(
         outcome,
         Some(ResolveOutcome {
-            source: "kuaikan".to_string(),
-            source_id: "22928".to_string(),
+            source: "bilibili".to_string(),
+            source_id: BILIBILI_ID.to_string(),
         })
     );
     let calls = calls.lock().unwrap();
-    assert_eq!(calls.len(), 2, "kuaikan then bilibili, no extra sources");
+    let order: Vec<&str> = calls.iter().map(|c| c.0.as_str()).collect();
+    assert_eq!(order, vec!["kuaikan", "bilibili"]);
 }
 
 /// A fresh meta-capable bind moves the MU-key chapter rows and read progress

@@ -62,27 +62,41 @@ async fn no_bindings_keeps_mu_key() {
 
 #[tokio::test]
 async fn meta_less_source_is_filtered_out() {
-    // manhua chain is ["kuaikan", "bilibili"], but kuaikan has no fetch_source
-    // arm -> Ok(default), so the key must not point at it.
+    // manhwa chain is ["kakao", "naver", "daum", "ridibooks"], but kakao has
+    // no fetch_source arm -> Ok(default), so the key must not point at it.
     let ctx = setup().await;
-    add_media_item(&ctx, "900000003", "manhua").await;
-    bind(&ctx, "900000003", "kuaikan", "kk-1").await;
-    bind(&ctx, "900000003", "bilibili", "mc32437").await;
+    add_media_item(&ctx, "900000003", "manhwa").await;
+    bind(&ctx, "900000003", "kakao", "kakao-1").await;
+    bind(&ctx, "900000003", "naver", "naver-1").await;
 
     let (provider, external_id) = chapter_key(&ctx.pool, "mangaupdates", "900000003").await;
-    assert_eq!(provider, "bilibili");
-    assert_eq!(external_id, "mc32437");
+    assert_eq!(provider, "naver");
+    assert_eq!(external_id, "naver-1");
 }
 
 #[tokio::test]
 async fn only_meta_less_binding_keeps_mu_key() {
     let ctx = setup().await;
-    add_media_item(&ctx, "900000004", "manhua").await;
-    bind(&ctx, "900000004", "kuaikan", "kk-2").await;
+    add_media_item(&ctx, "900000004", "manhwa").await;
+    bind(&ctx, "900000004", "kakao", "kakao-2").await;
 
     let (provider, external_id) = chapter_key(&ctx.pool, "mangaupdates", "900000004").await;
     assert_eq!(provider, "mangaupdates");
     assert_eq!(external_id, "900000004");
+}
+
+#[tokio::test]
+async fn chain_order_prefers_kuaikan_over_bilibili_for_manhua() {
+    // kuaikan gained its fetch arm after migration 028 and is first in the
+    // manhua chain, so it must win over bilibili now.
+    let ctx = setup().await;
+    add_media_item(&ctx, "900000010", "manhua").await;
+    bind(&ctx, "900000010", "bilibili", "mc-1").await;
+    bind(&ctx, "900000010", "kuaikan", "kk-1").await;
+
+    let (provider, external_id) = chapter_key(&ctx.pool, "mangaupdates", "900000010").await;
+    assert_eq!(provider, "kuaikan");
+    assert_eq!(external_id, "kk-1");
 }
 
 #[tokio::test]
@@ -180,6 +194,7 @@ fn sources_with_meta_matches_fetch_source_arms() {
         "qidian",
         "ridibooks",
         "mangaup",
+        "kuaikan",
     ];
 
     let mut arms: Vec<&str> = FETCH_SOURCE_ARMS.to_vec();
@@ -188,8 +203,8 @@ fn sources_with_meta_matches_fetch_source_arms() {
     with_meta.sort_unstable();
     assert_eq!(with_meta, arms);
 
-    // kuaikan/kakao/mangaplus have no arm -> Ok(default) -> must stay out.
-    for absent in ["kuaikan", "kakao", "mangaplus"] {
+    // kakao/mangaplus have no arm -> Ok(default) -> must stay out.
+    for absent in ["kakao", "mangaplus"] {
         assert!(
             !SOURCES_WITH_META.contains(&absent),
             "{absent} has no fetch arm"
@@ -208,7 +223,8 @@ fn global_source_order_has_the_same_set_as_supports_meta() {
 
 #[test]
 fn global_source_order_mirrors_migration_028_ranks() {
-    // migrations/028_chapter_ownership.sql `supports_meta` global_rank order.
+    // migrations/028_chapter_ownership.sql `supports_meta` global_rank order,
+    // with kuaikan appended (its fetch arm landed after that migration).
     assert_eq!(
         GLOBAL_SOURCE_ORDER,
         &[
@@ -221,7 +237,8 @@ fn global_source_order_mirrors_migration_028_ranks() {
             "alphapolis",
             "syosetu",
             "kakuyomu",
-            "qidian"
+            "qidian",
+            "kuaikan"
         ]
     );
 }

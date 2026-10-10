@@ -36,8 +36,10 @@ pub fn official_source_for_media_type(media_type: &str) -> &'static [&'static st
 /// Global fallback order used when the title has no `media_items` row yet
 /// (drawer preview, chapters written before the item was added).
 ///
-/// Must stay identical to the `supports_meta` global ranks of
-/// `migrations/028_chapter_ownership.sql` (bilibili=1 ... qidian=10).
+/// The first ten entries mirror the `supports_meta` global ranks of
+/// `migrations/028_chapter_ownership.sql` (bilibili=1 ... qidian=10); kuaikan
+/// gained its fetch arm after that migration, so it is appended last. The set
+/// must match `SOURCES_WITH_META` (enforced by `tests/chapter_key.rs`).
 pub const GLOBAL_SOURCE_ORDER: &[&str] = &[
     "bilibili",
     "naver",
@@ -49,6 +51,7 @@ pub const GLOBAL_SOURCE_ORDER: &[&str] = &[
     "syosetu",
     "kakuyomu",
     "qidian",
+    "kuaikan",
 ];
 
 /// Network abstraction so tests can inject a fixture-backed searcher.
@@ -451,8 +454,8 @@ pub async fn chapter_key(db: &sqlx::PgPool, provider: &str, external_id: &str) -
     };
 
     // Priority: the media_type chain first, then any other meta-capable source
-    // by global rank. Chain entries without a fetch_source arm (kuaikan,
-    // kakao, mangaplus) are dropped here - otherwise the key would point at a
+    // by global rank. Chain entries without a fetch_source arm (kakao,
+    // mangaplus) are dropped here - otherwise the key would point at a
     // source whose chapters are written under another one.
     let mut order: Vec<&str> = media_type
         .as_deref()

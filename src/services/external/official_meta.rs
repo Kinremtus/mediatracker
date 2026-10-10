@@ -18,12 +18,15 @@ pub struct ChapterMeta {
     pub title: Option<String>,
     pub release_date: Option<NaiveDate>,
     /// True for bonus rows (`00` prologues, non-numeric specials, repeated
-    /// numbers). Only `official_bilibili` classifies rows today; every other
-    /// source reports its plain numbered rows as `false`.
+    /// numbers). Set by the meta-capable sources that classify titles through
+    /// [`chapter_title`](crate::services::external::chapter_title) (today
+    /// bilibili and kuaikan); every other source reports its plain numbered
+    /// rows as `false`.
     pub is_bonus: bool,
-    /// Display label the source already knows (bilibili split parts `479-1`),
-    /// stored verbatim into `series_chapters.chapter_label` by `apply_meta`.
-    /// `None` lets `apply_meta` derive one (fractional number / counter).
+    /// Display label the source already knows (split parts `479-1`, from
+    /// bilibili or kuaikan), stored verbatim into
+    /// `series_chapters.chapter_label` by `apply_meta`. `None` lets
+    /// `apply_meta` derive one (fractional number / counter).
     pub label: Option<String>,
 }
 
@@ -57,8 +60,11 @@ impl ChapterMeta {
 }
 
 /// Sources with a real arm in `fetch_source` (each source here has a working fetch).
-/// kuaikan/kakao/mangaplus are intentionally absent: they have no arm -> Ok(default) (empty response).
-/// Must stay identical to the `supports_meta` list in `migrations/028_chapter_ownership.sql`.
+/// kakao/mangaplus are intentionally absent: they have no arm -> Ok(default) (empty response).
+/// `kuaikan` gained its arm after `migrations/028_chapter_ownership.sql`; the
+/// `supports_meta` list in that migration is a frozen one-time-backfill
+/// snapshot, so this runtime list is the source of truth for `chapter_key`
+/// and the resolve walk.
 pub const SOURCES_WITH_META: &[&str] = &[
     "bilibili",
     "naver",
@@ -70,6 +76,7 @@ pub const SOURCES_WITH_META: &[&str] = &[
     "syosetu",
     "kakuyomu",
     "qidian",
+    "kuaikan",
 ];
 
 /// Fetch one source's detail, dispatched by the binding name. Unknown/absent
@@ -93,6 +100,9 @@ pub async fn fetch_source(
         }
         "bilibili" => {
             crate::services::external::official_bilibili::fetch_meta(client, source_id).await
+        }
+        "kuaikan" => {
+            crate::services::external::official_kuaikan::fetch_meta(client, source_id).await
         }
         "daum" => crate::services::external::official_daum::fetch_meta(client, source_id).await,
         "qidian" => crate::services::external::official_qidian::fetch_meta(client, source_id).await,

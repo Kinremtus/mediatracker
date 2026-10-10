@@ -783,9 +783,9 @@ async fn for_key_with_hint_and_without_binding_is_a_no_op() {
     assert_eq!(written, 0);
 }
 
-/// A bilibili split part (`479-1` -> 47901) is a main row with an `N-p` label;
-/// a re-apply keeps it (COALESCE) instead of blanking it. Whole chapters and
-/// other sources stay label-free.
+/// A split part (`479-1` -> 47901) is a main row with an `N-p` label; a
+/// re-apply keeps it (COALESCE) instead of blanking it. Whole chapters and
+/// sources without split parts stay label-free.
 #[tokio::test]
 async fn bilibili_part_main_rows_get_and_keep_their_label() {
     let ctx = setup().await;
@@ -849,10 +849,10 @@ async fn duplicate_part_keeps_its_part_label() {
     );
 }
 
-/// Non-bilibili sources keep main rows label-free: a fractional main row (a
-/// "(part 2)" upload) must not be relabeled as `N-p`.
+/// Sources without split parts keep main rows label-free: a fractional main
+/// row (a "(part 2)" upload) must not be relabeled as `N-p`.
 #[tokio::test]
-async fn non_bilibili_fractional_main_rows_stay_label_free() {
+async fn fractional_main_rows_stay_label_free() {
     let ctx = setup().await;
 
     let mut m = meta(None, None, None);
@@ -866,5 +866,5 @@ async fn non_bilibili_fractional_main_rows_stay_label_free() {
             .fetch_one(&ctx.pool)
             .await
             .expect("read label");
-    assert_eq!(label, None, "only bilibili parts get an `N-p` label");
+    assert_eq!(label, None, "only split parts get an `N-p` label");
 }

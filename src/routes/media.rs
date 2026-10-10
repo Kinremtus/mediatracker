@@ -429,6 +429,15 @@ pub async fn get_media_drawer_content(
                     Some(&item.media_type),
                 )
                 .await;
+                // Fold shadowed MU duplicates (read history kept under the MU
+                // key) into the official rows of the same base before the
+                // chapter list loads. Idempotent, silent on failure.
+                let _ = crate::services::chapter_meta_enrich::merge_mu_duplicates(
+                    &state.db,
+                    &provider,
+                    &external_id,
+                )
+                .await;
             }
             let (main_count, bonus_count) =
                 chapter_counts(&state.db, &provider, &external_id, &item.media_type).await;
@@ -1155,6 +1164,15 @@ pub async fn get_chapters(
                     )
                     .await;
                 }
+                // Fold shadowed MU duplicates into the official rows (ToDG:
+                // MU `Гл. 82` next to official parts `82-1`/`82-2`) before the
+                // list is read below. Idempotent, silent on failure.
+                let _ = crate::services::chapter_meta_enrich::merge_mu_duplicates(
+                    &state.db,
+                    &mu_provider,
+                    &mu_id,
+                )
+                .await;
             }
         } else {
             tracing::debug!(

@@ -89,8 +89,9 @@ pub async fn apply_meta(
     // label. The label the source already knows wins (a split part `479-1`,
     // including a duplicate part); otherwise the original number ('49.5') or a
     // running counter for unnumbered specials (migration 029). Main rows keep
-    // their positive x100 number and the source's label (NULL unless it is a
-    // bilibili part). A re-apply reproduces the same keys/labels.
+    // their positive x100 number and the source's label (NULL unless the source
+    // reported a split part, bilibili or kuaikan). A re-apply reproduces the
+    // same keys/labels.
     let bonus_total = meta.chapters.iter().filter(|c| c.is_bonus).count() as i32;
     let mut bonus_i = 0i32;
     let mut unnumbered = 0i32;
@@ -140,8 +141,10 @@ pub async fn apply_meta(
     // Counter write (identity key): raise-only, skipped for `chapters_manual`
     // rows — the WHERE clause keeps a hand-set count safe even on a race.
     if let Some(next) = raise_to {
+        // `GREATEST` keeps the write race-safe: `raise_to` was computed from a
+        // pre-transaction read, so a concurrent raise must not be lowered.
         sqlx::query(
-            "UPDATE media_items SET chapters = $3, chapters_source = $4, updated_at = NOW() \
+            "UPDATE media_items SET chapters = GREATEST(chapters, $3), chapters_source = $4, updated_at = NOW() \
              WHERE provider = $1 AND external_id = $2 AND chapters_manual = FALSE",
         )
         .bind(provider)
@@ -235,6 +238,114 @@ pub async fn apply_meta(
     Ok(written)
 }
 
+/// Fold shadowed MU duplicates into the official rows of the same base.
+///
+/// A title that upgraded from the MU skeleton can keep MU rows under the SAME
+/// base chapter as a newer official row (ToDG: MU `Гл. 82` next to official
+/// parts `82-1`/`82-2`). Unread ones are already dropped by the orphan cleanup
+/// in [`apply_meta`]; the ones carrying read progress survive on purpose. This
+/// moves that read state onto the official rows of the base (every part of a
+/// read chapter counts as read) and removes the shadowed MU rows, so the
+/// chapter list stops showing both. All users are handled in one pass. A row
+/// whose read flag lives only in the legacy `series_chapters.read` column (no
+/// per-user progress) is left in place.
+///
+/// Runs on drawer open after resolve/enrich, so existing duplicates are folded
+/// without a migration. Aliases that resolve to the same official key share
+/// these rows by design; the fold is key-scoped and never merges two titles'
+/// catalogs. Idempotent; returns the number of MU rows removed.
+pub async fn merge_mu_duplicates(
+    db: &PgPool,
+    provider: &str,
+    external_id: &str,
+) -> anyhow::Result<u64> {
+    let (ch_provider, ch_id) = chapter_key(db, provider, external_id).await;
+    // One statement: every sub-query reads the same snapshot, so the row and
+    // progress deletes cannot race the read-state transfer.
+    let removed: i64 = sqlx::query_scalar(
+        r#"
+        WITH shadowed AS (
+            SELECT mu.chapter_number, mu.read AS legacy_read
+            FROM series_chapters mu
+            WHERE mu.provider = $1 AND mu.external_id = $2
+              AND mu.origin = 'mu'
+              AND NOT mu.is_bonus
+              AND mu.chapter_number >= 0
+              AND EXISTS (
+                  SELECT 1 FROM series_chapters o
+                  WHERE o.provider = mu.provider
+                    AND o.external_id = mu.external_id
+                    AND o.origin <> 'mu'
+                    AND NOT o.is_bonus
+                    AND o.chapter_number / 100 = mu.chapter_number / 100
+              )
+        ),
+        readable AS (
+            SELECT s.chapter_number
+            FROM shadowed s
+            WHERE NOT s.legacy_read
+               OR EXISTS (
+                   SELECT 1 FROM user_chapter_progress p
+                   WHERE p.provider = $1 AND p.external_id = $2
+                     AND p.chapter_number = s.chapter_number
+                     AND p.read
+               )
+        ),
+        moved AS (
+            INSERT INTO user_chapter_progress
+                (user_id, provider, external_id, chapter_number, read, read_at)
+            SELECT DISTINCT ON (p.user_id, o.chapter_number)
+                   p.user_id, o.provider, o.external_id, o.chapter_number, TRUE, p.read_at
+            FROM readable s
+            JOIN series_chapters o
+              ON o.provider = $1 AND o.external_id = $2
+             AND o.origin <> 'mu'
+             AND NOT o.is_bonus
+             AND o.chapter_number / 100 = s.chapter_number / 100
+            JOIN user_chapter_progress p
+              ON p.provider = $1 AND p.external_id = $2
+             AND p.chapter_number = s.chapter_number
+             AND p.read
+            ORDER BY p.user_id, o.chapter_number, p.read_at ASC NULLS LAST
+            ON CONFLICT (user_id, provider, external_id, chapter_number) DO UPDATE
+            SET read = TRUE,
+                read_at = COALESCE(user_chapter_progress.read_at, EXCLUDED.read_at)
+            RETURNING 1
+        ),
+        dropped_progress AS (
+            DELETE FROM user_chapter_progress p
+            USING readable s
+            WHERE p.provider = $1 AND p.external_id = $2
+              AND p.chapter_number = s.chapter_number
+              AND p.read
+            RETURNING 1
+        ),
+        dropped_rows AS (
+            DELETE FROM series_chapters mu
+            USING readable s
+            WHERE mu.provider = $1 AND mu.external_id = $2
+              AND mu.chapter_number = s.chapter_number
+              AND mu.origin = 'mu'
+            RETURNING 1
+        )
+        SELECT (SELECT count(*) FROM dropped_rows)
+        "#,
+    )
+    .bind(&ch_provider)
+    .bind(&ch_id)
+    .fetch_one(db)
+    .await?;
+    if removed > 0 {
+        tracing::info!(
+            provider,
+            external_id,
+            removed,
+            "official_meta: merged shadowed MU rows into official chapters"
+        );
+    }
+    Ok(removed as u64)
+}
+
 /// True when the source actually told us something. An empty answer (no arm in
 /// `fetch_source` -> `Ok(OfficialMeta::default)`, or a parse that yielded
 /// nothing) is NOT a success: the chain must move on to the next source.
@@ -297,7 +408,7 @@ pub async fn enrich_official_meta_with(
             }
         };
         if !is_useful_meta(&meta) {
-            // Empty answer != success: keep walking the chain (kuaikan/kakao/
+            // Empty answer != success: keep walking the chain (kakao/
             // mangaplus have no arm in `fetch_source` and always land here).
             tracing::debug!(
                 provider,
