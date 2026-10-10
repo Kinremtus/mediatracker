@@ -30,6 +30,7 @@ fn meta(
             title: title.map(str::to_string),
             release_date,
             is_bonus: false,
+            label: None,
         }],
         count: Some(1),
         update_schedule: update_schedule.map(str::to_string),
@@ -43,6 +44,7 @@ fn main_chapter(number_x100: i32) -> ChapterMeta {
         title: Some(format!("Chapter {number_x100}")),
         release_date: None,
         is_bonus: false,
+        label: None,
     }
 }
 
@@ -52,6 +54,19 @@ fn bonus_chapter(number_x100: i32) -> ChapterMeta {
         title: Some(format!("Bonus {number_x100}")),
         release_date: None,
         is_bonus: true,
+        label: None,
+    }
+}
+
+/// A bilibili split part row: main (`479-1` -> 47901) or a duplicate bonus.
+fn part_chapter(number_x100: i32, is_bonus: bool) -> ChapterMeta {
+    let label = format!("{}-{}", number_x100 / 100, number_x100 % 100);
+    ChapterMeta {
+        number_x100,
+        title: Some(label.clone()),
+        release_date: None,
+        is_bonus,
+        label: Some(label),
     }
 }
 
@@ -176,6 +191,17 @@ async fn counter_columns(ctx: &common::TestContext) -> (Option<i32>, Option<Stri
     .fetch_one(&ctx.pool)
     .await
     .expect("read media_items counter")
+}
+
+/// `(chapter_number, chapter_label)` of every main row, oldest-first.
+async fn main_labels(ctx: &common::TestContext) -> Vec<(i32, Option<String>)> {
+    sqlx::query_as(
+        "SELECT chapter_number, chapter_label FROM series_chapters \
+         WHERE NOT is_bonus ORDER BY chapter_number ASC",
+    )
+    .fetch_all(&ctx.pool)
+    .await
+    .expect("read main rows")
 }
 
 #[tokio::test]
@@ -755,4 +781,90 @@ async fn for_key_with_hint_and_without_binding_is_a_no_op() {
         .await
         .expect("a missing binding is a normal state");
     assert_eq!(written, 0);
+}
+
+/// A bilibili split part (`479-1` -> 47901) is a main row with an `N-p` label;
+/// a re-apply keeps it (COALESCE) instead of blanking it. Whole chapters and
+/// other sources stay label-free.
+#[tokio::test]
+async fn bilibili_part_main_rows_get_and_keep_their_label() {
+    let ctx = setup().await;
+
+    let mut m = meta(None, None, None);
+    m.chapters = vec![
+        main_chapter(47900),
+        part_chapter(47901, false),
+        main_chapter(48000),
+    ];
+    apply_meta(&ctx.pool, PROVIDER, EXTERNAL_ID, SOURCE, &m)
+        .await
+        .expect("apply_meta");
+
+    let rows = main_labels(&ctx).await;
+    assert_eq!(
+        rows,
+        vec![
+            (47900, None),
+            (47901, Some("479-1".to_string())),
+            (48000, None),
+        ],
+        "only the part row carries a label (the unread MU skeleton 100 was cleaned up)"
+    );
+
+    // Re-apply: the label must survive (ON CONFLICT keeps the existing one).
+    apply_meta(&ctx.pool, PROVIDER, EXTERNAL_ID, SOURCE, &m)
+        .await
+        .expect("re-apply");
+    assert_eq!(
+        main_labels(&ctx).await,
+        rows,
+        "a re-apply reproduces the same labels"
+    );
+}
+
+/// A duplicate split part becomes a bonus row but keeps its `N-p` label
+/// (regression: it used to fall back to the x100 artefact `479.01`).
+#[tokio::test]
+async fn duplicate_part_keeps_its_part_label() {
+    let ctx = setup().await;
+
+    let mut m = meta(None, None, None);
+    m.chapters = vec![part_chapter(47901, false), part_chapter(47901, true)];
+    apply_meta(&ctx.pool, PROVIDER, EXTERNAL_ID, SOURCE, &m)
+        .await
+        .expect("apply_meta");
+
+    let bonus: Vec<(i32, Option<String>)> = sqlx::query_as(
+        "SELECT chapter_number, chapter_label FROM series_chapters \
+         WHERE is_bonus ORDER BY chapter_number ASC",
+    )
+    .fetch_all(&ctx.pool)
+    .await
+    .expect("read bonus rows");
+
+    assert_eq!(
+        bonus,
+        vec![(-100, Some("479-1".to_string()))],
+        "the duplicate part keeps its `N-p` label, not `479.01`"
+    );
+}
+
+/// Non-bilibili sources keep main rows label-free: a fractional main row (a
+/// "(part 2)" upload) must not be relabeled as `N-p`.
+#[tokio::test]
+async fn non_bilibili_fractional_main_rows_stay_label_free() {
+    let ctx = setup().await;
+
+    let mut m = meta(None, None, None);
+    m.chapters = vec![main_chapter(1050)]; // chapter 10.5
+    apply_meta(&ctx.pool, PROVIDER, EXTERNAL_ID, "mangaupdates", &m)
+        .await
+        .expect("apply_meta");
+
+    let label: Option<String> =
+        sqlx::query_scalar("SELECT chapter_label FROM series_chapters WHERE chapter_number = 1050")
+            .fetch_one(&ctx.pool)
+            .await
+            .expect("read label");
+    assert_eq!(label, None, "only bilibili parts get an `N-p` label");
 }

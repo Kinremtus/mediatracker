@@ -98,6 +98,7 @@ pub fn parse_chapters(value: &serde_json::Value) -> Vec<ChapterMeta> {
             title,
             release_date,
             is_bonus: false,
+            label: None,
         })
         .collect()
 }

@@ -36,6 +36,7 @@ fn meta(
             title: title.map(str::to_string),
             release_date,
             is_bonus: false,
+            label: None,
         }],
         count: Some(1),
         update_schedule: update_schedule.map(str::to_string),

@@ -24,13 +24,15 @@ pub struct StoredChapter {
 
 impl StoredChapter {
     pub fn formatted(&self) -> String {
+        // Display label first: bonus rows (original number / counter) and
+        // bilibili split parts (`479-1`) carry one from `apply_meta`.
+        if let Some(label) = &self.label {
+            return label.clone();
+        }
         if self.is_bonus {
-            // `apply_meta` sets the label (original number or counter). The
-            // fallback covers pre-apply rows: show the key's magnitude
+            // Fallback for pre-apply rows: show the key's magnitude
             // (`saturating_abs` avoids the i32::MIN overflow panic).
-            self.label
-                .clone()
-                .unwrap_or_else(|| format_chapter(self.chapter_number.saturating_abs()))
+            format_chapter(self.chapter_number.saturating_abs())
         } else {
             format_chapter(self.chapter_number)
         }
@@ -91,10 +93,11 @@ pub fn parse_chapter(s: &str) -> Option<i32> {
 }
 
 /// Sync `media_items.chapters` from the stored chapter rows: the value is
-/// `ceil(MAX(chapter_number) / 100)` (chapter numbers are stored at x100
-/// scale) and an existing value is never lowered. Runs inside the caller's
-/// transaction via the passed connection so the card denominator can never
-/// disagree with the rows.
+/// `MAX(chapter_number) / 100` (chapter numbers are stored at x100 scale;
+/// split parts like `479-2` -> 47902 floor back to chapter 479) and an
+/// existing value is never lowered. Runs inside the caller's transaction via
+/// the passed connection so the card denominator can never disagree with the
+/// rows.
 ///
 /// The two keys differ on purpose: `media_items` is keyed by the incoming
 /// (MangaUpdates) identity, while the chapter rows live under the resolved key
@@ -112,7 +115,7 @@ async fn sync_media_items_chapters(
         UPDATE media_items
         SET chapters = GREATEST(COALESCE(media_items.chapters, 0), sub.max_ch)
         FROM (
-            SELECT ((MAX(chapter_number) + 99) / 100) AS max_ch
+            SELECT (MAX(chapter_number) / 100) AS max_ch
             FROM series_chapters
             WHERE provider = $3 AND external_id = $4
         ) AS sub
@@ -465,11 +468,24 @@ pub async fn set_read(
     // never joins against.
     let (key_provider, key_external_id) = chapter_key(pool, provider, external_id).await;
     // Bonus rows are keyed by a distinct negative chapter_number (migration
-    // 029): `is_bonus` == chapter_number < 0. They never take part in the main
-    // bulk-fill cascade - both because they are not main progress and because a
-    // naive `chapter_number <= N` SELECT would pull in every bonus row (all
-    // previously 0) and crash the INSERT with "cannot affect row a second time".
-    let is_bonus = chapter_number < 0;
+    // 029). The sign alone is not enough: a manual bonus row is keyed 0 while a
+    // MU "preview" chapter 0 is a MAIN row, so 0 is decided by the row itself.
+    // Getting this wrong would let a main cascade (`chapter_number >= N`) sweep
+    // every main chapter. A missing row behaves as main (manual ceiling).
+    let is_bonus: bool = if chapter_number < 0 {
+        true
+    } else if chapter_number == 0 {
+        sqlx::query_scalar(
+            "SELECT COALESCE(bool_or(is_bonus), FALSE) FROM series_chapters \
+             WHERE provider = $1 AND external_id = $2 AND chapter_number = 0",
+        )
+        .bind(&key_provider)
+        .bind(&key_external_id)
+        .fetch_one(pool)
+        .await?
+    } else {
+        false
+    };
     let result = if read {
         // Bulk-fill every MAIN skeleton chapter <= N. The inserted key comes
         // from `sc.*`, i.e. the already-resolved one. Bonus rows are excluded:
@@ -1366,6 +1382,22 @@ mod tests {
             ch3.formatted(),
             "3",
             "an unnumbered bonus shows its counter"
+        );
+
+        let ch4 = StoredChapter {
+            chapter_number: 47901,
+            volume: None,
+            title_en: None,
+            title_ru: None,
+            release_date: None,
+            read: false,
+            is_bonus: false,
+            label: Some("479-1".to_string()),
+        };
+        assert_eq!(
+            ch4.formatted(),
+            "479-1",
+            "a split part of a chapter shows its label"
         );
     }
 

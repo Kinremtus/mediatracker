@@ -21,6 +21,10 @@ pub struct ChapterMeta {
     /// numbers). Only `official_bilibili` classifies rows today; every other
     /// source reports its plain numbered rows as `false`.
     pub is_bonus: bool,
+    /// Display label the source already knows (bilibili split parts `479-1`),
+    /// stored verbatim into `series_chapters.chapter_label` by `apply_meta`.
+    /// `None` lets `apply_meta` derive one (fractional number / counter).
+    pub label: Option<String>,
 }
 
 /// Everything one official source can tell us about a title.
@@ -47,6 +51,7 @@ impl ChapterMeta {
             title: None,
             release_date: None,
             is_bonus: false,
+            label: None,
         })
     }
 }

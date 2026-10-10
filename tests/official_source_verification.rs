@@ -27,6 +27,9 @@ use mediatracker::services::source_ids::{get_source_id, set_source_id};
 
 const SERIES_ID: i64 = 999_999_993; // distinct from source_id_mapping (…992)
 const KAKAO_ID: &str = "64096846"; // real Kakao series id for Yongsa Party
+/// Target id used by the rekey tests: after a meta-capable bind the chapter
+/// rows move under this `(bilibili, id)` key.
+const BILIBILI_ID: &str = "990001";
 
 /// Fixture-backed searcher: canned hits per source, optional forced errors, and
 /// a recorder of every `(source, query)` call.
@@ -136,8 +139,9 @@ async fn setup() -> common::TestContext {
         .execute(&ctx.pool)
         .await
         .expect("delete stale bindings");
-    sqlx::query("DELETE FROM series_chapters WHERE external_id = $1")
+    sqlx::query("DELETE FROM series_chapters WHERE external_id IN ($1, $2)")
         .bind(&series)
+        .bind(BILIBILI_ID)
         .execute(&ctx.pool)
         .await
         .expect("delete stale chapters");
@@ -607,5 +611,303 @@ async fn no_match_anywhere_binds_nothing() {
             .await
             .unwrap(),
         None
+    );
+}
+
+/// The C-rule: a non-meta kuaikan binding must not stop the walk from trying
+/// the cached meta-capable source. Both bindings coexist afterwards (kuaikan
+/// keeps feeding the count, bilibili owns the chapter rows).
+#[tokio::test]
+async fn kuaikan_binding_still_upgrades_to_bilibili() {
+    let ctx = setup().await;
+    let series = SERIES_ID.to_string();
+
+    set_source_id(&ctx.pool, "mangaupdates", &series, "kuaikan", "22928")
+        .await
+        .expect("pre-bind kuaikan");
+
+    let search = FixtureSearch::with_sources(&[
+        ("kuaikan", vec![hit("22928", "妖神记")]),
+        ("bilibili", vec![hit(BILIBILI_ID, "妖神记")]),
+    ]);
+    let calls = search.calls();
+
+    let outcome = resolve_and_bind(
+        &ctx.pool,
+        &search,
+        "mangaupdates",
+        &series,
+        "manhua",
+        "妖神记",
+        &[],
+    )
+    .await;
+
+    assert_eq!(
+        outcome,
+        Some(ResolveOutcome {
+            source: "bilibili".to_string(),
+            source_id: BILIBILI_ID.to_string(),
+        }),
+        "the meta-capable bilibili must win over the bound kuaikan"
+    );
+    assert_eq!(
+        get_source_id(&ctx.pool, "mangaupdates", &series, "kuaikan")
+            .await
+            .unwrap(),
+        Some("22928".to_string()),
+        "the kuaikan binding is kept (auto:kuaikan count)"
+    );
+    assert_eq!(
+        get_source_id(&ctx.pool, "mangaupdates", &series, "bilibili")
+            .await
+            .unwrap(),
+        Some(BILIBILI_ID.to_string())
+    );
+
+    let calls = calls.lock().unwrap();
+    assert_eq!(calls.len(), 1, "only the cached bilibili search runs");
+    assert_eq!(calls[0].0, "bilibili");
+}
+
+/// A fresh kuaikan match binds kuaikan as the fallback, then the walk still
+/// tries bilibili and upgrades to it when it matches.
+#[tokio::test]
+async fn fresh_kuaikan_match_upgrades_to_bilibili() {
+    let ctx = setup().await;
+    let series = SERIES_ID.to_string();
+    let search = FixtureSearch::with_sources(&[
+        ("kuaikan", vec![hit("22928", "妖神记")]),
+        ("bilibili", vec![hit(BILIBILI_ID, "妖神记")]),
+    ]);
+    let calls = search.calls();
+
+    let outcome = resolve_and_bind(
+        &ctx.pool,
+        &search,
+        "mangaupdates",
+        &series,
+        "manhua",
+        "妖神记",
+        &[],
+    )
+    .await;
+
+    assert_eq!(
+        outcome,
+        Some(ResolveOutcome {
+            source: "bilibili".to_string(),
+            source_id: BILIBILI_ID.to_string(),
+        })
+    );
+    assert_eq!(
+        get_source_id(&ctx.pool, "mangaupdates", &series, "kuaikan")
+            .await
+            .unwrap(),
+        Some("22928".to_string()),
+        "the fresh kuaikan match stays bound as the fallback"
+    );
+
+    let calls = calls.lock().unwrap();
+    let order: Vec<&str> = calls.iter().map(|c| c.0.as_str()).collect();
+    assert_eq!(order, vec!["kuaikan", "bilibili"]);
+}
+
+/// When bilibili has no matching title the freshly matched kuaikan is returned
+/// (old behaviour preserved for titles bilibili does not carry).
+#[tokio::test]
+async fn kuaikan_kept_when_bilibili_has_no_match() {
+    let ctx = setup().await;
+    let series = SERIES_ID.to_string();
+    let search = FixtureSearch::with_sources(&[
+        ("kuaikan", vec![hit("22928", "妖神记")]),
+        ("bilibili", vec![]),
+    ]);
+    let calls = search.calls();
+
+    let outcome = resolve_and_bind(
+        &ctx.pool,
+        &search,
+        "mangaupdates",
+        &series,
+        "manhua",
+        "妖神记",
+        &[],
+    )
+    .await;
+
+    assert_eq!(
+        outcome,
+        Some(ResolveOutcome {
+            source: "kuaikan".to_string(),
+            source_id: "22928".to_string(),
+        })
+    );
+    let calls = calls.lock().unwrap();
+    assert_eq!(calls.len(), 2, "kuaikan then bilibili, no extra sources");
+}
+
+/// A fresh meta-capable bind moves the MU-key chapter rows and read progress
+/// under the official key. Target rows win over old duplicates.
+#[tokio::test]
+async fn rekey_moves_chapters_and_progress_to_the_bound_key() {
+    let ctx = setup().await;
+    let series = SERIES_ID.to_string();
+
+    sqlx::query(
+        "INSERT INTO series_chapters (provider, external_id, chapter_number, title_en) \
+         VALUES ('mangaupdates', $1, 100, 'MU 100'), \
+                ('mangaupdates', $1, 200, 'MU 200'), \
+                ('bilibili', $2, 100, 'Official 100')",
+    )
+    .bind(&series)
+    .bind(BILIBILI_ID)
+    .execute(&ctx.pool)
+    .await
+    .expect("seed chapters");
+
+    let username = "rekey-fixture-user";
+    sqlx::query("DELETE FROM users WHERE username = $1")
+        .bind(username)
+        .execute(&ctx.pool)
+        .await
+        .expect("clean fixture user");
+    let user_id: uuid::Uuid = sqlx::query_scalar(
+        "INSERT INTO users (username, email, password_hash, role) \
+         VALUES ($1, 'rekey@example.test', 'fakehash', 'user') RETURNING id",
+    )
+    .bind(username)
+    .fetch_one(&ctx.pool)
+    .await
+    .expect("create fixture user");
+    sqlx::query(
+        "INSERT INTO user_chapter_progress \
+             (user_id, provider, external_id, chapter_number, read, read_at) \
+         VALUES ($1, 'mangaupdates', $2, 100, TRUE, NOW())",
+    )
+    .bind(user_id)
+    .bind(&series)
+    .execute(&ctx.pool)
+    .await
+    .expect("seed progress");
+
+    let search = FixtureSearch::with_sources(&[
+        ("kuaikan", vec![]),
+        ("bilibili", vec![hit(BILIBILI_ID, "妖神记")]),
+    ]);
+    let outcome = resolve_and_bind(
+        &ctx.pool,
+        &search,
+        "mangaupdates",
+        &series,
+        "manhua",
+        "妖神记",
+        &[],
+    )
+    .await;
+    assert_eq!(outcome.map(|o| o.source), Some("bilibili".to_string()));
+
+    let rows: Vec<(String, i32, Option<String>)> = sqlx::query_as(
+        "SELECT provider, chapter_number, title_en FROM series_chapters \
+         WHERE external_id IN ($1, $2) ORDER BY chapter_number",
+    )
+    .bind(&series)
+    .bind(BILIBILI_ID)
+    .fetch_all(&ctx.pool)
+    .await
+    .expect("read chapters after rekey");
+
+    assert_eq!(
+        rows,
+        vec![
+            (
+                "bilibili".to_string(),
+                100,
+                Some("Official 100".to_string())
+            ),
+            ("bilibili".to_string(), 200, Some("MU 200".to_string())),
+        ],
+        "rows moved under (bilibili, {BILIBILI_ID}); the target copy of 100 wins"
+    );
+
+    let progress: Vec<(String, i32)> = sqlx::query_as(
+        "SELECT provider, chapter_number FROM user_chapter_progress \
+         WHERE user_id = $1 ORDER BY chapter_number",
+    )
+    .bind(user_id)
+    .fetch_all(&ctx.pool)
+    .await
+    .expect("read progress after rekey");
+    assert_eq!(
+        progress,
+        vec![("bilibili".to_string(), 100)],
+        "read progress follows the rows"
+    );
+}
+
+/// Two MU aliases resolving to the same official id must not merge catalogs:
+/// the rekey is refused when another identity already owns the target key.
+#[tokio::test]
+async fn rekey_refused_when_another_title_owns_the_target_key() {
+    let ctx = setup().await;
+    let series = SERIES_ID.to_string();
+    let alias = "999999991";
+
+    sqlx::query("DELETE FROM media_source_ids WHERE external_id = $1")
+        .bind(alias)
+        .execute(&ctx.pool)
+        .await
+        .expect("clean alias binding");
+    sqlx::query(
+        "INSERT INTO series_chapters (provider, external_id, chapter_number, title_en) \
+         VALUES ('mangaupdates', $1, 100, 'Alias 100')",
+    )
+    .bind(&series)
+    .execute(&ctx.pool)
+    .await
+    .expect("seed chapters");
+    // Another MU identity is already bound to the same official id.
+    sqlx::query(
+        "INSERT INTO media_source_ids (provider, external_id, source, source_id) \
+         VALUES ('mangaupdates', $1, 'bilibili', $2)",
+    )
+    .bind(alias)
+    .bind(BILIBILI_ID)
+    .execute(&ctx.pool)
+    .await
+    .expect("seed alias binding");
+
+    let search = FixtureSearch::with_sources(&[
+        ("kuaikan", vec![]),
+        ("bilibili", vec![hit(BILIBILI_ID, "妖神记")]),
+    ]);
+    let outcome = resolve_and_bind(
+        &ctx.pool,
+        &search,
+        "mangaupdates",
+        &series,
+        "manhua",
+        "妖神记",
+        &[],
+    )
+    .await;
+    assert_eq!(
+        outcome.map(|o| o.source),
+        Some("bilibili".to_string()),
+        "the binding itself is still recorded"
+    );
+
+    let rows: Vec<(String, i32)> = sqlx::query_as(
+        "SELECT provider, chapter_number FROM series_chapters \
+         WHERE external_id = $1 ORDER BY chapter_number",
+    )
+    .bind(&series)
+    .fetch_all(&ctx.pool)
+    .await
+    .expect("read rows after refused rekey");
+    assert_eq!(
+        rows,
+        vec![("mangaupdates".to_string(), 100)],
+        "rows stay under the MU key (no cross-title merge)"
     );
 }

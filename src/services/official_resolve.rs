@@ -1,6 +1,7 @@
 //! Auto-resolve an official source for a media item and bind it on an exact
-//! normalized-title match. At most one search request per call; an existing
-//! binding short-circuits before any network I/O.
+//! normalized-title match. The walk issues one search per source until the
+//! first match; a meta-capable binding short-circuits before any network I/O,
+//! while a non-meta binding still lets the cached sources be tried.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -164,9 +165,23 @@ fn hit_matches_media_type(source: &str, id: &str, media_type: &str) -> bool {
     }
 }
 
-/// Resolve + persist across the ordered source list. Returns the outcome on the
-/// first exact normalized-title match, None otherwise. Zero network I/O when any
-/// source already has a binding; one search per source until the first match.
+/// Sources whose search is backed by a module-local cache + cooldown
+/// (`official_bilibili::search_cached`). Only these may be tried after a
+/// non-meta match is already in hand: the walk must not spend extra live
+/// requests on quota-limited or slow endpoints. Deliberately just bilibili —
+/// it is the only cached meta source, so `manhwa`/`manga` never upgrade a
+/// non-meta match (there is no cheap meta source to try).
+const CACHED_SEARCH_SOURCES: &[&str] = &["bilibili"];
+
+/// Resolve + persist across the ordered source list.
+///
+/// A meta-capable binding (a source whose chapter detail can actually be
+/// fetched, [`SOURCES_WITH_META`]) wins; a match from a source without chapter
+/// detail (kuaikan/kakao/mangaplus) is bound and returned only when no
+/// meta-capable source can be found. Zero network I/O when a meta-capable
+/// binding already exists; a non-meta binding alone still allows the walk to
+/// try the cached sources (bilibili) so the chapters can move under a
+/// meta-capable key. One search per source until the first match.
 pub async fn resolve_and_bind(
     db: &sqlx::PgPool,
     search: &dyn OfficialSearch,
@@ -181,15 +196,27 @@ pub async fn resolve_and_bind(
         return None;
     }
 
-    // Short-circuit before any network I/O: the first source (list order =
-    // priority) that already has a binding wins.
+    // Existing bindings, in chain order. A meta-capable binding short-circuits
+    // before any network I/O; a non-meta one is kept as the fallback while the
+    // walk below still tries to upgrade to a meta-capable source.
+    let mut bound_sources: Vec<&str> = Vec::new();
+    let mut fallback: Option<ResolveOutcome> = None;
     for &source in sources {
         match crate::services::source_ids::get_source_id(db, provider, external_id, source).await {
             Ok(Some(id)) => {
-                return Some(ResolveOutcome {
-                    source: source.to_string(),
-                    source_id: id,
-                });
+                if SOURCES_WITH_META.contains(&source) {
+                    return Some(ResolveOutcome {
+                        source: source.to_string(),
+                        source_id: id,
+                    });
+                }
+                if fallback.is_none() {
+                    fallback = Some(ResolveOutcome {
+                        source: source.to_string(),
+                        source_id: id,
+                    });
+                }
+                bound_sources.push(source);
             }
             Ok(None) => {}
             Err(e) => {
@@ -208,8 +235,24 @@ pub async fn resolve_and_bind(
         }
     }
 
+    // Where the chapter rows live right now, BEFORE any binding change: a
+    // fresh meta-capable binding must carry them over (rekey) or they would be
+    // orphaned under the old key.
+    let old_key = chapter_key(db, provider, external_id).await;
+
+    // Once a non-meta match is in hand, only cached sources may be searched: a
+    // pre-existing non-meta binding also starts the walk in that mode.
+    let mut only_cached = fallback.is_some();
+    let mut fallback_from_search: Option<ResolveOutcome> = None;
+
     // Walk the sources in priority order; a failed source only skips itself.
     for &source in sources {
+        if bound_sources.contains(&source) {
+            continue;
+        }
+        if only_cached && !CACHED_SEARCH_SOURCES.contains(&source) {
+            continue;
+        }
         let Some(query) = official_title::pick_candidate(&all, source) else {
             continue;
         };
@@ -234,10 +277,32 @@ pub async fn resolve_and_bind(
             .await
         {
             Ok(()) => {
-                return Some(ResolveOutcome {
+                let outcome = ResolveOutcome {
                     source: source.to_string(),
                     source_id: hit.id,
-                });
+                };
+                if SOURCES_WITH_META.contains(&source) {
+                    // The winner: move the rows under the new key so the
+                    // official chapters are not orphaned. A rekey failure only
+                    // defers them — the next enrich re-seeds the key.
+                    if let Err(e) = rekey_chapters(
+                        db,
+                        &old_key.0,
+                        &old_key.1,
+                        &outcome.source,
+                        &outcome.source_id,
+                    )
+                    .await
+                    {
+                        tracing::warn!(provider, external_id, source, error = %e,
+                            "official_resolve: chapter rekey failed");
+                    }
+                    return Some(outcome);
+                }
+                if fallback_from_search.is_none() {
+                    fallback_from_search = Some(outcome);
+                }
+                only_cached = true;
             }
             Err(e) => {
                 tracing::warn!(provider, external_id, source, error = %e, "official_resolve: bind failed");
@@ -245,7 +310,98 @@ pub async fn resolve_and_bind(
             }
         }
     }
-    None
+    fallback_from_search.or(fallback)
+}
+
+/// Carry chapter rows + read progress from one key to another after a fresh
+/// meta-capable binding. Target rows win: an old row whose number already
+/// exists at the target is dropped (the target copy is authoritative). Used to
+/// happen once per title, at bind time, so plain per-row statements are fine.
+///
+/// Refuses to move when another MU identity already owns the target key
+/// (two aliases resolving to the same official id): merging their catalogs
+/// would delete rows. The binding is still recorded by the caller.
+async fn rekey_chapters(
+    db: &sqlx::PgPool,
+    from_provider: &str,
+    from_id: &str,
+    to_provider: &str,
+    to_id: &str,
+) -> anyhow::Result<()> {
+    if from_provider == to_provider && from_id == to_id {
+        return Ok(());
+    }
+    let owned_elsewhere: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM media_source_ids \
+         WHERE source = $1 AND source_id = $2 \
+           AND NOT (provider = $3 AND external_id = $4))",
+    )
+    .bind(to_provider)
+    .bind(to_id)
+    .bind(from_provider)
+    .bind(from_id)
+    .fetch_one(db)
+    .await?;
+    if owned_elsewhere {
+        tracing::warn!(
+            from_provider,
+            from_id,
+            to_provider,
+            to_id,
+            "official_resolve: target key belongs to another title, rekey skipped"
+        );
+        return Ok(());
+    }
+    let mut tx = db.begin().await?;
+    sqlx::query(
+        r#"
+        UPDATE series_chapters sc
+        SET provider = $3, external_id = $4
+        WHERE sc.provider = $1 AND sc.external_id = $2
+          AND NOT EXISTS (
+              SELECT 1 FROM series_chapters t
+              WHERE t.provider = $3 AND t.external_id = $4
+                AND t.chapter_number = sc.chapter_number
+          )
+        "#,
+    )
+    .bind(from_provider)
+    .bind(from_id)
+    .bind(to_provider)
+    .bind(to_id)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("DELETE FROM series_chapters WHERE provider = $1 AND external_id = $2")
+        .bind(from_provider)
+        .bind(from_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query(
+        r#"
+        UPDATE user_chapter_progress p
+        SET provider = $3, external_id = $4
+        WHERE p.provider = $1 AND p.external_id = $2
+          AND NOT EXISTS (
+              SELECT 1 FROM user_chapter_progress t
+              WHERE t.user_id = p.user_id
+                AND t.provider = $3 AND t.external_id = $4
+                AND t.chapter_number = p.chapter_number
+          )
+        "#,
+    )
+    .bind(from_provider)
+    .bind(from_id)
+    .bind(to_provider)
+    .bind(to_id)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("DELETE FROM user_chapter_progress WHERE provider = $1 AND external_id = $2")
+        .bind(from_provider)
+        .bind(from_id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(())
 }
 
 /// Key `(provider, external_id)` under which the `series_chapters` rows of a

@@ -16,7 +16,7 @@
         hx-get="/api/manga/{{ provider }}/{{ external_id }}/chapters?all=true{% if !bonus_windowed %}&all_bonus=true{% endif %}"
         hx-target="closest .chapter-list-wrapper"
         hx-swap="outerHTML">
-    Все главы ({{ total }})
+    Все главы ({{ total_chapters }})
 </button>
 {% endif %}
 {# Bonus chapters: own section, windowed like the main list (last 5) with its

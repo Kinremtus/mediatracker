@@ -245,8 +245,10 @@ fn mu_web_url(item: &CreateMediaItem) -> Option<String> {
 /// Main/bonus chapter counts for the drawer badge, read in ONE query under the
 /// RESOLVED key (official source when bound) — same rule every
 /// `services::chapters` reader uses, so the incoming MangaUpdates identity key
-/// is resolved first. A failed lookup degrades to `(0, 0)`: the badge is
-/// decorative, never a denominator.
+/// is resolved first. The main value is the highest main chapter number
+/// (`MAX(chapter_number) / 100`), NOT the row count: split parts (`479-1`,
+/// `479-2`) and merged ranges count as one chapter each. A failed lookup
+/// degrades to `(0, 0)` and the badge falls back to the stored counter.
 pub async fn chapter_counts(
     db: &sqlx::PgPool,
     provider: &str,
@@ -259,7 +261,8 @@ pub async fn chapter_counts(
     }
     let (kp, ke) = crate::services::official_resolve::chapter_key(db, provider, external_id).await;
     match sqlx::query_as::<_, (i64, i64)>(
-        "SELECT COUNT(*) FILTER (WHERE NOT is_bonus), COUNT(*) FILTER (WHERE is_bonus) \
+        "SELECT (COALESCE(MAX(chapter_number) FILTER (WHERE NOT is_bonus), 0) / 100)::bigint, \
+                COUNT(*) FILTER (WHERE is_bonus) \
          FROM series_chapters WHERE provider = $1 AND external_id = $2",
     )
     .bind(&kp)
@@ -278,20 +281,21 @@ pub async fn chapter_counts(
 /// Итоговый счётчик глав для бейджа drawer'а.
 ///
 /// `db_count` — счётчик из `item.total_count()` (после предпочтения
-/// stored-значения в `resolve_card_data`); `main_rows` — число официальных
-/// main-строк; `manual` — флаг `media_items.chapters_manual`.
+/// stored-значения в `resolve_card_data`); `main_count` — высшая main-глава
+/// по строкам (MAX/100: части `479-1`/`479-2` и слитые диапазоны считаются
+/// одной главой); `manual` — флаг `media_items.chapters_manual`.
 ///
-/// Правило: официальные строки поднимают устаревший счётчик (MU-preview 271
-/// -> 281 строк; для tracked счётчик уже поднят, `max` безвреден), но
-/// ручной счёт — ground truth из админки и никогда не перебивается
-/// (manual=45 < строк 81 -> остаётся 45).
-fn effective_total_count(db_count: Option<i32>, main_rows: i64, manual: bool) -> Option<i32> {
+/// Правило: официальные главы поднимают устаревший счётчик (MU-preview 271
+/// -> 281; для tracked счётчик уже поднят, `max` безвреден), но ручной счёт —
+/// ground truth из админки и никогда не перебивается (manual=45 < 81 ->
+/// остаётся 45).
+fn effective_total_count(db_count: Option<i32>, main_count: i64, manual: bool) -> Option<i32> {
     if manual {
         return db_count;
     }
-    if main_rows > 0 {
-        let main_rows = i32::try_from(main_rows).unwrap_or(i32::MAX);
-        Some(db_count.map_or(main_rows, |c| c.max(main_rows)))
+    if main_count > 0 {
+        let main_count = i32::try_from(main_count).unwrap_or(i32::MAX);
+        Some(db_count.map_or(main_count, |c| c.max(main_count)))
     } else {
         db_count
     }
@@ -393,6 +397,25 @@ pub async fn get_media_drawer_content(
                 Some((id, status, prog, rat)) => (Some(id), Some(status), Some(prog), rat),
                 None => (None, None, None, None),
             };
+            // Bind the official source BEFORE anything is read: a first open
+            // used to render the stale MU badge because only the chapters API
+            // (loaded async, after the drawer) created the binding. A bound
+            // title short-circuits inside `resolve_and_bind` without I/O.
+            if is_chapter_type(&item.media_type)
+                && provider == "mangaupdates"
+                && !item.title.trim().is_empty()
+            {
+                let _ = crate::services::official_resolve::resolve_and_bind(
+                    &state.db,
+                    &crate::services::official_resolve::HttpOfficialSearch::new(),
+                    &provider,
+                    &external_id,
+                    &item.media_type,
+                    &item.title,
+                    &item.associated_titles,
+                )
+                .await;
+            }
             // Inline enrich BEFORE the counts are read: the drawer may render
             // before the title is tracked (no `media_items` row), so pass the
             // media_type hint and let the official rows land under the resolved
@@ -407,14 +430,14 @@ pub async fn get_media_drawer_content(
                 )
                 .await;
             }
-            let (main_rows, bonus_count) =
+            let (main_count, bonus_count) =
                 chapter_counts(&state.db, &provider, &external_id, &item.media_type).await;
             // Badge = main chapters. For an untracked preview the MU counter
             // (the skeleton length) is stale, so the higher of the two wins:
-            // untracked MU 271 -> 281 official rows; tracked -> the db counter
-            // is already raised and `max` is harmless. A manual count
+            // untracked MU 271 -> 281 official; tracked -> the db counter is
+            // already raised and `max` is harmless. A manual count
             // (`chapters_manual=TRUE`) is ground truth and is never raised.
-            let manual = if main_rows > 0 {
+            let manual = if main_count > 0 {
                 crate::services::chapters::get_chapter_meta(&state.db, &provider, &external_id)
                     .await
                     .ok()
@@ -423,7 +446,7 @@ pub async fn get_media_drawer_content(
             } else {
                 false
             };
-            let total_count = effective_total_count(item.total_count(), main_rows, manual);
+            let total_count = effective_total_count(item.total_count(), main_count, manual);
             let progress_unit = item.progress_unit_ru().to_string();
             let star_classes = MediaDrawerTemplate::compute_star_classes(rating);
             let rating_display = match rating {
@@ -947,8 +970,10 @@ struct ChapterListPartial {
     provider: String,
     external_id: String,
     windowed: bool,
-    /// Main (non-bonus) chapter count — the "Все главы (N)" denominator.
-    total: usize,
+    /// Highest main chapter number — the "Все главы (N)" denominator. Split
+    /// parts and merged ranges count as one chapter, so this is NOT the row
+    /// count (a part `479-2` is row 47902 but chapter 479).
+    total_chapters: i32,
     /// `true` while the bonus list shows only its last window.
     bonus_windowed: bool,
     /// Bonus chapter count — the "Все бонусные главы (N)" denominator.
@@ -981,8 +1006,9 @@ pub struct SetReadForm {
 }
 
 /// Lazy-loaded chapter list for manga-like drawer sections.
-/// Chapters are stored under provider="mangaupdates", external_id=series_id.
-/// If chapters aren't in the DB yet, trigger a synchronous fetch from
+/// Chapter rows live under the RESOLVED key (official source when bound, else
+/// the MangaUpdates identity key) — `services::chapters::get_chapters` resolves
+/// it internally. If no rows exist yet, trigger a synchronous fetch from
 /// MangaUpdates `latest_chapter` to build the skeleton.
 pub async fn get_chapters(
     user: CurrentUser,
@@ -1039,14 +1065,24 @@ pub async fn get_chapters(
         None
     });
 
-    let media_type = query
-        .media_type
-        .clone()
-        .or_else(|| local.as_ref().map(|(mt, _, _)| mt.clone()))
+    // The stored media_type is the truth; the query hint is only a fallback for
+    // a preview with no `media_items` row — never let a client pick the source
+    // chain that drives a global bind/rekey.
+    let media_type = local
+        .as_ref()
+        .map(|(mt, _, _)| mt.clone())
+        .filter(|mt| !mt.is_empty())
+        .or_else(|| query.media_type.clone())
         .unwrap_or_default();
 
+    // Window/expand calls only re-render existing rows: the initial load (and
+    // the drawer) already resolved and bound, so skip the walk here to keep a
+    // repeated click from re-hitting the quota-limited official sources.
+    let expanding = query.all.unwrap_or(false) || query.all_bonus.unwrap_or(false);
+
     let mut details: Option<CreateMediaItem> = None;
-    if is_chapter_type(&media_type)
+    if !expanding
+        && is_chapter_type(&media_type)
         && !crate::services::official_resolve::official_source_for_media_type(&media_type)
             .is_empty()
     {
@@ -1094,6 +1130,31 @@ pub async fn get_chapters(
                     &media_type,
                 )
                 .await;
+                // Official titles/dates/bonuses too, but only while the
+                // resolved key has no official rows yet: the drawer's own
+                // enrich refreshes them on later opens, and this keeps every
+                // window/expand HTMX call from re-fetching the detail page.
+                let (kp, ke) =
+                    crate::services::official_resolve::chapter_key(&state.db, &mu_provider, &mu_id)
+                        .await;
+                let has_official: bool = sqlx::query_scalar(
+                    "SELECT EXISTS(SELECT 1 FROM series_chapters \
+                     WHERE provider = $1 AND external_id = $2 AND origin <> 'mu')",
+                )
+                .bind(&kp)
+                .bind(&ke)
+                .fetch_one(&state.db)
+                .await
+                .unwrap_or(false);
+                if !has_official {
+                    let _ = crate::services::chapter_meta_enrich::enrich_official_meta_for_key(
+                        &state.db,
+                        &mu_provider,
+                        &mu_id,
+                        Some(&media_type),
+                    )
+                    .await;
+                }
             }
         } else {
             tracing::debug!(
@@ -1170,10 +1231,15 @@ pub async fn get_chapters(
     ) = chapters.into_iter().partition(|c| !c.is_bonus);
 
     let all = query.all.unwrap_or(false);
-    let total = main_chapters.len();
-    let windowed = !all && total > CHAPTER_WINDOW;
+    let main_rows = main_chapters.len();
+    let total_chapters = main_chapters
+        .iter()
+        .map(|c| c.chapter_number / 100)
+        .max()
+        .unwrap_or(0);
+    let windowed = !all && main_rows > CHAPTER_WINDOW;
     if windowed {
-        main_chapters.drain(..total - CHAPTER_WINDOW);
+        main_chapters.drain(..main_rows - CHAPTER_WINDOW);
     }
 
     let bonus_total = bonus_chapters.len();
@@ -1188,7 +1254,7 @@ pub async fn get_chapters(
         provider: mu_provider.to_string(),
         external_id: mu_id.to_string(),
         windowed,
-        total,
+        total_chapters,
         bonus_windowed,
         bonus_total,
     }

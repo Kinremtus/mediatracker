@@ -550,3 +550,56 @@ async fn step_bonus_read_marks_oldest_unread_and_unmarks_newest_read() {
         .expect("bonus progress");
     assert_eq!((read, total), (1, 3));
 }
+
+/// Regression: a manual bonus row is keyed 0 while a MU "preview" chapter 0 is
+/// a MAIN row. Un-checking chapter 0 must flip only the bonus row — the main
+/// cascade (`chapter_number >= 0`) would otherwise sweep every main chapter.
+#[tokio::test]
+async fn uncheck_manual_bonus_zero_does_not_sweep_main() {
+    let (ctx, user_id) = setup().await;
+    for n in [100, 200, 300] {
+        insert_chapter(&ctx, n).await;
+    }
+    sqlx::query(
+        "INSERT INTO series_chapters \
+             (provider, external_id, chapter_number, origin, is_bonus) \
+         VALUES ('mangaupdates', $1, 0, 'manual', TRUE)",
+    )
+    .bind(series_str())
+    .execute(&ctx.pool)
+    .await
+    .expect("seed manual bonus row");
+
+    for n in [0, 100, 200, 300] {
+        sqlx::query(
+            "INSERT INTO user_chapter_progress \
+                 (user_id, provider, external_id, chapter_number, read, read_at) \
+             VALUES ($1, 'mangaupdates', $2, $3, TRUE, NOW())",
+        )
+        .bind(user_id)
+        .bind(series_str())
+        .bind(n)
+        .execute(&ctx.pool)
+        .await
+        .expect("seed progress");
+    }
+
+    assert!(
+        set_read(&ctx.pool, user_id, "mangaupdates", &series_str(), 0, false)
+            .await
+            .expect("uncheck bonus 0")
+    );
+
+    for n in [100, 200, 300] {
+        assert_eq!(
+            read_progress_read(&ctx, user_id, n).await,
+            Some(true),
+            "main chapter {n} must stay read"
+        );
+    }
+    assert_eq!(
+        read_progress_read(&ctx, user_id, 0).await,
+        Some(false),
+        "the bonus row itself is flipped"
+    );
+}

@@ -98,6 +98,7 @@ pub fn parse_episodes(json: &str, base: usize) -> Vec<ChapterMeta> {
                 title,
                 release_date,
                 is_bonus: false,
+                label: None,
             }
         })
         .collect()

@@ -5,9 +5,12 @@
 //! `data.seasonData.{renewal_time, ep_list[]}`; `ep_list` is newest-first
 //! (first row `short_title:"518"`, last `"1"`), each item carries `title`,
 //! `short_title` and `pub_time` (`"2026-05-30 12:56:01"` — date part only).
-//! Chapter numbers come from `short_title`, never from the row position:
-//! a plain integer `>= 1` is a main chapter, everything else (`00` prologues,
-//! `番外NN`, `49.5`, `第N坑`) is a bonus row with `number_x100 == 0`.
+//! Chapter numbers come from `short_title`, never from the row position.
+//! Recognized forms: plain integers and `第N话`; split releases `N-M`
+//! (`479-1`, `469—2`) and bracketed `上/下` markers -> parts of chapter N
+//! stored as `N*100 + part`; concatenated ranges (`"270273"` == `"270-273"`)
+//! map to their first chapter. Everything else (`00` prologues, `番外NN`,
+//! `49.5`, `第N坑`, notices) is a bonus row with `number_x100 == 0`.
 //!
 //! Search is wrapped in a module-local 7-day cache + throttle (Decision #8):
 //! `code 503` sets a 1.5 h cooldown and negative-caches the query, ≤4 live
@@ -106,34 +109,139 @@ fn page_context_json(html: &str) -> &str {
     }
 }
 
-/// One `ep_list` row reduced to the three fields we keep. `number` is the
-/// parsed `short_title` (`None` for prologues and non-numeric specials).
+/// One `ep_list` row reduced to the fields we keep.
 struct EpisodeRow {
     title: Option<String>,
     release_date: Option<chrono::NaiveDate>,
-    number: Option<i32>,
-    /// Original x100 number when `short_title` is numeric but not a plain
-    /// integer >= 1 (`49.5` -> 4950, `199.51` -> 19951); `None` otherwise.
-    /// Feeds the bonus display label (never the main sequence).
-    fractional_x100: Option<i32>,
+    kind: ShortTitle,
 }
 
-/// `short_title` -> `Some(n)` for a plain integer `>= 1`. Everything else —
-/// `"00"`, `"0"`, `"番外01"`, `"49.5"`, `"第N坑"`, blanks, missing — is `None`
-/// and becomes a bonus row with `number_x100 == 0`.
-fn episode_number(item: &serde_json::Value) -> Option<i32> {
-    let raw = item.get("short_title")?.as_str()?.trim();
-    let n: i32 = raw.parse().ok()?;
+/// How one `short_title` maps onto the chapter sequence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ShortTitle {
+    /// A plain chapter number (`"281"`, `"第533话"`).
+    Base(i32),
+    /// One split release of a chapter (`"479-1"`, `"533（下）"`): `base` plus a
+    /// `part` in `1..=99`. Parts become separate tickable rows
+    /// (`base * 100 + part`) but count as the single chapter `base`.
+    Part(i32, i32),
+    /// Fractional special (`"49.5"` -> 4950) — always a bonus row.
+    Fractional(i32),
+    /// Prologues, notices and placeholders — bonus rows keyed 0.
+    Unnumbered,
+}
+
+/// Strip one trailing part marker `（上）/（下）/(上)/(下)/【上】/【下】`:
+/// `Some((head, part))`, part 1 for 上 and 2 for 下.
+fn split_part_marker(s: &str) -> Option<(&str, i32)> {
+    for (suffix, part) in [
+        ("（上）", 1),
+        ("（下）", 2),
+        ("(上)", 1),
+        ("(下)", 2),
+        ("【上】", 1),
+        ("【下】", 2),
+    ] {
+        if let Some(head) = s.strip_suffix(suffix) {
+            return Some((head.trim_end(), part));
+        }
+    }
+    None
+}
+
+/// `第N话` / `第N話` -> `Some(N)` for `N >= 1`.
+fn parse_cn_chapter(s: &str) -> Option<i32> {
+    let rest = s.strip_prefix('第')?;
+    let digits = rest
+        .strip_suffix('话')
+        .or_else(|| rest.strip_suffix('話'))?;
+    let n: i32 = digits.trim().parse().ok()?;
     (n >= 1).then_some(n)
+}
+
+/// `N-M` split-release marker (`"479-1"`, `"469—2"`, `"414－2"`) ->
+/// `Some(Part(N, M))` for `M` in `1..=99`. A forward pair (`"421-422"`,
+/// `M > N`) is a merged range of chapters and maps to its first chapter.
+fn classify_dash(s: &str) -> Option<ShortTitle> {
+    let normalized = s.replace(['—', '－', '–'], "-");
+    let (base, part) = normalized.split_once('-')?;
+    let base: i32 = base.trim().parse().ok()?;
+    let part: i32 = part.trim().parse().ok()?;
+    if base < 1 {
+        return Some(ShortTitle::Unnumbered);
+    }
+    if part > base {
+        return Some(ShortTitle::Base(base));
+    }
+    if (1..=99).contains(&part) {
+        return Some(ShortTitle::Part(base, part));
+    }
+    Some(ShortTitle::Unnumbered)
+}
+
+/// Split a concatenated range (`"270273"` == `"270-273"`): both halves parse,
+/// the second is ahead of the first by a small step. Only an even-length 6+
+/// digit string can be two numbers of equal width — real chapter numbers are
+/// shorter and odd lengths have no clean split.
+fn split_concatenated_range(s: &str) -> Option<i32> {
+    if s.len() < 6 || !s.len().is_multiple_of(2) {
+        return None;
+    }
+    let mid = s.len() / 2;
+    let first: i32 = s[..mid].parse().ok()?;
+    let last: i32 = s[mid..].parse().ok()?;
+    (first >= 1 && last > first && last - first <= 20).then_some(first)
+}
+
+/// Classify one `short_title`. Bracketed `上/下` markers are stripped first
+/// (iteratively: a hostile page could chain many, and the marker nearest the
+/// number wins), then `第N话`, plain integers (incl. concatenated ranges),
+/// `N-M` parts/ranges, and finally fractional specials.
+fn classify_short_title(raw: &str) -> ShortTitle {
+    let mut s = raw.trim();
+    let mut part: Option<i32> = None;
+    while let Some((head, p)) = split_part_marker(s) {
+        part = Some(p);
+        s = head;
+    }
+    // A marker only refines a plain number; if the number already carries its
+    // own part (`479-1（下）`) that part wins.
+    match (classify_number(s), part) {
+        (ShortTitle::Base(n), Some(p)) => ShortTitle::Part(n, p),
+        (other, _) => other,
+    }
+}
+
+/// Classify a `short_title` with every bracketed marker already stripped.
+fn classify_number(s: &str) -> ShortTitle {
+    if let Some(n) = parse_cn_chapter(s) {
+        return ShortTitle::Base(n);
+    }
+    if !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()) {
+        let Ok(n) = s.parse::<i32>() else {
+            return ShortTitle::Unnumbered;
+        };
+        if n < 1 {
+            return ShortTitle::Unnumbered;
+        }
+        return ShortTitle::Base(split_concatenated_range(s).unwrap_or(n));
+    }
+    if let Some(kind) = classify_dash(s) {
+        return kind;
+    }
+    match crate::services::chapters::parse_chapter(s) {
+        Some(x) if x > 0 => ShortTitle::Fractional(x),
+        _ => ShortTitle::Unnumbered,
+    }
 }
 
 /// `ep_list` (newest-first) -> oldest-first `ChapterMeta` rows. Title falls
 /// back to `short_title` when `title` is blank (some rows store `" "`).
 ///
-/// Numbering comes from `short_title`, not from the row position. The first
-/// sighting of a number is a main chapter; every repeat of an already-seen
-/// number is a bonus duplicate. Duplicates are **kept** (as bonus rows), never
-/// dropped, so the caller can decide how to store them.
+/// Numbering comes from `short_title`, not from the row position. A split part
+/// is its own tickable row (`479-1` -> 47901, `第533话（下）` -> 53302); the
+/// first sighting of a key is a main chapter, every repeat a bonus duplicate.
+/// Duplicates are **kept** (as bonus rows), never dropped.
 fn episode_rows(items: &[serde_json::Value]) -> Vec<ChapterMeta> {
     let mut rows: Vec<EpisodeRow> = items
         .iter()
@@ -156,16 +264,15 @@ fn episode_rows(items: &[serde_json::Value]) -> Vec<ChapterMeta> {
                 .and_then(|v| v.as_str())
                 .and_then(|s| s.get(..10))
                 .and_then(official_meta::parse_date);
+            let kind = item
+                .get("short_title")
+                .and_then(|v| v.as_str())
+                .map(classify_short_title)
+                .unwrap_or(ShortTitle::Unnumbered);
             EpisodeRow {
                 title,
                 release_date: date,
-                number: episode_number(item),
-                fractional_x100: item
-                    .get("short_title")
-                    .and_then(|v| v.as_str())
-                    .map(str::trim)
-                    .and_then(crate::services::chapters::parse_chapter)
-                    .filter(|x| *x > 0),
+                kind,
             }
         })
         .collect();
@@ -173,31 +280,46 @@ fn episode_rows(items: &[serde_json::Value]) -> Vec<ChapterMeta> {
     let mut seen: HashSet<i32> = HashSet::new();
     rows.into_iter()
         .map(|row| {
-            let is_bonus = match row.number {
-                Some(n) => !seen.insert(n),
-                None => true,
-            };
-            // Main and duplicate-numbered bonuses keep the whole number; a
-            // numeric special ('49.5') keeps its original x100; everything else
-            // is 0 (unnumbered). `apply_meta` turns this into the display label.
-            let number_x100 = match row.number {
-                Some(n) => n * 100,
-                None => row.fractional_x100.unwrap_or(0),
+            let (number_x100, is_bonus, label) = match row.kind {
+                ShortTitle::Base(n) => match n.checked_mul(100) {
+                    Some(key) => (key, !seen.insert(key), None),
+                    None => (0, true, None),
+                },
+                ShortTitle::Part(n, part) => {
+                    match n.checked_mul(100).and_then(|k| k.checked_add(part)) {
+                        // Parts read `479-1`; the label also rides on a
+                        // duplicate part, which becomes a bonus row.
+                        Some(key) => (key, !seen.insert(key), Some(format!("{n}-{part}"))),
+                        None => (0, true, None),
+                    }
+                }
+                // Fractional specials keep their original x100; everything else
+                // is 0 (unnumbered). `apply_meta` turns this into the display
+                // label; both are always bonus rows.
+                ShortTitle::Fractional(x) => (x, true, None),
+                ShortTitle::Unnumbered => (0, true, None),
             };
             ChapterMeta {
                 number_x100,
                 title: row.title,
                 release_date: row.release_date,
                 is_bonus,
+                label,
             }
         })
         .collect()
 }
 
-/// Number of main (non-bonus) chapters — the authoritative `count` for
-/// `media_items.chapters`.
+/// Number of main chapters — the highest main base number
+/// (`MAX(chapter_number) / 100`): split parts (`479-1`, `479-2`) count as the
+/// single chapter 479. Feeds `media_items.chapters` and the drawer badge.
 fn main_count(chapters: &[ChapterMeta]) -> usize {
-    chapters.iter().filter(|c| !c.is_bonus).count()
+    chapters
+        .iter()
+        .filter(|c| !c.is_bonus)
+        .map(|c| c.number_x100 / 100)
+        .max()
+        .unwrap_or(0) as usize
 }
 
 // --- guest search: cache + throttle (Decision #8) --------------------------
@@ -467,16 +589,16 @@ mod tests {
         // 596 ep_list rows, reversed to oldest-first. Every row is stored,
         // so len == 596 ...
         assert_eq!(m.chapters.len(), 596);
-        // ... but `count` is the number of MAIN chapters only.
-        // Пересчитано по факту фикстуры: 596 rows = 399 distinct numeric
-        // short_titles >= 1 (main) + 197 bonus rows (番外NN / `.5` chapters /
-        // `第N坑` placeholders / notices). The fixture has no duplicate numeric
-        // short_title, so the 197 bonus rows are numeric `.5` specials and
-        // non-numeric placeholders/notices.
-        assert_eq!(main_count(&m.chapters), 399);
-        assert_eq!(m.chapters.iter().filter(|c| !c.is_bonus).count(), 399);
-        assert_eq!(m.chapters.iter().filter(|c| c.is_bonus).count(), 197);
-        assert_eq!(m.count, Some(399));
+        // ... but `count` is the highest main base number (`MAX / 100`), not
+        // the row count: split parts and merged ranges collapse to one chapter.
+        // Пересчитано по факту фикстуры: 401 main rows (380 distinct plain
+        // numbers + 19 concatenated ranges `"270273"` == `"270-273"` + 2 dash
+        // ranges `"421-422"`) + 195 bonus rows (番外NN / `.5` chapters /
+        // `第N坑` placeholders / notices).
+        assert_eq!(main_count(&m.chapters), 518);
+        assert_eq!(m.chapters.iter().filter(|c| !c.is_bonus).count(), 401);
+        assert_eq!(m.chapters.iter().filter(|c| c.is_bonus).count(), 195);
+        assert_eq!(m.count, Some(518));
         // Oldest row is `short_title:"1"` -> numbering from short_title, not
         // from the row position (which would also have been 100).
         assert_eq!(m.chapters[0].number_x100, 100);
@@ -553,25 +675,57 @@ mod tests {
     }
 
     #[test]
-    fn episode_number_rejects_non_numeric_and_zero() {
-        let item = |raw: &str| serde_json::json!({ "short_title": raw });
-        assert_eq!(episode_number(&item("1")), Some(1));
-        assert_eq!(episode_number(&item("518")), Some(518));
-        assert_eq!(episode_number(&item(" 42 ")), Some(42));
-        // `00`, `0`, negatives and floats are bonuses.
-        assert_eq!(episode_number(&item("00")), None);
-        assert_eq!(episode_number(&item("0")), None);
-        assert_eq!(episode_number(&item("-3")), None);
-        assert_eq!(episode_number(&item("49.5")), None);
-        assert_eq!(episode_number(&item("番外01")), None);
-        assert_eq!(episode_number(&item("第500坑")), None);
-        assert_eq!(episode_number(&item("")), None);
-        // A missing / non-string short_title degrades to a bonus row.
-        assert_eq!(episode_number(&serde_json::json!({})), None);
-        assert_eq!(
-            episode_number(&serde_json::json!({ "short_title": 7 })),
-            None
-        );
+    fn classify_plain_cn_parts_ranges_and_specials() {
+        let c = classify_short_title;
+        // Plain integers.
+        assert_eq!(c("1"), ShortTitle::Base(1));
+        assert_eq!(c(" 518 "), ShortTitle::Base(518));
+        // `第N话` / `第N話`.
+        assert_eq!(c("第533话"), ShortTitle::Base(533));
+        assert_eq!(c("第533話"), ShortTitle::Base(533));
+        // Split parts: dash variants and bracketed markers.
+        assert_eq!(c("479-1"), ShortTitle::Part(479, 1));
+        assert_eq!(c("479-2"), ShortTitle::Part(479, 2));
+        assert_eq!(c("469—2"), ShortTitle::Part(469, 2));
+        assert_eq!(c("414－2"), ShortTitle::Part(414, 2));
+        assert_eq!(c("第533话（上）"), ShortTitle::Part(533, 1));
+        assert_eq!(c("第533话（下）"), ShortTitle::Part(533, 2));
+        assert_eq!(c("480【下】"), ShortTitle::Part(480, 2));
+        // A head that already carries a part wins over the marker.
+        assert_eq!(c("479-1（下）"), ShortTitle::Part(479, 1));
+        // A marker chain resolves to the innermost marker (nearest the number).
+        assert_eq!(c("5（上）（下）"), ShortTitle::Part(5, 1));
+        // Merged ranges collapse to their first chapter.
+        assert_eq!(c("421-422"), ShortTitle::Base(421));
+        assert_eq!(c("270273"), ShortTitle::Base(270));
+        // Odd-length / short digit runs are NOT ranges.
+        assert_eq!(c("10011"), ShortTitle::Base(10011));
+        assert_eq!(c("13031"), ShortTitle::Base(13031));
+        // Fractional specials keep their x100 value.
+        assert_eq!(c("49.5"), ShortTitle::Fractional(4950));
+        assert_eq!(c("199.51"), ShortTitle::Fractional(19951));
+        // Prologues, placeholders and notices are unnumbered.
+        for raw in ["00", "0", "-3", "番外01", "第500坑", "公告", "", " "] {
+            assert_eq!(c(raw), ShortTitle::Unnumbered, "{raw:?}");
+        }
+        // A wide second number that is not a forward range stays unnumbered.
+        assert_eq!(c("900-100"), ShortTitle::Unnumbered);
+    }
+
+    #[test]
+    fn parts_are_separate_rows_but_one_chapter() {
+        let items = vec![
+            serde_json::json!({ "short_title": "480" }),
+            serde_json::json!({ "short_title": "479-2" }),
+            serde_json::json!({ "short_title": "479-1" }),
+        ];
+        let chapters = episode_rows(&items);
+        // Oldest-first: two tickable part rows, then the next chapter.
+        let keys: Vec<i32> = chapters.iter().map(|c| c.number_x100).collect();
+        assert_eq!(keys, vec![47901, 47902, 48000]);
+        assert!(chapters.iter().all(|c| !c.is_bonus));
+        // `count` collapses both parts into the single chapter 480.
+        assert_eq!(main_count(&chapters), 480);
     }
 
     #[test]

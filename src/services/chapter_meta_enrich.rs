@@ -86,9 +86,11 @@ pub async fn apply_meta(
 
     // Bonus rows get a distinct NEGATIVE key -(total - i) * 100 in source order,
     // so `ORDER BY chapter_number ASC` lists them oldest-first, plus a display
-    // label: the original number ('49.5', duplicate '2') or a running counter
-    // for unnumbered specials (migration 029). Main rows keep their positive
-    // x100 number and a NULL label. A re-apply reproduces the same keys/labels.
+    // label. The label the source already knows wins (a split part `479-1`,
+    // including a duplicate part); otherwise the original number ('49.5') or a
+    // running counter for unnumbered specials (migration 029). Main rows keep
+    // their positive x100 number and the source's label (NULL unless it is a
+    // bilibili part). A re-apply reproduces the same keys/labels.
     let bonus_total = meta.chapters.iter().filter(|c| c.is_bonus).count() as i32;
     let mut bonus_i = 0i32;
     let mut unnumbered = 0i32;
@@ -96,15 +98,17 @@ pub async fn apply_meta(
         let (chapter_number, chapter_label): (i32, Option<String>) = if ch.is_bonus {
             let key = -(bonus_total - bonus_i) * 100;
             bonus_i += 1;
-            let label = if ch.number_x100 > 0 {
-                crate::services::chapters::format_chapter(ch.number_x100)
-            } else {
-                unnumbered += 1;
-                unnumbered.to_string()
-            };
+            let label = ch.label.clone().unwrap_or_else(|| {
+                if ch.number_x100 > 0 {
+                    crate::services::chapters::format_chapter(ch.number_x100)
+                } else {
+                    unnumbered += 1;
+                    unnumbered.to_string()
+                }
+            });
             (key, Some(label))
         } else {
-            (ch.number_x100, None)
+            (ch.number_x100, ch.label.clone())
         };
         let res = sqlx::query(
             r#"
@@ -114,6 +118,7 @@ pub async fn apply_meta(
             ON CONFLICT (provider, external_id, chapter_number) WHERE NOT is_bonus DO UPDATE
             SET title_en     = COALESCE(series_chapters.title_en,     EXCLUDED.title_en),
                 release_date = COALESCE(series_chapters.release_date, EXCLUDED.release_date),
+                chapter_label = COALESCE(series_chapters.chapter_label, EXCLUDED.chapter_label),
                 fetched_at   = NOW()
             "#,
         )
@@ -359,6 +364,7 @@ mod tests {
                 title: title.map(str::to_string),
                 release_date: date.and_then(official_meta::parse_date),
                 is_bonus: false,
+                label: None,
             }],
             count: Some(1),
             update_schedule: Some("매주 월요일".into()),
