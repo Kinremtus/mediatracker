@@ -1,8 +1,12 @@
 //! Raise-only chapter-count enrichment (design Layer 2 + Layer 3 binding).
 //!
-//! Never lowers `media_items.chapters`. Providers are tried in order; the first
-//! usable reading wins. Every error path is a silent no-op (debug log only), so a
-//! flaky source can never blank a progress denominator.
+//! Never lowers `media_items.chapters`, and never raises over a detailed meta
+//! (`chapters_source = 'official_<source>'`): the walk's main-only count is the
+//! better reading — kakao's coarse `on_sale_count` counts the bonus `0화`
+//! prologue, the walk does not. The drawer / 6h refresh re-apply the meta, so
+//! skipping the providers does not strand a stale counter. Providers are tried
+//! in order; the first usable reading wins. Every error path is a silent no-op
+//! (debug log only), so a flaky source can never blank a progress denominator.
 //!
 //! Layer 3: providers use their OWN ids, not the skeleton id. The binding is
 //! resolved per provider via `services::source_ids`; a missing binding means the
@@ -11,6 +15,8 @@
 use std::sync::Arc;
 
 use sqlx::PgPool;
+
+use crate::models::media_item::OFFICIAL_SOURCE_PREFIX;
 
 /// Pure decision: the value a raise-only update should write, if any.
 /// Returns `Some(next)` only when `reported > current`.
@@ -45,21 +51,33 @@ pub async fn enrich_with_providers(
 ) -> Option<i32> {
     use crate::services::external::chapter_count::usable;
 
-    let (current, manual) = match crate::services::chapters::get_chapter_meta(
+    let (current, manual, stored_source) = match crate::services::chapters::get_chapter_meta(
         db,
         provider,
         external_id,
     )
     .await
     {
-        Ok(Some((ch, m, _))) => (ch, m),
-        Ok(None) => (None, false),
+        Ok(Some((ch, m, src))) => (ch, m, src),
+        Ok(None) => (None, false, None),
         Err(e) => {
             tracing::debug!(provider, external_id, error = %e, "chapter_enrich: meta lookup failed");
             return None;
         }
     };
     if manual {
+        return None;
+    }
+
+    // A detailed meta already owns the counter (`official_<source>`): its
+    // main-only count is the better reading, so skip the WHOLE provider chain —
+    // no coarse provider may raise over it, and no later chained source may
+    // steal the provenance. The drawer / 6h refresh re-apply the meta, which
+    // keeps the value fresh.
+    if stored_source
+        .as_deref()
+        .is_some_and(|s| s.starts_with(OFFICIAL_SOURCE_PREFIX))
+    {
         return None;
     }
 
@@ -121,7 +139,8 @@ pub async fn enrich_with_providers(
             }
         };
         let updated = sqlx::query(
-            "UPDATE media_items SET chapters = $3, chapters_source = $4, updated_at = NOW() \
+            "UPDATE media_items SET chapters = GREATEST(chapters, $3), chapters_source = $4, \
+             updated_at = NOW() \
              WHERE provider = $1 AND external_id = $2 AND chapters_manual = FALSE",
         )
         .bind(provider)

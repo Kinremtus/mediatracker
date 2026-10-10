@@ -3,9 +3,11 @@ mod common;
 use std::sync::{Arc, Mutex};
 
 use mediatracker::services::chapter_enrich::enrich_with_providers;
+use mediatracker::services::chapter_meta_enrich::apply_meta;
 use mediatracker::services::external::chapter_count::{
     ChapterCount, ChapterCountFuture, ChapterCountProvider,
 };
+use mediatracker::services::external::official_meta::{ChapterMeta, OfficialMeta};
 use mediatracker::services::source_ids::{
     delete_source_id, get_source_id, is_known_source, list_source_ids, set_source_id,
 };
@@ -16,6 +18,8 @@ const KAKAO_ID: &str = "64096846"; // real Kakao series id for the Yongsa Party 
 struct RecordingProvider {
     name: &'static str,
     seen: Arc<Mutex<Vec<String>>>,
+    total: i32,
+    source: &'static str,
 }
 
 impl ChapterCountProvider for RecordingProvider {
@@ -26,12 +30,11 @@ impl ChapterCountProvider for RecordingProvider {
     fn fetch<'a>(&'a self, external_id: &'a str) -> ChapterCountFuture<'a> {
         let seen = self.seen.clone();
         let id = external_id.to_string();
+        let total = self.total;
+        let source = self.source;
         Box::pin(async move {
             seen.lock().unwrap().push(id);
-            Ok(Some(ChapterCount {
-                total: 157,
-                source: "auto:kakao",
-            }))
+            Ok(Some(ChapterCount { total, source }))
         })
     }
 
@@ -96,9 +99,20 @@ async fn chapters_state(pool: &sqlx::PgPool, series: &str) -> (Option<i32>, Opti
 }
 
 fn recording(name: &'static str, seen: &Arc<Mutex<Vec<String>>>) -> Arc<dyn ChapterCountProvider> {
+    recording_reading(name, seen, 157, "auto:kakao")
+}
+
+fn recording_reading(
+    name: &'static str,
+    seen: &Arc<Mutex<Vec<String>>>,
+    total: i32,
+    source: &'static str,
+) -> Arc<dyn ChapterCountProvider> {
     Arc::new(RecordingProvider {
         name,
         seen: seen.clone(),
+        total,
+        source,
     })
 }
 
@@ -251,4 +265,98 @@ async fn enrich_extends_skeleton_to_reported_count() {
     .await
     .expect("max chapter");
     assert_eq!(last, Some(15700), "last row is chapter 157 at x100 scale");
+}
+
+/// A same-source meta already owns the counter (`official_kakao`): the coarse
+/// provider must neither be queried nor raise over the walk's main-only count
+/// (kakao's `on_sale_count` counts the bonus `0화` prologue, the walk does not).
+#[tokio::test]
+async fn provider_does_not_raise_over_its_own_meta() {
+    let ctx = setup().await;
+    let series = SERIES_ID.to_string();
+    set_source_id(&ctx.pool, "mangaupdates", &series, "kakao", KAKAO_ID)
+        .await
+        .expect("set binding");
+    sqlx::query(
+        "UPDATE media_items SET chapters = 157, chapters_source = 'official_kakao' \
+         WHERE provider = 'mangaupdates' AND external_id = $1",
+    )
+    .bind(&series)
+    .execute(&ctx.pool)
+    .await
+    .expect("seed meta-owned counter");
+
+    let seen = Arc::new(Mutex::new(Vec::<String>::new()));
+    let applied = enrich_with_providers(
+        &ctx.pool,
+        "mangaupdates",
+        &series,
+        vec![recording_reading("kakao", &seen, 158, "auto:kakao")],
+    )
+    .await;
+
+    assert_eq!(applied, None);
+    assert!(
+        seen.lock().unwrap().is_empty(),
+        "the provider must not be queried once its own meta owns the counter"
+    );
+    assert_eq!(
+        chapters_state(&ctx.pool, &series).await,
+        (Some(157), Some("official_kakao".to_string()))
+    );
+}
+
+/// End-to-end: after `apply_meta` stamps `official_<source>`, the WHOLE provider
+/// chain is skipped — no coarse reading may raise over the walk, and no later
+/// chained source may steal the provenance.
+#[tokio::test]
+async fn apply_meta_stamp_disables_the_provider_chain() {
+    let ctx = setup().await;
+    let series = SERIES_ID.to_string();
+    set_source_id(&ctx.pool, "mangaupdates", &series, "kakao", KAKAO_ID)
+        .await
+        .expect("set binding");
+
+    let meta = OfficialMeta {
+        source: "kakao".into(),
+        chapters: vec![ChapterMeta {
+            number_x100: 100,
+            title: None,
+            release_date: None,
+            is_bonus: false,
+            label: None,
+        }],
+        count: Some(157),
+        update_schedule: None,
+        next_update_at: None,
+    };
+    apply_meta(&ctx.pool, "mangaupdates", &series, "kakao", &meta)
+        .await
+        .expect("apply_meta");
+    assert_eq!(
+        chapters_state(&ctx.pool, &series).await,
+        (Some(157), Some("official_kakao".to_string()))
+    );
+
+    let seen = Arc::new(Mutex::new(Vec::<String>::new()));
+    let applied = enrich_with_providers(
+        &ctx.pool,
+        "mangaupdates",
+        &series,
+        vec![
+            recording_reading("kakao", &seen, 158, "auto:kakao"),
+            recording_reading("naver", &seen, 999, "auto:naver"),
+        ],
+    )
+    .await;
+
+    assert_eq!(applied, None);
+    assert!(
+        seen.lock().unwrap().is_empty(),
+        "the official stamp must disable the whole provider chain"
+    );
+    assert_eq!(
+        chapters_state(&ctx.pool, &series).await,
+        (Some(157), Some("official_kakao".to_string()))
+    );
 }

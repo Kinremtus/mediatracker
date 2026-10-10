@@ -424,6 +424,187 @@ async fn manual_counter_is_never_overwritten() {
     );
 }
 
+/// The same source's detailed walk supersedes its own count-provider reading:
+/// `auto:bilibili` (coarse, counts bonus rows) may be LOWERED by the walk's
+/// main-only count — but only by the bonus rows the walk actually found.
+#[tokio::test]
+async fn same_source_meta_replaces_its_count_provider_reading() {
+    let ctx = setup().await;
+    sqlx::query(
+        "UPDATE media_items SET chapters = 9, chapters_source = 'auto:bilibili' \
+         WHERE provider = $1 AND external_id = $2",
+    )
+    .bind(PROVIDER)
+    .bind(EXTERNAL_ID)
+    .execute(&ctx.pool)
+    .await
+    .expect("seed count-provider reading");
+
+    let mut m = meta(None, None, None);
+    m.count = Some(7);
+    // 7 main chapters + 2 bonus rows: the coarse 9 = 7 mains + 2 bonuses, so
+    // the delta the walk justifies is exactly 2.
+    m.chapters = (1..=7)
+        .map(|n| main_chapter(n * 100))
+        .chain(std::iter::repeat_with(|| bonus_chapter(0)).take(2))
+        .collect();
+    apply_meta(&ctx.pool, PROVIDER, EXTERNAL_ID, SOURCE, &m)
+        .await
+        .expect("apply_meta");
+
+    assert_eq!(
+        counter_columns(&ctx).await,
+        (Some(7), Some("official_bilibili".to_string())),
+        "the walk's main-only count may lower its own provider's reading"
+    );
+}
+
+/// A truncated walk must NOT lower the counter: the gap between the coarse
+/// reading and the walk count may not exceed the bonus rows the walk found.
+#[tokio::test]
+async fn truncated_walk_does_not_lower_the_counter() {
+    let ctx = setup().await;
+    sqlx::query(
+        "UPDATE media_items SET chapters = 9, chapters_source = 'auto:bilibili' \
+         WHERE provider = $1 AND external_id = $2",
+    )
+    .bind(PROVIDER)
+    .bind(EXTERNAL_ID)
+    .execute(&ctx.pool)
+    .await
+    .expect("seed count-provider reading");
+
+    let mut m = meta(None, None, None);
+    m.count = Some(7);
+    // No bonus rows: a 9 -> 7 gap would be unjustified, so the walk is treated
+    // as truncated and the coarse reading stays.
+    m.chapters = (1..=7).map(|n| main_chapter(n * 100)).collect();
+    apply_meta(&ctx.pool, PROVIDER, EXTERNAL_ID, SOURCE, &m)
+        .await
+        .expect("apply_meta");
+
+    assert_eq!(
+        counter_columns(&ctx).await,
+        (Some(9), Some("auto:bilibili".to_string())),
+        "a truncated walk leaves the coarse reading alone"
+    );
+}
+
+/// An equal count still promotes the provenance (`auto:<source>` ->
+/// `official_<source>`), which is what disables the provider chain for good.
+#[tokio::test]
+async fn equal_count_promotes_provenance() {
+    let ctx = setup().await;
+    sqlx::query(
+        "UPDATE media_items SET chapters = 9, chapters_source = 'auto:bilibili' \
+         WHERE provider = $1 AND external_id = $2",
+    )
+    .bind(PROVIDER)
+    .bind(EXTERNAL_ID)
+    .execute(&ctx.pool)
+    .await
+    .expect("seed count-provider reading");
+
+    let mut m = meta(None, None, None);
+    m.count = Some(9);
+    apply_meta(&ctx.pool, PROVIDER, EXTERNAL_ID, SOURCE, &m)
+        .await
+        .expect("apply_meta");
+
+    assert_eq!(
+        counter_columns(&ctx).await,
+        (Some(9), Some("official_bilibili".to_string())),
+        "the same value is still rewritten with the official provenance"
+    );
+}
+
+/// A hand-set counter blocks the supersede path too (`chapters_manual`).
+#[tokio::test]
+async fn manual_counter_blocks_the_supersede() {
+    let ctx = setup().await;
+    sqlx::query(
+        "UPDATE media_items SET chapters = 9, chapters_manual = TRUE, \
+             chapters_source = 'auto:bilibili' \
+         WHERE provider = $1 AND external_id = $2",
+    )
+    .bind(PROVIDER)
+    .bind(EXTERNAL_ID)
+    .execute(&ctx.pool)
+    .await
+    .expect("seed manual count-provider reading");
+
+    let mut m = meta(None, None, None);
+    m.count = Some(7);
+    m.chapters = (1..=7)
+        .map(|n| main_chapter(n * 100))
+        .chain(std::iter::repeat_with(|| bonus_chapter(0)).take(2))
+        .collect();
+    apply_meta(&ctx.pool, PROVIDER, EXTERNAL_ID, SOURCE, &m)
+        .await
+        .expect("apply_meta");
+
+    assert_eq!(
+        counter_columns(&ctx).await,
+        (Some(9), Some("auto:bilibili".to_string())),
+        "a manual counter survives even a justified supersede"
+    );
+}
+
+/// After the supersede, a larger walk still raises through the normal path.
+#[tokio::test]
+async fn walk_growth_raises_after_supersede() {
+    let ctx = setup().await;
+    sqlx::query(
+        "UPDATE media_items SET chapters = 7, chapters_source = 'official_bilibili' \
+         WHERE provider = $1 AND external_id = $2",
+    )
+    .bind(PROVIDER)
+    .bind(EXTERNAL_ID)
+    .execute(&ctx.pool)
+    .await
+    .expect("seed official reading");
+
+    let mut m = meta(None, None, None);
+    m.count = Some(9);
+    apply_meta(&ctx.pool, PROVIDER, EXTERNAL_ID, SOURCE, &m)
+        .await
+        .expect("apply_meta");
+
+    assert_eq!(
+        counter_columns(&ctx).await,
+        (Some(9), Some("official_bilibili".to_string())),
+        "a grown walk raises normally once the official source owns the counter"
+    );
+}
+
+/// A foreign source's counter stays raise-only: only `auto:<source>` of the
+/// SAME source may be superseded by the walk.
+#[tokio::test]
+async fn foreign_source_reading_stays_raise_only() {
+    let ctx = setup().await;
+    sqlx::query(
+        "UPDATE media_items SET chapters = 9, chapters_source = 'auto:naver' \
+         WHERE provider = $1 AND external_id = $2",
+    )
+    .bind(PROVIDER)
+    .bind(EXTERNAL_ID)
+    .execute(&ctx.pool)
+    .await
+    .expect("seed foreign count-provider reading");
+
+    let mut m = meta(None, None, None);
+    m.count = Some(7);
+    apply_meta(&ctx.pool, PROVIDER, EXTERNAL_ID, SOURCE, &m)
+        .await
+        .expect("apply_meta");
+
+    assert_eq!(
+        counter_columns(&ctx).await,
+        (Some(9), Some("auto:naver".to_string())),
+        "another source's lower reading must not lower the counter"
+    );
+}
+
 /// Drawer preview: no `media_items` row yet -> chapters are still stored under
 /// the source key, only the counter/schedule are deferred.
 #[tokio::test]

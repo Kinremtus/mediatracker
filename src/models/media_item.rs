@@ -291,22 +291,36 @@ pub fn derived_status_class(label: &str) -> &'static str {
     }
 }
 
+/// Namespace prefix `apply_meta` stamps onto `media_items.chapters_source`
+/// (e.g. `official_kakao`); count providers use the `auto:<name>` namespace.
+/// Shared by the writer and its readers (the drawer label below and the
+/// provider guard in `services::chapter_enrich`) so they cannot drift apart.
+pub const OFFICIAL_SOURCE_PREFIX: &str = "official_";
+
 /// Human label for `media_items.chapters_source` (drawer provenance badge).
-/// `None`/empty => no badge. Unknown non-empty values degrade to "авто" so a
-/// future source never renders as a raw DB token.
+/// `None`/empty => no badge. Both namespaces are recognized — `auto:<name>`
+/// (coarse count providers) and `official_<name>` (detailed walks) — and share
+/// one name table. Unknown non-empty values degrade to "авто" so a future
+/// source never renders as a raw DB token.
 pub fn chapter_source_label(source: Option<&str>) -> Option<&'static str> {
-    match source {
-        None | Some("") => None,
-        Some("manual") => Some("ручной"),
-        Some("auto:kakao") => Some("Kakao"),
-        Some("auto:naver") => Some("Naver"),
-        Some("auto:mangaplus") => Some("MangaPlus"),
-        Some("auto:syosetu") => Some("Syosetu"),
-        Some("auto:kuaikan") => Some("Kuaikan"),
-        Some("auto:mh5") => Some("MH5"),
-        Some("auto:mangaupdates") => Some("MangaUpdates"),
-        Some(_) => Some("авто"),
-    }
+    let name = match source? {
+        "" => return None,
+        "manual" => return Some("ручной"),
+        value => value
+            .strip_prefix("auto:")
+            .or_else(|| value.strip_prefix(OFFICIAL_SOURCE_PREFIX))
+            .unwrap_or(value),
+    };
+    Some(match name {
+        "kakao" => "Kakao",
+        "naver" => "Naver",
+        "mangaplus" => "MangaPlus",
+        "syosetu" => "Syosetu",
+        "kuaikan" => "Kuaikan",
+        "mh5" => "MH5",
+        "mangaupdates" => "MangaUpdates",
+        _ => "авто",
+    })
 }
 
 /// Structured pieces extracted from a provider description.
@@ -886,5 +900,16 @@ mod tests {
             Some("MangaUpdates")
         );
         assert_eq!(chapter_source_label(Some("auto:future")), Some("авто"));
+        // The detailed-walk namespace resolves through the same name table.
+        assert_eq!(
+            chapter_source_label(Some("official_kuaikan")),
+            Some("Kuaikan")
+        );
+        assert_eq!(chapter_source_label(Some("official_naver")), Some("Naver"));
+        assert_eq!(
+            chapter_source_label(Some("official_bilibili")),
+            Some("авто"),
+            "a walk source without a name entry still never leaks the raw token"
+        );
     }
 }

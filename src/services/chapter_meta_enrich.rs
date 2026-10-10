@@ -1,6 +1,7 @@
 //! Official-source detail enricher: chapter titles/dates (COALESCE-merged, never
 //! clobbering non-NULL) + free-text schedule / exact next-date on media_items,
-//! plus a raise-only `media_items.chapters` counter and MU-orphan cleanup.
+//! plus a `media_items.chapters` counter (raise-only except a same-source
+//! supersede) and MU-orphan cleanup.
 //!
 //! Chapter rows are written under the key of their OWN source
 //! ([`chapter_key`]): a meta-capable binding wins, otherwise
@@ -10,11 +11,16 @@
 //! drawer passes its `media_type` hint to [`enrich_official_meta_for_key`], so
 //! the preview no longer needs the row to start the chain.
 //!
-//! Raise-only semantics are preserved: `apply_meta` never lowers
-//! `media_items.chapters` and never overrides `chapters_manual = TRUE`.
+//! The counter is raise-only with one narrow exception: a detailed meta from
+//! the SAME source supersedes that source's own count-provider reading
+//! (`auto:kakao` -> the kakao walk), whose coarse number counts bonus rows
+//! (kakao includes its `0화` prologue in `on_sale_count`) — the walk's
+//! main-only count may therefore also lower it. `chapters_manual = TRUE` is
+//! never overridden.
 
 use sqlx::PgPool;
 
+use crate::models::media_item::OFFICIAL_SOURCE_PREFIX;
 use crate::services::chapter_enrich::raised_value;
 use crate::services::external::official_meta::{self, MetaFuture, OfficialMeta};
 use crate::services::official_resolve::chapter_key;
@@ -39,21 +45,37 @@ pub async fn apply_meta(
 ) -> anyhow::Result<usize> {
     let (ch_provider, ch_id) = chapter_key(db, provider, external_id).await;
 
-    // Counter: raise-only (`raised_value`, same rule as `chapter_enrich`) and
-    // only for non-manual counts. `meta.count` is the number of MAIN chapters —
-    // providers already report it that way (bilibili excludes bonuses). Read
-    // before the transaction: a re-read inside it would deadlock nothing, but
-    // the raise-only rule makes the plain read good enough.
+    // Counter: raise-only (`raised_value`, same rule as `chapter_enrich`), only
+    // for non-manual counts, with ONE exception: a detailed meta from the SAME
+    // source supersedes that source's coarse count-provider reading
+    // (`chapters_source = 'auto:<source>'`), whose number counts bonus rows
+    // (kakao's `on_sale_count` includes the `0화` prologue). The lowering is
+    // bounded by the bonus rows the walk actually found — a larger gap means a
+    // truncated answer, so the counter is left untouched.
     //
-    // Two guards: the row is read ONLY when the source actually reported a
-    // count (no point spending a query otherwise), and a failed read is
-    // debug-logged instead of propagated — chapter rows must never be lost
-    // because the counter could not be read (drawer preview, transient DB
-    // error): we simply continue without raising.
+    // The row is read ONLY when the source reported a count (no point spending
+    // a query otherwise); a failed read is debug-logged instead of propagated —
+    // chapter rows must never be lost because the counter could not be read
+    // (drawer preview, transient DB error): we simply continue without raising.
     let mut raise_to: Option<i32> = None;
+    // True when `raise_to` may LOWER the stored counter (same-source supersede):
+    // the write below then assigns instead of `GREATEST`.
+    let mut may_lower = false;
     if let Some(count) = meta.count {
         match crate::services::chapters::get_chapter_meta(db, provider, external_id).await {
-            Ok(Some((current, _, _))) => raise_to = raised_value(current, count),
+            Ok(Some((current, _, stored_source))) => {
+                let auto_source = format!("auto:{source}");
+                let bonus_rows = meta.chapters.iter().filter(|c| c.is_bonus).count() as i32;
+                let same_source = stored_source.as_deref() == Some(auto_source.as_str());
+                let bounded = current
+                    .is_some_and(|cur| count > 0 && count <= cur && cur - count <= bonus_rows);
+                if same_source && bounded {
+                    raise_to = Some(count);
+                    may_lower = true;
+                } else {
+                    raise_to = raised_value(current, count);
+                }
+            }
             Ok(None) => {}
             Err(e) => tracing::debug!(provider, external_id, source, error = %e,
                 "official_meta: counter read failed, raise skipped"),
@@ -141,16 +163,24 @@ pub async fn apply_meta(
     // Counter write (identity key): raise-only, skipped for `chapters_manual`
     // rows — the WHERE clause keeps a hand-set count safe even on a race.
     if let Some(next) = raise_to {
-        // `GREATEST` keeps the write race-safe: `raise_to` was computed from a
-        // pre-transaction read, so a concurrent raise must not be lowered.
+        // `GREATEST` keeps the raise race-safe: `raise_to` came from a
+        // pre-transaction read, so a concurrent raise must not be lowered. The
+        // same-source supersede is the one lowering branch, and it re-checks
+        // the provenance INSIDE the statement: if the row no longer belongs to
+        // this source's provider, the write falls back to a plain raise.
         sqlx::query(
-            "UPDATE media_items SET chapters = GREATEST(chapters, $3), chapters_source = $4, updated_at = NOW() \
+            "UPDATE media_items \
+             SET chapters = CASE WHEN $5 AND chapters_source = $6 THEN $3 \
+                                 ELSE GREATEST(chapters, $3) END, \
+                 chapters_source = $4, updated_at = NOW() \
              WHERE provider = $1 AND external_id = $2 AND chapters_manual = FALSE",
         )
         .bind(provider)
         .bind(external_id)
         .bind(next)
-        .bind(format!("official_{source}"))
+        .bind(format!("{OFFICIAL_SOURCE_PREFIX}{source}"))
+        .bind(may_lower)
+        .bind(format!("auto:{source}"))
         .execute(&mut *tx)
         .await?;
     }
