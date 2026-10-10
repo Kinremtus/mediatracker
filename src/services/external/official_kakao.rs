@@ -8,8 +8,11 @@
 //! (`bff-page.kakao.com/api/gateway/api/v2/content/product/list?series_id=…`):
 //! `result.list[]` carries one entry per episode (`item.title` = `<series> N화`,
 //! `item.last_release_dt`), paginated by `cursor_index` + `cursor_direction=NEXT`.
-//! The endpoint repeats the free-episode block, so rows are deduped by
-//! `product_id`. Titles are classified by the shared [`chapter_title`] helpers.
+//! Small `window_size` values are LOSSY — the endpoint drops and repeats items
+//! (a 158-episode series returned only 133 unique products at `window_size=100`)
+//! — so the walk first probes `result.total_count` and then requests the whole
+//! list in one page. Rows are still deduped by `product_id`. Titles are
+//! classified by the shared [`chapter_title`] helpers.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, OnceLock};
@@ -28,13 +31,17 @@ pub const KAKAO_SEARCH_BASE: &str = "https://bff-page.kakao.com/api/gateway/api/
 const KAKAO_PRODUCT_LIST: &str =
     "https://bff-page.kakao.com/api/gateway/api/v2/content/product/list";
 
-/// Page size for the product-list cursor walk (the endpoint caps it at 100).
-const PRODUCT_WINDOW: usize = 100;
-/// Hard page cap: 30 x 100 products is far beyond any real webtoon.
+/// Window used when the reported product count is unknown.
+const PRODUCT_WINDOW_DEFAULT: usize = 100;
+/// Upper bound for the sized window. The whole product list is requested in a
+/// single page whenever the reported count allows it: the endpoint's small
+/// windows are lossy (they drop and repeat items), a large one is not.
+const PRODUCT_WINDOW_MAX: usize = 5000;
+/// Hard page cap: 30 pages is far beyond any real webtoon.
 const MAX_PRODUCT_PAGES: usize = 30;
-/// One page never carries more than the requested window; cap the parsed rows
-/// so a hostile or buggy page cannot blow up memory.
-const MAX_ROWS_PER_PAGE: usize = 200;
+/// One page never carries more rows than the largest window we request; cap
+/// the parsed rows so a hostile or buggy page cannot blow up memory.
+const MAX_ROWS_PER_PAGE: usize = PRODUCT_WINDOW_MAX;
 
 /// Search hits are cached for a week and chapter lists for 15 minutes (the
 /// bilibili Decision #8 pattern, simplified): without them an unbound title
@@ -98,12 +105,7 @@ pub async fn search(client: &reqwest::Client, title: &str) -> anyhow::Result<Vec
         .append_pair("keyword", title)
         .append_pair("page", "0")
         .append_pair("size", "10");
-    let body = client
-        .get(url)
-        .header(reqwest::header::ACCEPT, "application/json")
-        .header(reqwest::header::ORIGIN, "https://page.kakao.com")
-        .header(reqwest::header::REFERER, "https://page.kakao.com/")
-        .header(reqwest::header::USER_AGENT, UA)
+    let body = bff_get(client, url)
         .send()
         .await?
         .error_for_status()?
@@ -201,6 +203,9 @@ struct ProductRow {
 struct ProductPage {
     rows: Vec<ProductRow>,
     series_title: Option<String>,
+    /// `result.total_count` — the series' reported item count (the true
+    /// episode count; the endpoint returns exactly this many entries).
+    total_count: Option<i64>,
     /// `cursor_index` to resume from; `None` when the walk is done.
     next_cursor: Option<i64>,
 }
@@ -229,11 +234,14 @@ pub async fn fetch_meta(client: &reqwest::Client, series_id: &str) -> anyhow::Re
     Ok(meta)
 }
 
-/// The uncached cursor walk behind [`fetch_meta`].
+/// The uncached walk behind [`fetch_meta`]: probe the reported product count,
+/// then request the whole list in one sized window.
 async fn fetch_meta_uncached(
     client: &reqwest::Client,
     series_id: &str,
 ) -> anyhow::Result<OfficialMeta> {
+    let total = probe_total_count(client, series_id).await;
+    let window = product_window(total);
     let mut rows: Vec<ProductRow> = Vec::new();
     let mut series_title: Option<String> = None;
     let mut cursor: Option<i64> = None;
@@ -241,21 +249,13 @@ async fn fetch_meta_uncached(
         let mut url = url::Url::parse(KAKAO_PRODUCT_LIST)?;
         url.query_pairs_mut()
             .append_pair("series_id", series_id)
-            .append_pair("window_size", &PRODUCT_WINDOW.to_string());
+            .append_pair("window_size", &window.to_string());
         if let Some(cursor_index) = cursor {
             url.query_pairs_mut()
                 .append_pair("cursor_index", &cursor_index.to_string())
                 .append_pair("cursor_direction", "NEXT");
         }
-        let response = client
-            .get(url)
-            .header(reqwest::header::ACCEPT, "application/json")
-            .header(reqwest::header::ORIGIN, "https://page.kakao.com")
-            .header(reqwest::header::REFERER, "https://page.kakao.com/")
-            .header(reqwest::header::USER_AGENT, UA)
-            .send()
-            .await?
-            .error_for_status()?;
+        let response = bff_get(client, url).send().await?.error_for_status()?;
         // A hostile or broken page must not be buffered whole.
         if response
             .content_length()
@@ -277,7 +277,65 @@ async fn fetch_meta_uncached(
             break;
         }
     }
+    // A shortfall against the reported count means this window size dropped
+    // items; log it so a future endpoint change stays visible.
+    if let Some(total) = total.filter(|t| *t > 0) {
+        let unique = rows
+            .iter()
+            .map(|r| r.product_id)
+            .collect::<HashSet<_>>()
+            .len();
+        if unique < total as usize {
+            tracing::warn!(
+                series_id,
+                unique,
+                total,
+                "kakao: product walk short of the reported count"
+            );
+        }
+    }
     Ok(build_meta(rows, series_title.as_deref()))
+}
+
+/// Window for the product walk. Small windows are LOSSY on this endpoint
+/// (items are dropped and repeated), so the whole list is requested in one
+/// page whenever the reported count allows it.
+fn product_window(total: Option<i64>) -> usize {
+    match total {
+        Some(n) if n > 0 => (n as usize).min(PRODUCT_WINDOW_MAX),
+        _ => PRODUCT_WINDOW_DEFAULT,
+    }
+}
+
+/// One cheap default-window request just to learn `result.total_count`.
+/// `None` on any failure - the walk then falls back to the default window.
+async fn probe_total_count(client: &reqwest::Client, series_id: &str) -> Option<i64> {
+    let mut url = url::Url::parse(KAKAO_PRODUCT_LIST).ok()?;
+    url.query_pairs_mut().append_pair("series_id", series_id);
+    let response = bff_get(client, url)
+        .send()
+        .await
+        .ok()?
+        .error_for_status()
+        .ok()?;
+    if response
+        .content_length()
+        .is_some_and(|len| len > official_meta::MAX_DETAIL_BYTES)
+    {
+        return None;
+    }
+    let body = response.text().await.ok()?;
+    parse_product_list(&body).total_count
+}
+
+/// GET builder with the BFF headers (accept/origin/referer + browser UA).
+fn bff_get(client: &reqwest::Client, url: url::Url) -> reqwest::RequestBuilder {
+    client
+        .get(url)
+        .header(reqwest::header::ACCEPT, "application/json")
+        .header(reqwest::header::ORIGIN, "https://page.kakao.com")
+        .header(reqwest::header::REFERER, "https://page.kakao.com/")
+        .header(reqwest::header::USER_AGENT, UA)
 }
 
 /// Next cursor to request; `None` ends the walk. A page that does not move the
@@ -297,6 +355,7 @@ fn parse_product_list(body: &str) -> ProductPage {
     let empty = ProductPage {
         rows: Vec::new(),
         series_title: None,
+        total_count: None,
         next_cursor: None,
     };
     let Ok(value) = serde_json::from_str::<serde_json::Value>(body) else {
@@ -305,6 +364,7 @@ fn parse_product_list(body: &str) -> ProductPage {
     let Some(result) = value.get("result") else {
         return empty;
     };
+    let total_count = result.get("total_count").and_then(|v| v.as_i64());
     let series_title = result
         .get("series_item")
         .and_then(|s| s.get("title"))
@@ -353,14 +413,15 @@ fn parse_product_list(body: &str) -> ProductPage {
     ProductPage {
         rows,
         series_title,
+        total_count,
         next_cursor: has_next.then_some(max_cursor).flatten(),
     }
 }
 
 /// Dedupe by product id, order oldest-first and map titles onto the shared
-/// chapter model. Kakao repeats the free-episode block, so the dedupe is
-/// mandatory; the series-name prefix is stripped from the stored title and a
-/// bare `N화` remainder becomes no title at all.
+/// chapter model. Small windows make the endpoint repeat items, so the dedupe
+/// stays as a safety net; the series-name prefix is stripped from the stored
+/// title and a bare `N화` remainder becomes no title at all.
 fn build_meta(rows: Vec<ProductRow>, series_title: Option<&str>) -> OfficialMeta {
     let mut seen: HashSet<i64> = HashSet::new();
     let mut unique: Vec<ProductRow> = rows
@@ -511,6 +572,9 @@ mod tests {
         );
         assert_eq!(page.rows.len(), 25);
         assert!(page.next_cursor.is_some(), "more pages follow");
+        // The reported total is the true episode count: the walk sizes its
+        // window to it (small windows are lossy on this endpoint).
+        assert_eq!(page.total_count, Some(158));
         // The first page is the oldest block, numbered from the title.
         let meta = build_meta(page.rows, page.series_title.as_deref());
         assert_eq!(meta.source, "kakao");
@@ -545,6 +609,17 @@ mod tests {
         assert!(page.rows.is_empty());
         assert!(page.next_cursor.is_none());
         assert!(page.series_title.is_none());
+    }
+
+    #[test]
+    fn product_window_sizes_to_the_reported_count() {
+        // The whole list is requested in one page whenever possible.
+        assert_eq!(product_window(Some(158)), 158);
+        assert_eq!(product_window(Some(292)), 292);
+        // Capped, and a missing/zero count falls back to the default window.
+        assert_eq!(product_window(Some(10_000)), PRODUCT_WINDOW_MAX);
+        assert_eq!(product_window(Some(0)), PRODUCT_WINDOW_DEFAULT);
+        assert_eq!(product_window(None), PRODUCT_WINDOW_DEFAULT);
     }
 
     #[test]
@@ -597,7 +672,8 @@ mod tests {
                 title: "제목 3화".into(),
                 release_date: official_meta::parse_date("2024-03-03"),
             },
-            // The free block repeats episode 3 — the duplicate must fold.
+            // A repeated item (small windows make the endpoint repeat rows) —
+            // the duplicate must fold.
             ProductRow {
                 product_id: 3,
                 title: "제목 3화".into(),
