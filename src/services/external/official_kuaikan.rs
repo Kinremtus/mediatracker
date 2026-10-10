@@ -15,7 +15,7 @@ use crate::services::external::chapter_title::{
     EpisodeRow, classify_kuaikan_title, main_count, rows_to_chapters,
 };
 use crate::services::external::nuxt_payload;
-use crate::services::external::official_meta::OfficialMeta;
+use crate::services::external::official_meta::{self, OfficialMeta};
 use crate::services::official_types::OfficialHit;
 
 const KKKMH_SEARCH: &str = "https://search.kkmh.com/search/complex";
@@ -28,10 +28,6 @@ const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
 /// Mobile User-Agent for the SSR list page (it serves the mobile layout).
 const MOBILE_UA: &str = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 \
                          (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36";
-
-/// The real detail page is ~400 KB; refuse an oversized body instead of
-/// buffering it whole.
-const MAX_DETAIL_BYTES: u64 = 4 * 1024 * 1024;
 
 /// Empty meta tagged with this source (non-fatal "nothing to report").
 fn empty_meta() -> OfficialMeta {
@@ -93,7 +89,7 @@ pub fn parse_search(body: &str) -> Vec<OfficialHit> {
 pub async fn fetch_meta(client: &reqwest::Client, topic_id: &str) -> anyhow::Result<OfficialMeta> {
     // The id lands in the URL path: only digits are ever valid (search returns
     // numeric topic ids), so a malformed binding cannot smuggle path segments.
-    if topic_id.is_empty() || !topic_id.bytes().all(|b| b.is_ascii_digit()) {
+    if !official_meta::is_digit_id(topic_id) {
         return Ok(empty_meta());
     }
     let url = format!("{KKKMH_MOBILE}/{topic_id}/list/");
@@ -107,7 +103,7 @@ pub async fn fetch_meta(client: &reqwest::Client, topic_id: &str) -> anyhow::Res
     // client's 20 s timeout still bounds.
     if response
         .content_length()
-        .is_some_and(|len| len > MAX_DETAIL_BYTES)
+        .is_some_and(|len| len > official_meta::MAX_DETAIL_BYTES)
     {
         tracing::warn!(topic_id, "kuaikan: detail page too large, skipped");
         return Ok(empty_meta());

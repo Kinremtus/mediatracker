@@ -9,6 +9,7 @@
 //! All failures are non-fatal: the caller treats an empty result (or an `Err`)
 //! as "no official match".
 
+use crate::services::external::chapter_title::is_kr_bonus_title;
 use crate::services::external::official_meta::{self, ChapterMeta, OfficialMeta};
 use crate::services::official_types::OfficialHit;
 
@@ -20,6 +21,19 @@ const NAVER_NOTICE_AJAX: &str = "https://m.series.naver.com/comic/moreNotiDetail
 /// Browser-like User-Agent; the endpoint rejects obvious bot clients.
 const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
                   (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+
+/// Volume-list pages to walk (30 rows each) and a per-page row cap, so a
+/// hostile or buggy `resultData` cannot blow up memory or DB writes.
+const NAVER_VOLUME_PAGES: u32 = 20;
+const NAVER_ROWS_PER_PAGE: usize = 60;
+
+/// Empty meta tagged with this source (non-fatal "nothing to report").
+fn empty_meta() -> OfficialMeta {
+    OfficialMeta {
+        source: "naver".to_string(),
+        ..OfficialMeta::default()
+    }
+}
 
 /// GET https://series.naver.com/search/search.series?fs=comic&q=<urlencoded>
 pub async fn search(client: &reqwest::Client, title: &str) -> anyhow::Result<Vec<OfficialHit>> {
@@ -121,40 +135,69 @@ fn clean_title(inner: &str) -> String {
     }
 }
 
-/// Fetch up to 20 volume pages (30 rows each), stopping at the first empty
+/// Fetch up to `NAVER_VOLUME_PAGES` volume pages, stopping at the first empty
 /// page. Chapters are renumbered globally so page 2 continues where page 1
-/// ended. The schedule comes from the notice AJAX fragment; every network or
-/// parse failure is silently ignored (empty result / `None`).
+/// ended. The schedule comes from the notice AJAX fragment: a volume-fetch
+/// failure propagates to the caller (a silent no-op there) while a notice
+/// failure only drops the schedule.
 pub async fn fetch_meta(
     client: &reqwest::Client,
     product_no: &str,
 ) -> anyhow::Result<OfficialMeta> {
+    // The id lands in the query string: only digits are ever valid.
+    if !official_meta::is_digit_id(product_no) {
+        return Ok(empty_meta());
+    }
     let mut chapters: Vec<ChapterMeta> = Vec::new();
     let mut schedule: Option<String> = None;
 
-    for page in 1..=20u32 {
+    for page in 1..=NAVER_VOLUME_PAGES {
         let mut url = url::Url::parse(NAVER_VOLUME_LIST)?;
         url.query_pairs_mut()
             .append_pair("productNo", product_no)
             .append_pair("page", &page.to_string());
-        let body = client
+        let response = client
             .get(url)
             .header(reqwest::header::USER_AGENT, UA)
             .send()
             .await?
-            .error_for_status()?
-            .text()
-            .await?;
-        let rows = parse_volume_list(&body);
+            .error_for_status()?;
+        if response
+            .content_length()
+            .is_some_and(|len| len > official_meta::MAX_DETAIL_BYTES)
+        {
+            tracing::warn!(product_no, "naver: volume page too large, stopping");
+            break;
+        }
+        let rows = parse_volume_list(&response.text().await?);
         if rows.is_empty() {
             break;
         }
         chapters.extend(rows);
     }
 
-    // `parse_volume_list` numbers each page from 1; renumber across all pages.
-    for (i, chapter) in chapters.iter_mut().enumerate() {
-        chapter.number_x100 = ((i + 1) * 100) as i32;
+    // Number the MAIN rows sequentially across pages; bonus rows (previews,
+    // side stories, notices) never consume a chapter number. `checked_mul`
+    // keeps a hostile multi-million-row response from wrapping into negative
+    // or duplicate numbers.
+    let mut main_i = 0i32;
+    for chapter in chapters.iter_mut() {
+        if chapter.is_bonus {
+            chapter.number_x100 = 0;
+        } else if let Some(n) = main_i.checked_add(1).and_then(|i| i.checked_mul(100)) {
+            main_i += 1;
+            chapter.number_x100 = n;
+        } else {
+            break;
+        }
+    }
+    if !chapters.is_empty() {
+        tracing::debug!(
+            source = "naver",
+            rows = chapters.len(),
+            main = main_i,
+            "volume list parsed"
+        );
     }
 
     let mut url = url::Url::parse(NAVER_NOTICE_AJAX)?;
@@ -174,7 +217,7 @@ pub async fn fetch_meta(
 
     Ok(OfficialMeta {
         source: "naver".to_string(),
-        count: (!chapters.is_empty()).then_some(chapters.len() as i32),
+        count: (main_i > 0).then_some(main_i),
         chapters,
         update_schedule: schedule,
         next_update_at: None,
@@ -182,20 +225,21 @@ pub async fn fetch_meta(
 }
 
 /// Parse the volumeList AJAX response. The live endpoint returns JSON, not
-/// HTML: `{"resultData":[{"productName":..,"volumeName":..,
-/// "lastVolumeUpdateDate":"2016-04-29 17:32:44",..},..]}`. The title is
-/// `productName` (fallback `volumeName`) and the release date is the
-/// `YYYY-MM-DD` prefix of `lastVolumeUpdateDate`. Malformed or truncated input
-/// yields an empty vector - never a panic.
-pub fn parse_volume_list(html: &str) -> Vec<ChapterMeta> {
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(html) else {
+/// HTML: `{"resultData":[{"productName":..,"volumnNameText":"1화",..},..]}`.
+/// The title is the episode name (`volumnNameText`, fallback `volumeName`,
+/// then `productName`); the release date is the `YYYY-MM-DD` prefix of
+/// `lastVolumeUpdateDate`. Numbers are assigned globally in [`fetch_meta`] -
+/// rows here carry `number_x100 = 0`. At most `NAVER_ROWS_PER_PAGE` rows are
+/// read. Malformed or truncated input yields an empty vector - never a panic.
+pub fn parse_volume_list(json: &str) -> Vec<ChapterMeta> {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
         return Vec::new();
     };
     let Some(items) = value.get("resultData").and_then(|v| v.as_array()) else {
         return Vec::new();
     };
     let mut rows = Vec::new();
-    for item in items {
+    for item in items.iter().take(NAVER_ROWS_PER_PAGE) {
         let Some(title) = episode_title(item) else {
             continue;
         };
@@ -204,28 +248,31 @@ pub fn parse_volume_list(html: &str) -> Vec<ChapterMeta> {
             .and_then(|v| v.as_str())
             .and_then(|s| s.get(..10))
             .and_then(official_meta::parse_date);
-        if let Some(mut chapter) = ChapterMeta::from_f64(rows.len() as f64 + 1.0) {
-            chapter.title = Some(title);
-            chapter.release_date = date;
-            rows.push(chapter);
-        }
+        rows.push(ChapterMeta {
+            number_x100: 0,
+            is_bonus: is_kr_bonus_title(&title),
+            title: Some(title),
+            release_date: date,
+            label: None,
+        });
     }
     rows
 }
 
-/// Episode title from a volumeList JSON row: `productName`, else `volumeName`.
-/// Empty/absent names are rejected.
+/// Episode name from a volumeList JSON row: the first non-empty of
+/// `volumnNameText` (the real episode name: `1화`, `1부-1화`, `예고편`),
+/// `volumeName`, then the series name `productName`. The emptiness check runs
+/// per candidate — an empty `volumnNameText` must not shadow the fallback.
 fn episode_title(item: &serde_json::Value) -> Option<String> {
-    let name = item
-        .get("productName")
-        .and_then(|v| v.as_str())
-        .or_else(|| item.get("volumeName").and_then(|v| v.as_str()))?
-        .trim();
-    if name.is_empty() {
-        None
-    } else {
-        Some(name.to_string())
-    }
+    ["volumnNameText", "volumeName", "productName"]
+        .iter()
+        .find_map(|key| {
+            item.get(key)
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+        })
 }
 
 /// Schedule text from a notice block. The marker is `연재 공지` (Naver encodes
@@ -312,7 +359,23 @@ mod tests {
         let html = include_str!("../../../tests/fixtures/naver_volume_list.html");
         let rows = parse_volume_list(html);
         assert!(!rows.is_empty());
-        assert!(rows.iter().all(|r| r.number_x100 > 0));
+        // Numbers are assigned in `fetch_meta`; rows carry the episode name.
+        assert!(rows.iter().all(|r| r.number_x100 == 0));
+        assert!(
+            rows.iter()
+                .all(|r| r.title.as_deref().is_some_and(|t| !t.is_empty()))
+        );
+        // The preview row is a bonus, a `1부-1화` part row is not.
+        let preview = rows
+            .iter()
+            .find(|r| r.title.as_deref() == Some("예고편"))
+            .expect("preview row");
+        assert!(preview.is_bonus);
+        let part = rows
+            .iter()
+            .find(|r| r.title.as_deref() == Some("1부-1화"))
+            .expect("part row");
+        assert!(!part.is_bonus);
     }
 
     #[test]
@@ -333,5 +396,36 @@ mod tests {
     #[test]
     fn truncated_volume_list_no_panic() {
         assert!(parse_volume_list("<li><a>hi").is_empty());
+    }
+
+    #[test]
+    fn empty_volume_name_falls_back() {
+        let body = r#"{"resultData":[{"volumnNameText":"","volumeName":"1화",
+            "productName":"제목","lastVolumeUpdateDate":"2024-01-02 00:00:00"}]}"#;
+        let rows = parse_volume_list(body);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].title.as_deref(), Some("1화"));
+        // An all-empty name chain drops the row.
+        let body = r#"{"resultData":[{"volumnNameText":" ","volumeName":"","productName":""}]}"#;
+        assert!(parse_volume_list(body).is_empty());
+    }
+
+    #[test]
+    fn volume_page_caps_rows() {
+        let items: Vec<String> = (0..(NAVER_ROWS_PER_PAGE + 10))
+            .map(|i| format!(r#"{{"volumnNameText":"{i}화","productName":"제목"}}"#))
+            .collect();
+        let body = format!(r#"{{"resultData":[{}]}}"#, items.join(","));
+        assert_eq!(parse_volume_list(&body).len(), NAVER_ROWS_PER_PAGE);
+    }
+
+    #[tokio::test]
+    async fn non_numeric_product_no_is_empty() {
+        let client = crate::services::external::http_client();
+        let meta = fetch_meta(&client, "abc")
+            .await
+            .expect("a bad id must not hit the network");
+        assert!(meta.chapters.is_empty());
+        assert!(meta.count.is_none());
     }
 }

@@ -18,10 +18,11 @@ pub struct ChapterMeta {
     pub title: Option<String>,
     pub release_date: Option<NaiveDate>,
     /// True for bonus rows (`00` prologues, non-numeric specials, repeated
-    /// numbers). Set by the meta-capable sources that classify titles through
-    /// [`chapter_title`](crate::services::external::chapter_title) (today
-    /// bilibili and kuaikan); every other source reports its plain numbered
-    /// rows as `false`.
+    /// numbers, Korean `예고편`/`외전` markers). Set by every source that
+    /// classifies titles through
+    /// [`chapter_title`](crate::services::external::chapter_title) (bilibili,
+    /// kuaikan, kakao) or `is_kr_bonus_title` (naver); the remaining sources
+    /// report their plain numbered rows as `false`.
     pub is_bonus: bool,
     /// Display label the source already knows (split parts `479-1`, from
     /// bilibili or kuaikan), stored verbatim into
@@ -60,11 +61,11 @@ impl ChapterMeta {
 }
 
 /// Sources with a real arm in `fetch_source` (each source here has a working fetch).
-/// kakao/mangaplus are intentionally absent: they have no arm -> Ok(default) (empty response).
-/// `kuaikan` gained its arm after `migrations/028_chapter_ownership.sql`; the
-/// `supports_meta` list in that migration is a frozen one-time-backfill
-/// snapshot, so this runtime list is the source of truth for `chapter_key`
-/// and the resolve walk.
+/// mangaplus is intentionally absent: it has no arm -> Ok(default) (empty response).
+/// `kuaikan` and `kakao` gained their arms after
+/// `migrations/028_chapter_ownership.sql`; the `supports_meta` list in that
+/// migration is a frozen one-time-backfill snapshot, so this runtime list is
+/// the source of truth for `chapter_key` and the resolve walk.
 pub const SOURCES_WITH_META: &[&str] = &[
     "bilibili",
     "naver",
@@ -77,6 +78,7 @@ pub const SOURCES_WITH_META: &[&str] = &[
     "kakuyomu",
     "qidian",
     "kuaikan",
+    "kakao",
 ];
 
 /// Fetch one source's detail, dispatched by the binding name. Unknown/absent
@@ -104,6 +106,7 @@ pub async fn fetch_source(
         "kuaikan" => {
             crate::services::external::official_kuaikan::fetch_meta(client, source_id).await
         }
+        "kakao" => crate::services::external::official_kakao::fetch_meta(client, source_id).await,
         "daum" => crate::services::external::official_daum::fetch_meta(client, source_id).await,
         "qidian" => crate::services::external::official_qidian::fetch_meta(client, source_id).await,
         "ridibooks" => {
@@ -114,6 +117,18 @@ pub async fn fetch_source(
         }
         _ => Ok(OfficialMeta::default()),
     }
+}
+
+/// Largest detail body a meta fetcher will read (4 MiB). Fetchers check the
+/// response `content_length` against this before buffering the body: a hostile
+/// or broken upstream must not exhaust memory. Chunked responses carry no
+/// `content_length` and stay bounded only by the shared client timeout.
+pub const MAX_DETAIL_BYTES: u64 = 4 * 1024 * 1024;
+
+/// True when a bound source id is a plain digit run — the only valid shape for
+/// the ids that land in a fetcher's URL path or query string.
+pub fn is_digit_id(id: &str) -> bool {
+    !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit())
 }
 
 /// Return the substring strictly between `start` and the next `end` after it.

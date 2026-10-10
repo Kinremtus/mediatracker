@@ -38,8 +38,9 @@ pub fn official_source_for_media_type(media_type: &str) -> &'static [&'static st
 ///
 /// The first ten entries mirror the `supports_meta` global ranks of
 /// `migrations/028_chapter_ownership.sql` (bilibili=1 ... qidian=10); kuaikan
-/// gained its fetch arm after that migration, so it is appended last. The set
-/// must match `SOURCES_WITH_META` (enforced by `tests/chapter_key.rs`).
+/// and kakao gained their fetch arms after that migration, so they are
+/// appended last (in that order). The set must match `SOURCES_WITH_META`
+/// (enforced by `tests/chapter_key.rs`).
 pub const GLOBAL_SOURCE_ORDER: &[&str] = &[
     "bilibili",
     "naver",
@@ -52,6 +53,7 @@ pub const GLOBAL_SOURCE_ORDER: &[&str] = &[
     "kakuyomu",
     "qidian",
     "kuaikan",
+    "kakao",
 ];
 
 /// Network abstraction so tests can inject a fixture-backed searcher.
@@ -95,7 +97,8 @@ impl OfficialSearch for HttpOfficialSearch {
                     crate::services::external::official_kuaikan::search(&self.client, query).await
                 }
                 "kakao" => {
-                    crate::services::external::official_kakao::search(&self.client, query).await
+                    crate::services::external::official_kakao::search_cached(&self.client, query)
+                        .await
                 }
                 "naver" => {
                     crate::services::external::official_naver::search(&self.client, query).await
@@ -172,19 +175,19 @@ fn hit_matches_media_type(source: &str, id: &str, media_type: &str) -> bool {
 /// (`official_bilibili::search_cached`). Only these may be tried after a
 /// non-meta match is already in hand: the walk must not spend extra live
 /// requests on quota-limited or slow endpoints. Deliberately just bilibili —
-/// it is the only cached meta source, so `manhwa`/`manga` never upgrade a
-/// non-meta match (there is no cheap meta source to try).
+/// it is the only cached meta source, so a non-meta match elsewhere (mangaplus)
+/// never upgrades to an uncached meta source.
 const CACHED_SEARCH_SOURCES: &[&str] = &["bilibili"];
 
 /// Resolve + persist across the ordered source list.
 ///
 /// A meta-capable binding (a source whose chapter detail can actually be
 /// fetched, [`SOURCES_WITH_META`]) wins; a match from a source without chapter
-/// detail (kuaikan/kakao/mangaplus) is bound and returned only when no
-/// meta-capable source can be found. Zero network I/O when a meta-capable
-/// binding already exists; a non-meta binding alone still allows the walk to
-/// try the cached sources (bilibili) so the chapters can move under a
-/// meta-capable key. One search per source until the first match.
+/// detail (mangaplus) is bound and returned only when no meta-capable source
+/// can be found. Zero network I/O when a meta-capable binding already exists; a
+/// non-meta binding alone still allows the walk to try the cached sources
+/// (bilibili) so the chapters can move under a meta-capable key. One search per
+/// source until the first match.
 pub async fn resolve_and_bind(
     db: &sqlx::PgPool,
     search: &dyn OfficialSearch,
@@ -208,6 +211,15 @@ pub async fn resolve_and_bind(
         match crate::services::source_ids::get_source_id(db, provider, external_id, source).await {
             Ok(Some(id)) => {
                 if SOURCES_WITH_META.contains(&source) {
+                    // A binding can predate its source gaining a fetch arm
+                    // (kuaikan/kakao): chapter rows written while the source was
+                    // non-meta still sit under the MU identity key. Move them
+                    // (and read progress) under the now-resolved key or they
+                    // stay stranded. A no-op for the usual case.
+                    if let Err(e) = rekey_chapters(db, provider, external_id, source, &id).await {
+                        tracing::warn!(provider, external_id, source, error = %e,
+                            "official_resolve: bound-key rekey failed");
+                    }
                     return Some(ResolveOutcome {
                         source: source.to_string(),
                         source_id: id,
@@ -454,9 +466,9 @@ pub async fn chapter_key(db: &sqlx::PgPool, provider: &str, external_id: &str) -
     };
 
     // Priority: the media_type chain first, then any other meta-capable source
-    // by global rank. Chain entries without a fetch_source arm (kakao,
-    // mangaplus) are dropped here - otherwise the key would point at a
-    // source whose chapters are written under another one.
+    // by global rank. Chain entries without a fetch_source arm (mangaplus) are
+    // dropped here - otherwise the key would point at a source whose chapters
+    // are written under another one.
     let mut order: Vec<&str> = media_type
         .as_deref()
         .map(official_source_for_media_type)

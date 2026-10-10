@@ -1,14 +1,15 @@
 //! Shared chapter-title classification for the meta-capable official sources.
 //!
-//! Sources report chapter numbers as free-form titles (`281`, `第533话`,
-//! `479-2`, `第533话（下）`). The classifiers here turn one title into a
-//! [`ShortTitle`]; [`rows_to_chapters`] then maps an oldest-first row list onto
-//! [`ChapterMeta`] rows (the first sighting of a key is a main chapter, every
-//! repeat a bonus duplicate) and [`main_count`] derives the chapter count from
-//! the highest main base.
+//! Sources report chapter numbers as free-form titles: Chinese `281`,
+//! `第533话`, `479-2`, `第533话（下）` and Korean `132화`. The classifiers here
+//! turn one title into a [`ShortTitle`]; [`rows_to_chapters`] then maps an
+//! oldest-first row list onto [`ChapterMeta`] rows (the first sighting of a key
+//! is a main chapter, every repeat a bonus duplicate) and [`main_count`]
+//! derives the chapter count from the highest main base.
 //!
-//! Moved out of `official_bilibili` when kuaikan gained a fetcher: both sources
-//! speak the same `第N话` + `（上）/（下）` + `N-M` dialect.
+//! Moved out of `official_bilibili` when kuaikan gained a fetcher: bilibili and
+//! kuaikan share the `第N话` + `（上）/（下）` + `N-M` dialect, naver/kakao the
+//! Korean `N화` one.
 
 use std::collections::HashSet;
 
@@ -19,7 +20,7 @@ use crate::services::external::official_meta::ChapterMeta;
 /// How one source title maps onto the chapter sequence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShortTitle {
-    /// A plain chapter number (`"281"`, `"第533话"`).
+    /// A plain chapter number (`"281"`, `"第533话"`, `"132화"`).
     Base(i32),
     /// One split release of a chapter (`"479-1"`, `"533（下）"`): `base` plus a
     /// `part` in `1..=99`. Parts become separate tickable rows
@@ -27,7 +28,8 @@ pub enum ShortTitle {
     Part(i32, i32),
     /// Fractional special (`"49.5"` -> 4950) — always a bonus row.
     Fractional(i32),
-    /// Prologues, notices and placeholders — bonus rows keyed 0.
+    /// Prologues, notices and placeholders (`"00"`, `"0화"`, `"프롤로그"`) —
+    /// bonus rows keyed 0.
     Unnumbered,
 }
 
@@ -185,6 +187,48 @@ fn classify_number(s: &str) -> ShortTitle {
     }
 }
 
+/// Korean sources mark side content in the episode title: `예고편` (preview),
+/// `외전` (side story), `번외` (extra), `프롤로그` (prologue), `공지` (notice),
+/// `휴재` (hiatus). Such rows are bonus rows, never numbered chapters.
+///
+/// Substring matching is deliberate (Naver mixes markers into longer titles,
+/// e.g. `101화 (시즌2 마지막화)` is a main row while `1화 예고편` is a bonus); a
+/// rare main episode whose own title happens to mention one of the markers is
+/// folded into the bonus section rather than being lost.
+pub fn is_kr_bonus_title(title: &str) -> bool {
+    ["예고편", "외전", "번외", "프롤로그", "공지", "휴재"]
+        .iter()
+        .any(|marker| title.contains(marker))
+}
+
+/// The number in a trailing `<n>화` suffix: `132화` -> `Some(132)`, `0화` ->
+/// `Some(0)`; `None` when the title does not end in a numeric `화` marker.
+pub fn parse_kr_chapter_number(raw: &str) -> Option<i32> {
+    let stem = raw.trim().strip_suffix('화')?;
+    let digits: String = stem
+        .chars()
+        .rev()
+        .take_while(|c| c.is_ascii_digit())
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+    if digits.is_empty() {
+        return None;
+    }
+    digits.parse().ok()
+}
+
+/// Kakao episode titles end with `<n>화` (`… 132화`). `0화` prologues and
+/// unnumbered notices (`… 프롤로그`) are bonus rows; a numbered title wins even
+/// when it mentions side content, matching the duplicate-number rule elsewhere.
+pub fn classify_kakao_title(raw: &str) -> ShortTitle {
+    match parse_kr_chapter_number(raw) {
+        Some(n) if n >= 1 => ShortTitle::Base(n),
+        _ => ShortTitle::Unnumbered,
+    }
+}
+
 /// Oldest-first rows -> `ChapterMeta`. Numbering comes from the title, not the
 /// row position. A split part is its own tickable row (`479-1` -> 47901,
 /// `第533话（下）` -> 53302); the first sighting of a key is a main chapter,
@@ -295,6 +339,42 @@ mod tests {
         }
         // A plain number without the `第N话` prefix still classifies.
         assert_eq!(c("479-2"), ShortTitle::Part(479, 2));
+    }
+
+    #[test]
+    fn classify_kakao_titles() {
+        let c = classify_kakao_title;
+        assert_eq!(c("용사파티 대마법사의 환생 132화"), ShortTitle::Base(132));
+        assert_eq!(c("튜토리얼이 너무 어렵다 1화"), ShortTitle::Base(1));
+        // A numbered title wins even when it mentions side content.
+        assert_eq!(c("외전 5화"), ShortTitle::Base(5));
+        // `0화` prologues and unnumbered specials are bonus rows.
+        assert_eq!(c("용사파티 대마법사의 환생 0화"), ShortTitle::Unnumbered);
+        assert_eq!(c("튜토리얼이 너무 어렵다 프롤로그"), ShortTitle::Unnumbered);
+        assert_eq!(c("외전"), ShortTitle::Unnumbered);
+        assert_eq!(c(""), ShortTitle::Unnumbered);
+        // The shared suffix helper also exposes the `0화` number for display.
+        assert_eq!(parse_kr_chapter_number("132화"), Some(132));
+        assert_eq!(parse_kr_chapter_number("0화"), Some(0));
+        assert_eq!(parse_kr_chapter_number("프롤로그"), None);
+    }
+
+    #[test]
+    fn kr_bonus_markers() {
+        for title in [
+            "예고편",
+            "1화 예고편",
+            "외전",
+            "번외편",
+            "프롤로그",
+            "연재 공지",
+            "휴재 안내",
+        ] {
+            assert!(is_kr_bonus_title(title), "{title}");
+        }
+        for title in ["1화", "1부-1화", "101화 (시즌2 마지막화)", "132화"] {
+            assert!(!is_kr_bonus_title(title), "{title}");
+        }
     }
 
     #[test]

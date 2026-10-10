@@ -964,3 +964,64 @@ async fn merge_drops_unread_shadows_but_keeps_legacy_read_rows() {
         ]
     );
 }
+
+// --- resolve: a bound source that gained a fetch arm rekeys stranded rows ---
+
+/// Never hits the network: the bound meta-capable binding short-circuits.
+struct NoSearch;
+
+impl mediatracker::services::official_resolve::OfficialSearch for NoSearch {
+    fn search<'a>(
+        &'a self,
+        _source: &'a str,
+        _query: &'a str,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = anyhow::Result<
+                        Vec<mediatracker::services::official_types::OfficialHit>,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+}
+
+#[tokio::test]
+async fn bound_meta_binding_rekeys_stranded_mu_rows() {
+    let (ctx, user_id) = setup().await;
+    let mu_id = "77003";
+    add_media_item(&ctx.pool, mu_id, "manhwa").await;
+    // Bound while kakao was still non-meta: rows and progress sit under the MU
+    // identity key even though `chapter_key` now resolves to the kakao key.
+    bind(&ctx.pool, mu_id, "kakao", "55989064").await;
+    insert_chapter(&ctx.pool, "mangaupdates", mu_id, 100, "mu", false).await;
+    insert_progress(&ctx.pool, user_id, "mangaupdates", mu_id, 100, true).await;
+
+    let outcome = mediatracker::services::official_resolve::resolve_and_bind(
+        &ctx.pool,
+        &NoSearch,
+        "mangaupdates",
+        mu_id,
+        "manhwa",
+        "용사파티",
+        &[],
+    )
+    .await;
+    assert_eq!(
+        outcome,
+        Some(mediatracker::services::official_resolve::ResolveOutcome {
+            source: "kakao".to_string(),
+            source_id: "55989064".to_string(),
+        })
+    );
+    // The stranded rows and read progress moved under the resolved key.
+    assert_eq!(chapter_row_count(&ctx.pool, "kakao", "55989064").await, 1);
+    assert_eq!(chapter_row_count(&ctx.pool, "mangaupdates", mu_id).await, 0);
+    assert_eq!(
+        progress_rows(&ctx.pool, user_id, "kakao", "55989064").await,
+        vec![(100, true)]
+    );
+}

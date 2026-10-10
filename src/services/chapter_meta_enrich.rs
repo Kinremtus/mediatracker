@@ -3,7 +3,7 @@
 //! plus a raise-only `media_items.chapters` counter and MU-orphan cleanup.
 //!
 //! Chapter rows are written under the key of their OWN source
-//! ([`official_resolve::chapter_key`]): a meta-capable binding wins, otherwise
+//! ([`chapter_key`]): a meta-capable binding wins, otherwise
 //! the MangaUpdates identity key. Every `media_items` update (counter,
 //! schedule) stays on the identity key, so a drawer preview — no `media_items`
 //! row yet — still stores chapters and defers only the counter/schedule: the
@@ -408,8 +408,8 @@ pub async fn enrich_official_meta_with(
             }
         };
         if !is_useful_meta(&meta) {
-            // Empty answer != success: keep walking the chain (kakao/
-            // mangaplus have no arm in `fetch_source` and always land here).
+            // Empty answer != success: keep walking the chain (mangaplus has
+            // no arm in `fetch_source` and always lands here).
             tracing::debug!(
                 provider,
                 external_id,

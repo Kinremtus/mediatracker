@@ -108,7 +108,7 @@ async fn bind_enrich_unbind_cycle() {
     let series = SERIES_ID.to_string();
     let seen = Arc::new(Mutex::new(Vec::<String>::new()));
 
-    // 2. No binding => the provider must never be queried, chapters stay 145.
+    // 1. No binding => the provider must never be queried, chapters stay 145.
     let applied = enrich_with_providers(
         &ctx.pool,
         "mangaupdates",
@@ -123,7 +123,7 @@ async fn bind_enrich_unbind_cycle() {
     );
     assert_eq!(chapters_state(&ctx.pool, &series).await.0, Some(145));
 
-    // 3. Bind the Kakao id.
+    // 2. Bind the Kakao id.
     set_source_id(&ctx.pool, "mangaupdates", &series, "kakao", KAKAO_ID)
         .await
         .expect("set binding");
@@ -134,7 +134,7 @@ async fn bind_enrich_unbind_cycle() {
         Some(KAKAO_ID.to_string())
     );
 
-    // 4. Enrich uses the bound id, not the skeleton id.
+    // 3. Enrich uses the bound id, not the skeleton id.
     let applied = enrich_with_providers(
         &ctx.pool,
         "mangaupdates",
@@ -148,7 +148,7 @@ async fn bind_enrich_unbind_cycle() {
     assert_eq!(chapters, Some(157));
     assert_eq!(source.as_deref(), Some("auto:kakao"));
 
-    // 5. Unbind is idempotent and clears the list.
+    // 4. Unbind is idempotent and clears the list.
     assert!(
         delete_source_id(&ctx.pool, "mangaupdates", &series, "kakao")
             .await
@@ -161,7 +161,7 @@ async fn bind_enrich_unbind_cycle() {
             .is_empty()
     );
 
-    // 6. Re-enrich skips (no new query) and never lowers the count.
+    // 5. Re-enrich skips (no new query) and never lowers the count.
     let applied = enrich_with_providers(
         &ctx.pool,
         "mangaupdates",
@@ -190,6 +190,9 @@ fn new_official_sources_are_bindable_and_narou_is_not() {
         "qidian",
         "ridibooks",
         "mangaup",
+        "kuaikan",
+        "kakao",
+        "naver",
     ] {
         assert!(
             is_known_source(source),
@@ -219,12 +222,20 @@ async fn enrich_extends_skeleton_to_reported_count() {
     .await;
     assert_eq!(applied, Some(157));
 
-    // Skeleton must have grown from 145 to 157 so chapters 146..157 are tickable.
+    // Skeleton must have grown from 145 to 157 so chapters 146..157 are
+    // tickable. Rows live under the RESOLVED key: with the meta-capable kakao
+    // binding that is the kakao key, not the MU identity key.
+    let (key_provider, key_external_id) =
+        mediatracker::services::official_resolve::chapter_key(&ctx.pool, "mangaupdates", &series)
+            .await;
+    assert_eq!(key_provider, "kakao");
+    assert_eq!(key_external_id, KAKAO_ID);
     let count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*)::bigint FROM series_chapters \
-         WHERE provider = 'mangaupdates' AND external_id = $1",
+         WHERE provider = $1 AND external_id = $2",
     )
-    .bind(&series)
+    .bind(&key_provider)
+    .bind(&key_external_id)
     .fetch_one(&ctx.pool)
     .await
     .expect("count skeleton");
@@ -232,9 +243,10 @@ async fn enrich_extends_skeleton_to_reported_count() {
 
     let last: Option<i32> = sqlx::query_scalar(
         "SELECT MAX(chapter_number) FROM series_chapters \
-         WHERE provider = 'mangaupdates' AND external_id = $1",
+         WHERE provider = $1 AND external_id = $2",
     )
-    .bind(&series)
+    .bind(&key_provider)
+    .bind(&key_external_id)
     .fetch_one(&ctx.pool)
     .await
     .expect("max chapter");
