@@ -1,9 +1,13 @@
 //! Title normalization and script detection for official-source matching.
 //!
-//! [`pick_candidate`] picks the title a provider should be searched with: the
-//! first candidate whose script that provider serves. kakao/naver/bilibili are
-//! single-script; JP sources accept Latin/Other; ridibooks prefers Hangul over
-//! Latin so its Korean catalog is searched with the Korean title.
+//! [`pick_candidate`] picks the title a provider should be searched with:
+//! [`search_scripts`] lists the scripts that provider accepts, in preference
+//! order, and the first candidate matching one of them wins. Most catalogs are
+//! single-script (CN sites take Han, KR sites Hangul); the multi-script ones
+//! need an order because the row title (usually Latin) finds nothing in their
+//! native catalog: JP sites are searched with the Japanese title first
+//! (alphapolis even answers 404 for Latin queries) and ridibooks with the
+//! Korean title.
 
 use unicode_normalization::UnicodeNormalization;
 
@@ -11,6 +15,8 @@ use unicode_normalization::UnicodeNormalization;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Script {
     Hangul,
+    /// Japanese: any kana makes a title Japanese (kanji-only titles stay Han).
+    Japanese,
     Han,
     Latin,
     Other,
@@ -41,11 +47,14 @@ pub fn detect_script(s: &str) -> Script {
 
     for c in s.chars() {
         let cp = c as u32;
-        if (0xAC00..=0xD7A3).contains(&cp) || (0x1100..=0x11FF).contains(&cp) {
-            // Hangul syllables + Jamo.
+        if (0xAC00..=0xD7A3).contains(&cp)
+            || (0x1100..=0x11FF).contains(&cp)
+            || (0x3130..=0x318F).contains(&cp)
+        {
+            // Hangul syllables + Jamo + compatibility Jamo.
             hangul += 1;
-        } else if (0x3040..=0x30FF).contains(&cp) {
-            // Hiragana + Katakana.
+        } else if (0x3040..=0x30FF).contains(&cp) || (0xFF66..=0xFF9D).contains(&cp) {
+            // Hiragana + Katakana (+ halfwidth Katakana).
             kana += 1;
         } else if (0x4E00..=0x9FFF).contains(&cp) || (0x3400..=0x4DBF).contains(&cp) {
             // CJK Unified Ideographs + Extension A.
@@ -59,11 +68,12 @@ pub fn detect_script(s: &str) -> Script {
         }
     }
 
-    // Kana implies Japanese: report Other so Han-only providers don't match it.
+    // Kana implies Japanese: report Japanese so Han-only providers don't match
+    // it and JP providers can prefer it over Latin romanizations.
     if hangul > 0 {
         Script::Hangul
     } else if kana > 0 {
-        Script::Other
+        Script::Japanese
     } else if han > 0 {
         Script::Han
     } else if latin > 0 {
@@ -73,44 +83,43 @@ pub fn detect_script(s: &str) -> Script {
     }
 }
 
+/// Scripts a source accepts, in preference order: the first candidate whose
+/// script appears in the list wins. Single-script catalogs get a one-entry
+/// list; an empty list means "no candidate" (unknown/armless source).
+fn search_scripts(source: &str) -> &'static [Script] {
+    match source {
+        // CN catalogs are Han-only.
+        "kuaikan" | "bilibili" | "qidian" => &[Script::Han],
+        // KR catalogs are Hangul-only; ridibooks also indexes Latin/JP rows.
+        "kakao" | "naver" | "daum" => &[Script::Hangul],
+        "ridibooks" => &[
+            Script::Hangul,
+            Script::Latin,
+            Script::Japanese,
+            Script::Other,
+        ],
+        // JP catalogs must be searched with the Japanese title first:
+        // alphapolis answers 404 for Latin queries and the others index their
+        // native names.
+        "comicwalker" | "mangaup" | "alphapolis" | "kakuyomu" | "syosetu" => {
+            &[Script::Japanese, Script::Han, Script::Latin, Script::Other]
+        }
+        // The global app indexes English names but also serves JP titles.
+        "mangaplus" => &[Script::Latin, Script::Japanese, Script::Other],
+        _ => &[],
+    }
+}
+
 /// First candidate whose script fits `source`; None when none fits.
 pub fn pick_candidate<'a>(candidates: &'a [String], source: &str) -> Option<&'a str> {
-    let source = source.to_ascii_lowercase();
-    // Sources that accept several scripts still have a preferred order: the KR
-    // ridibooks catalog must be searched with the Hangul title first — the
-    // English form (which is usually the row title) finds nothing there.
-    let preference: &[Script] = match source.as_str() {
-        "ridibooks" => &[Script::Hangul, Script::Latin, Script::Other],
-        _ => &[],
-    };
-    if !preference.is_empty() {
-        for script in preference {
-            if let Some(found) = candidates.iter().find(|c| detect_script(c) == *script) {
-                return Some(found.as_str());
-            }
-        }
-        return None;
-    }
-    candidates.iter().find_map(|candidate| {
-        let script = detect_script(candidate);
-        let fits = match source.as_str() {
-            "kakao" => script == Script::Hangul,
-            "naver" => script == Script::Hangul,
-            "kuaikan" => script == Script::Han,
-            "mangaplus" => matches!(script, Script::Latin | Script::Other),
-            // JP sources accept Latin | Other (kana -> Other, so JP titles fit).
-            "comicwalker" | "mangaup" | "alphapolis" => {
-                matches!(script, Script::Latin | Script::Other)
-            }
-            "kakuyomu" => matches!(script, Script::Latin | Script::Other),
-            // CN sources are Han-only.
-            "bilibili" | "qidian" => script == Script::Han,
-            // KR sources (ridibooks is handled by the preference block above).
-            "daum" => script == Script::Hangul,
-            _ => false,
-        };
-        fits.then_some(candidate.as_str())
-    })
+    search_scripts(&source.to_ascii_lowercase())
+        .iter()
+        .find_map(|script| {
+            candidates
+                .iter()
+                .find(|candidate| detect_script(candidate) == *script)
+                .map(|candidate| candidate.as_str())
+        })
 }
 
 /// Title equality after normalization.
@@ -159,8 +168,8 @@ mod tests {
     }
 
     #[test]
-    fn detect_kana_is_other() {
-        assert_eq!(detect_script("鬼滅の刃"), Script::Other);
+    fn detect_kana_is_japanese() {
+        assert_eq!(detect_script("鬼滅の刃"), Script::Japanese);
     }
 
     #[test]
@@ -185,6 +194,15 @@ mod tests {
     fn pick_kuaikan_none_without_han() {
         let candidates = ["One Piece".to_string(), "원피스".to_string()];
         assert_eq!(pick_candidate(&candidates, "kuaikan"), None);
+    }
+
+    #[test]
+    fn pick_kuaikan_skips_kana_and_takes_han() {
+        // A JP title with kana must not satisfy a Han-only catalog; the Han
+        // translation wins when present, and a kana-only list yields nothing.
+        let candidates = ["進撃の巨人".to_string(), "進擊的巨人".to_string()];
+        assert_eq!(pick_candidate(&candidates, "kuaikan"), Some("進擊的巨人"));
+        assert_eq!(pick_candidate(&["進撃の巨人".to_string()], "kuaikan"), None);
     }
 
     #[test]
@@ -224,8 +242,8 @@ mod tests {
             pick_candidate(&candidates, "ridibooks"),
             Some("인류 최대의 실수")
         );
-        // Latin-only rows still search with what they have; a JP title is the
-        // last resort.
+        // Latin-only rows still search with what they have; a JP title and a
+        // Cyrillic-only (Other) row are the last resorts.
         assert_eq!(
             pick_candidate(&["One Piece".to_string()], "ridibooks"),
             Some("One Piece")
@@ -234,33 +252,47 @@ mod tests {
             pick_candidate(&["鬼滅の刃".to_string()], "ridibooks"),
             Some("鬼滅の刃")
         );
-    }
-
-    #[test]
-    fn pick_comicwalker_accepts_latin() {
-        let candidates = ["One Piece".to_string(), "원피스".to_string()];
         assert_eq!(
-            pick_candidate(&candidates, "comicwalker"),
-            Some("One Piece")
+            pick_candidate(&["Лунный бог".to_string()], "ridibooks"),
+            Some("Лунный бог")
         );
     }
 
     #[test]
-    fn pick_kakuyomu_accepts_latin_and_other() {
-        let latin = ["One Piece".to_string()];
-        assert_eq!(pick_candidate(&latin, "kakuyomu"), Some("One Piece"));
-        let jp = ["鬼滅の刃".to_string()];
-        assert_eq!(pick_candidate(&jp, "kakuyomu"), Some("鬼滅の刃"));
-    }
-
-    #[test]
-    fn pick_ridibooks_accepts_hangul_latin_other() {
-        let hangul = ["원피스".to_string()];
-        assert_eq!(pick_candidate(&hangul, "ridibooks"), Some("원피스"));
-        let latin = ["One Piece".to_string()];
-        assert_eq!(pick_candidate(&latin, "ridibooks"), Some("One Piece"));
-        let jp = ["鬼滅の刃".to_string()];
-        assert_eq!(pick_candidate(&jp, "ridibooks"), Some("鬼滅の刃"));
+    fn pick_jp_sources_prefer_the_japanese_title() {
+        // Realistic MangaUpdates associated titles for a JP series: the row
+        // title and translations are Latin/Cyrillic, the native name is JP.
+        let candidates = vec![
+            "Tsuki ga Michibiku Isekai Douchuu".to_string(),
+            "Tsukimichi: Moonlit Fantasy".to_string(),
+            "Лунный бог, приключение и другой мир".to_string(),
+            "月が導く異世界道中".to_string(),
+            "月光下的异世界之旅".to_string(),
+        ];
+        for source in [
+            "alphapolis",
+            "comicwalker",
+            "mangaup",
+            "kakuyomu",
+            "syosetu",
+        ] {
+            assert_eq!(
+                pick_candidate(&candidates, source),
+                Some("月が導く異世界道中"),
+                "{source} must search with the Japanese title"
+            );
+            // Latin-only and Other-only rows still search with what they have.
+            assert_eq!(
+                pick_candidate(&["One Piece".to_string()], source),
+                Some("One Piece"),
+                "{source} falls back to Latin"
+            );
+            assert_eq!(
+                pick_candidate(&["Лунный бог".to_string()], source),
+                Some("Лунный бог"),
+                "{source} falls back to Other"
+            );
+        }
     }
 
     #[test]
