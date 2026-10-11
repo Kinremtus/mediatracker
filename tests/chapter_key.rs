@@ -124,19 +124,6 @@ async fn non_mu_provider_passes_through() {
 }
 
 #[tokio::test]
-async fn chain_order_decides_between_two_meta_bindings() {
-    // manhwa chain: ["kakao", "naver", "daum", "ridibooks"] -> naver before daum.
-    let ctx = setup().await;
-    add_media_item(&ctx, "900000005", "manhwa").await;
-    bind(&ctx, "900000005", "daum", "daum-9").await;
-    bind(&ctx, "900000005", "naver", "naver-9").await;
-
-    let (provider, external_id) = chapter_key(&ctx.pool, "mangaupdates", "900000005").await;
-    assert_eq!(provider, "naver");
-    assert_eq!(external_id, "naver-9");
-}
-
-#[tokio::test]
 async fn without_media_item_row_global_fallback_order_decides() {
     // No media_items row (drawer preview) -> GLOBAL_SOURCE_ORDER. There
     // naver=2 comes before daum=3, so naver wins here too - the assertion only

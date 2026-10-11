@@ -1,7 +1,9 @@
 //! Title normalization and script detection for official-source matching.
 //!
-//! Used to decide whether a search hit from an official provider (kakao,
-//! kuaikan, mangaplus) is written in the script that provider actually serves.
+//! [`pick_candidate`] picks the title a provider should be searched with: the
+//! first candidate whose script that provider serves. kakao/naver/bilibili are
+//! single-script; JP sources accept Latin/Other; ridibooks prefers Hangul over
+//! Latin so its Korean catalog is searched with the Korean title.
 
 use unicode_normalization::UnicodeNormalization;
 
@@ -74,6 +76,21 @@ pub fn detect_script(s: &str) -> Script {
 /// First candidate whose script fits `source`; None when none fits.
 pub fn pick_candidate<'a>(candidates: &'a [String], source: &str) -> Option<&'a str> {
     let source = source.to_ascii_lowercase();
+    // Sources that accept several scripts still have a preferred order: the KR
+    // ridibooks catalog must be searched with the Hangul title first — the
+    // English form (which is usually the row title) finds nothing there.
+    let preference: &[Script] = match source.as_str() {
+        "ridibooks" => &[Script::Hangul, Script::Latin, Script::Other],
+        _ => &[],
+    };
+    if !preference.is_empty() {
+        for script in preference {
+            if let Some(found) = candidates.iter().find(|c| detect_script(c) == *script) {
+                return Some(found.as_str());
+            }
+        }
+        return None;
+    }
     candidates.iter().find_map(|candidate| {
         let script = detect_script(candidate);
         let fits = match source.as_str() {
@@ -88,9 +105,8 @@ pub fn pick_candidate<'a>(candidates: &'a [String], source: &str) -> Option<&'a 
             "kakuyomu" => matches!(script, Script::Latin | Script::Other),
             // CN sources are Han-only.
             "bilibili" | "qidian" => script == Script::Han,
-            // KR sources.
+            // KR sources (ridibooks is handled by the preference block above).
             "daum" => script == Script::Hangul,
-            "ridibooks" => matches!(script, Script::Hangul | Script::Latin | Script::Other),
             _ => false,
         };
         fits.then_some(candidate.as_str())
@@ -193,9 +209,31 @@ mod tests {
 
     #[test]
     fn pick_daum_requires_hangul() {
-        let candidates = ["One Piece".to_string(), "원피스".to_string()];
+        let candidates = vec!["One Piece".to_string(), "원피스".to_string()];
         assert_eq!(pick_candidate(&candidates, "daum"), Some("원피스"));
         assert_eq!(pick_candidate(&["One Piece".to_string()], "daum"), None);
+    }
+
+    #[test]
+    fn pick_ridibooks_prefers_hangul() {
+        let candidates = vec![
+            "The Greatest Blunder".to_string(),
+            "인류 최대의 실수".to_string(),
+        ];
+        assert_eq!(
+            pick_candidate(&candidates, "ridibooks"),
+            Some("인류 최대의 실수")
+        );
+        // Latin-only rows still search with what they have; a JP title is the
+        // last resort.
+        assert_eq!(
+            pick_candidate(&["One Piece".to_string()], "ridibooks"),
+            Some("One Piece")
+        );
+        assert_eq!(
+            pick_candidate(&["鬼滅の刃".to_string()], "ridibooks"),
+            Some("鬼滅の刃")
+        );
     }
 
     #[test]

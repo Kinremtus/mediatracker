@@ -9,7 +9,7 @@
 //! All failures are non-fatal: the caller treats an empty result (or an `Err`)
 //! as "no official match".
 
-use crate::services::external::chapter_title::is_kr_bonus_title;
+use crate::services::external::chapter_title::{is_kr_bonus_title, strip_catalog_markers};
 use crate::services::external::official_meta::{self, ChapterMeta, OfficialMeta};
 use crate::services::official_types::OfficialHit;
 
@@ -116,23 +116,17 @@ fn href_product_no(tag: &str) -> Option<String> {
     (!digits.is_empty()).then_some(digits)
 }
 
-/// Strip tags, collapse runs of whitespace, then cut the ` (총 N화/…)` suffix.
+/// Strip tags, collapse runs of whitespace, then cut the ` (총 N화/…)` suffix
+/// and trailing catalog markers (`[독점]`, `(완결)`).
 fn clean_title(inner: &str) -> String {
-    let mut text = String::new();
-    let mut in_tag = false;
-    for c in inner.chars() {
-        match c {
-            '<' => in_tag = true,
-            '>' => in_tag = false,
-            _ if !in_tag => text.push(c),
-            _ => {}
-        }
-    }
-    let collapsed = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    match collapsed.find("(총 ") {
-        Some(i) => collapsed[..i].trim_end().to_string(),
-        None => collapsed,
-    }
+    let collapsed = official_meta::strip_tags(inner);
+    let cut = match collapsed.find("(총 ") {
+        Some(i) => collapsed[..i].trim_end(),
+        None => collapsed.as_str(),
+    };
+    // Catalog markers (`[독점]`, `(완결)`) are not part of the title and would
+    // defeat `titles_match` against the clean series title.
+    strip_catalog_markers(cut).to_string()
 }
 
 /// Fetch up to `NAVER_VOLUME_PAGES` volume pages, stopping at the first empty

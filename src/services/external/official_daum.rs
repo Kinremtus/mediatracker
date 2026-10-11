@@ -24,6 +24,13 @@ pub async fn fetch_meta(
     client: &reqwest::Client,
     content_id: &str,
 ) -> anyhow::Result<OfficialMeta> {
+    // The id lands in URL paths: only digits are ever valid.
+    if !official_meta::is_digit_id(content_id) {
+        return Ok(OfficialMeta {
+            source: "daum".to_string(),
+            ..OfficialMeta::default()
+        });
+    }
     let decorator =
         format!("https://gateway-kw.kakao.com/decorator/v1/decorator/contents/{content_id}");
     let body = client

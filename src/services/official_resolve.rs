@@ -23,8 +23,10 @@ pub fn official_source_for_media_type(media_type: &str) -> &'static [&'static st
     match media_type {
         // kuaikan is existing/cheap -> first; bilibili is quota-limited -> last.
         "manhua" => &["kuaikan", "bilibili"],
-        // kakao/naver existing; daum is the new bindable source; ridibooks last.
-        "manhwa" => &["kakao", "naver", "daum", "ridibooks"],
+        // kakao/naver existing; daum was dropped: the service merged into
+        // Kakao and its gateway API is token-gated (no guest search), so it can
+        // never bind; ridibooks last.
+        "manhwa" => &["kakao", "naver", "ridibooks"],
         // mangaplus existing; comicwalker/mangaup new; alphapolis last.
         "manga" => &["mangaplus", "comicwalker", "mangaup", "alphapolis"],
         // syosetu existing; kakuyomu new JP; qidian CN; ridibooks/alphapolis last.
@@ -510,7 +512,7 @@ mod tests {
         );
         assert_eq!(
             official_source_for_media_type("manhwa"),
-            &["kakao", "naver", "daum", "ridibooks"][..]
+            &["kakao", "naver", "ridibooks"][..]
         );
         assert_eq!(
             official_source_for_media_type("manga"),

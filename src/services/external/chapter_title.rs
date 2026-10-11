@@ -9,7 +9,10 @@
 //!
 //! Moved out of `official_bilibili` when kuaikan gained a fetcher: bilibili and
 //! kuaikan share the `第N话` + `（上）/（下）` + `N-M` dialect, naver/kakao the
-//! Korean `N화` one.
+//! Korean `N화` one. The KR search-title normalization helpers
+//! ([`strip_catalog_markers`], [`strip_kr_episode_suffix`]) live here too:
+//! naver and ridibooks use them to reduce a hit title to the bare series name
+//! so [`crate::services::official_title::titles_match`] can compare it.
 
 use std::collections::HashSet;
 
@@ -229,6 +232,80 @@ pub fn classify_kakao_title(raw: &str) -> ShortTitle {
     }
 }
 
+/// Catalog markers Korean stores append to a series title (`… [독점]`,
+/// `… (완결)`). They are not part of the title and must not defeat matching.
+const KR_CATALOG_MARKERS: &[&str] = &[
+    "독점",
+    "완결",
+    "무료",
+    "성인",
+    "개정판",
+    "단행본",
+    "독점연재",
+    "선연재",
+    "무료웹툰",
+    "최신화",
+];
+
+/// Strip trailing `[...]` / `(...)` segments whose inner text is a known
+/// catalog marker: `인류 최대의 실수 19화 (완결)` -> `… 19화`,
+/// `역대급 영지 설계사 [독점]` -> `역대급 영지 설계사`. Unknown bracketed text
+/// (`나루토 [2부]`) is kept — it may be part of the real title.
+pub fn strip_catalog_markers(raw: &str) -> &str {
+    let mut s = raw.trim_end();
+    loop {
+        let (inner, rest) = if let Some(stripped) = s.strip_suffix(']') {
+            match stripped.rfind('[') {
+                Some(i) => (&stripped[i + 1..], stripped[..i].trim_end()),
+                None => break,
+            }
+        } else if let Some(stripped) = s.strip_suffix(')') {
+            match stripped.rfind('(') {
+                Some(i) => (&stripped[i + 1..], stripped[..i].trim_end()),
+                None => break,
+            }
+        } else {
+            break;
+        };
+        if !KR_CATALOG_MARKERS.contains(&inner.trim()) {
+            break;
+        }
+        s = rest;
+    }
+    s
+}
+
+/// Strip a trailing episode/volume suffix (`… 1화`, `… 18권`) from a search
+/// hit so it can be compared with the series title. The digits must follow a
+/// space (or start the string) — `제1화` is a chapter title, not a series
+/// suffix.
+pub fn strip_kr_episode_suffix(raw: &str) -> &str {
+    let s = raw.trim_end();
+    for unit in ['화', '권'] {
+        let Some(stem) = s.strip_suffix(unit) else {
+            continue;
+        };
+        let stem = stem.trim_end();
+        let digits_start = stem
+            .char_indices()
+            .rev()
+            .take_while(|(_, c)| c.is_ascii_digit())
+            .last()
+            .map(|(i, _)| i)
+            .unwrap_or(stem.len());
+        let digits = &stem[digits_start..];
+        if digits.is_empty() || !digits.chars().all(|c| c.is_ascii_digit()) {
+            continue;
+        }
+        let before = &stem[..digits_start];
+        if !before.is_empty() && !before.ends_with(' ') {
+            continue;
+        }
+        return before.trim_end();
+    }
+    s
+}
+
 /// Oldest-first rows -> `ChapterMeta`. Numbering comes from the title, not the
 /// row position. A split part is its own tickable row (`479-1` -> 47901,
 /// `第533话（下）` -> 53302); the first sighting of a key is a main chapter,
@@ -375,6 +452,38 @@ mod tests {
         for title in ["1화", "1부-1화", "101화 (시즌2 마지막화)", "132화"] {
             assert!(!is_kr_bonus_title(title), "{title}");
         }
+    }
+
+    #[test]
+    fn strips_kr_catalog_markers_and_episode_suffix() {
+        assert_eq!(
+            strip_catalog_markers("인류 최대의 실수 19화 (완결)"),
+            "인류 최대의 실수 19화"
+        );
+        assert_eq!(
+            strip_catalog_markers("역대급 영지 설계사 [독점]"),
+            "역대급 영지 설계사"
+        );
+        assert_eq!(
+            strip_catalog_markers("역대급 영지 설계사 [독점][무료]"),
+            "역대급 영지 설계사"
+        );
+        // Unknown brackets are kept — they may be part of the real title.
+        assert_eq!(strip_catalog_markers("나루토 [2부]"), "나루토 [2부]");
+        assert_eq!(
+            strip_kr_episode_suffix("인류 최대의 실수 1화"),
+            "인류 최대의 실수"
+        );
+        assert_eq!(
+            strip_kr_episode_suffix("나 혼자만 레벨업 18권"),
+            "나 혼자만 레벨업"
+        );
+        // No space before the number -> a chapter title, not a series suffix.
+        assert_eq!(strip_kr_episode_suffix("제1화"), "제1화");
+        assert_eq!(
+            strip_kr_episode_suffix("인류 최대의 실수"),
+            "인류 최대의 실수"
+        );
     }
 
     #[test]

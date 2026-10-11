@@ -21,8 +21,8 @@ pub struct ChapterMeta {
     /// numbers, Korean `예고편`/`외전` markers). Set by every source that
     /// classifies titles through
     /// [`chapter_title`](crate::services::external::chapter_title) (bilibili,
-    /// kuaikan, kakao) or `is_kr_bonus_title` (naver); the remaining sources
-    /// report their plain numbered rows as `false`.
+    /// kuaikan, kakao, ridibooks) or `is_kr_bonus_title` (naver); the remaining
+    /// sources report their plain numbered rows as `false`.
     pub is_bonus: bool,
     /// Display label the source already knows (split parts `479-1`, from
     /// bilibili or kuaikan), stored verbatim into
@@ -129,6 +129,14 @@ pub const MAX_DETAIL_BYTES: u64 = 4 * 1024 * 1024;
 /// the ids that land in a fetcher's URL path or query string.
 pub fn is_digit_id(id: &str) -> bool {
     !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// The embedded `__NEXT_DATA__` JSON of a Next.js SSR page, starting at its
+/// opening `{`. `None` when the script tag or the JSON start is missing.
+pub fn next_data_str(html: &str) -> Option<&str> {
+    let seg = between(html, "__NEXT_DATA__", "</script>")?;
+    let start = seg.find('{')?;
+    Some(&seg[start..])
 }
 
 /// Return the substring strictly between `start` and the next `end` after it.

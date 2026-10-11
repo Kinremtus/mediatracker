@@ -447,7 +447,7 @@ fn mapping_table() {
     );
     assert_eq!(
         official_source_for_media_type("manhwa"),
-        &["kakao", "naver", "daum", "ridibooks"][..]
+        &["kakao", "naver", "ridibooks"][..]
     );
     assert_eq!(
         official_source_for_media_type("manga"),
@@ -603,8 +603,8 @@ async fn no_match_anywhere_binds_nothing() {
     assert_eq!(outcome, None);
     assert_eq!(
         calls.lock().unwrap().len(),
-        4,
-        "all four manhwa sources were tried once"
+        3,
+        "all three manhwa sources were tried once"
     );
     assert_eq!(
         get_source_id(&ctx.pool, "mangaupdates", &series, "naver")
