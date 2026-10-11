@@ -56,11 +56,7 @@ pub fn parse_detail(html: &str) -> OfficialMeta {
 /// Slice between `__NEXT_DATA__` and `</script>`, dropping the tag tail
 /// (` type="application/json">`) so the result starts at the opening `{`.
 fn next_data_json(html: &str) -> &str {
-    let seg = official_meta::between(html, "__NEXT_DATA__", "</script>").unwrap_or("");
-    match seg.find('{') {
-        Some(i) => &seg[i..],
-        None => "",
-    }
+    official_meta::next_data_str(html).unwrap_or("")
 }
 
 /// Episodes = Apollo objects with `__typename == "Episode"` carrying

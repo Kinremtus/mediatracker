@@ -14,6 +14,9 @@
 //!   `props.pageProps.data.titles[]` — 448 unique ids on the fixture page.
 //!   `titleId` doubles as the `/manga/{id}` path segment.
 
+use crate::services::external::chapter_title::{
+    EpisodeRow, ShortTitle, classify_mangaup_title, main_count, rows_to_chapters,
+};
 use crate::services::external::official_meta::{self, ChapterMeta, OfficialMeta};
 use crate::services::official_types::OfficialHit;
 
@@ -22,23 +25,31 @@ const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
 
 /// Detail page -> count/titles/dates (+ schedule keys when present).
 pub async fn fetch_meta(client: &reqwest::Client, manga_id: &str) -> anyhow::Result<OfficialMeta> {
+    // The id lands in the URL path: only digits are ever valid.
+    if !official_meta::is_digit_id(manga_id) {
+        return Ok(OfficialMeta {
+            source: "mangaup".to_string(),
+            ..OfficialMeta::default()
+        });
+    }
     let url = format!("https://global.manga-up.com/manga/{manga_id}");
-    let html = client
-        .get(&url)
-        .header(reqwest::header::USER_AGENT, UA)
-        .send()
-        .await?
-        .error_for_status()?
-        .text()
-        .await?;
+    let html = official_meta::body_capped(
+        client
+            .get(&url)
+            .header(reqwest::header::USER_AGENT, UA)
+            .send()
+            .await?
+            .error_for_status()?,
+        official_meta::MAX_DETAIL_BYTES,
+    )
+    .await?;
     Ok(parse_detail(&html))
 }
 
 /// `__NEXT_DATA__` script body trimmed to the first `{` (the tag's attribute
 /// tail would otherwise break `serde_json`). No marker -> `""`.
 fn page_json(html: &str) -> &str {
-    let seg = official_meta::between(html, "__NEXT_DATA__", "</script>").unwrap_or("");
-    seg.find('{').map(|i| &seg[i..]).unwrap_or("")
+    official_meta::next_data_str(html).unwrap_or("")
 }
 
 /// Parse the detail page; any malformed/missing payload degrades to an empty
@@ -56,10 +67,11 @@ pub fn parse_detail(html: &str) -> OfficialMeta {
         .and_then(|s| official_meta::parse_date(&s));
 
     let chapters = parse_chapters(&value);
+    let count = main_count(&chapters);
 
     OfficialMeta {
         source: "mangaup".to_string(),
-        count: (!chapters.is_empty()).then_some(chapters.len() as i32),
+        count: (count > 0).then_some(count as i32),
         chapters,
         update_schedule,
         next_update_at,
@@ -91,16 +103,18 @@ pub fn parse_chapters(value: &serde_json::Value) -> Vec<ChapterMeta> {
         })
         .collect();
     rows.reverse(); // newest-first payload -> oldest-first storage
-    rows.into_iter()
-        .enumerate()
-        .map(|(i, (title, release_date))| ChapterMeta {
-            number_x100: ((i + 1) * 100) as i32,
+    let episodes: Vec<EpisodeRow> = rows
+        .into_iter()
+        .map(|(title, release_date)| EpisodeRow {
+            kind: title
+                .as_deref()
+                .map(classify_mangaup_title)
+                .unwrap_or(ShortTitle::Unnumbered),
             title,
             release_date,
-            is_bonus: false,
-            label: None,
         })
-        .collect()
+        .collect();
+    rows_to_chapters(episodes)
 }
 
 /// Fixture dates are US-style `"Dec 03, 2025"`; fall back to the generic
@@ -115,14 +129,16 @@ fn parse_published(raw: &str) -> Option<chrono::NaiveDate> {
 pub async fn search(client: &reqwest::Client, title: &str) -> anyhow::Result<Vec<OfficialHit>> {
     let mut url = url::Url::parse("https://global.manga-up.com/search")?;
     url.query_pairs_mut().append_pair("q", title);
-    let html = client
-        .get(url)
-        .header(reqwest::header::USER_AGENT, UA)
-        .send()
-        .await?
-        .error_for_status()?
-        .text()
-        .await?;
+    let html = official_meta::body_capped(
+        client
+            .get(url)
+            .header(reqwest::header::USER_AGENT, UA)
+            .send()
+            .await?
+            .error_for_status()?,
+        official_meta::MAX_DETAIL_BYTES,
+    )
+    .await?;
     Ok(parse_search(&html))
 }
 
@@ -163,14 +179,28 @@ mod tests {
         let m = parse_detail(html);
         assert_eq!(m.source, "mangaup");
         assert_eq!(m.chapters.len(), 66, "fixture carries 66 chapters");
-        assert_eq!(m.count, Some(66));
+        // `count` is the highest main base (`Chapter 25.5` is a part of 25),
+        // not the row count.
+        assert_eq!(m.count, Some(25));
+        assert_eq!(main_count(&m.chapters), 25);
         // Oldest first after the reverse.
         assert_eq!(m.chapters[0].title.as_deref(), Some("Chapter 1"));
         assert_eq!(
             m.chapters[0].release_date.map(|d| d.to_string()).as_deref(),
             Some("2022-07-01")
         );
+        assert_eq!(m.chapters[0].number_x100, 100);
+        // A split part keeps its own number: `Chapter 10.1` -> 1001.
+        assert!(
+            m.chapters
+                .iter()
+                .any(|c| c.number_x100 == 1001 && c.label.as_deref() == Some("10-1"))
+        );
+        // The newest row is `Chapter 25.5` -> Part(25, 5), not chapter 66.
         assert_eq!(m.chapters[65].title.as_deref(), Some("Chapter 25.5"));
+        assert_eq!(m.chapters[65].number_x100, 2505);
+        assert_eq!(m.chapters[65].label.as_deref(), Some("25-5"));
+        assert!(!m.chapters[65].is_bonus);
         assert_eq!(
             m.chapters[65]
                 .release_date
@@ -178,13 +208,8 @@ mod tests {
                 .as_deref(),
             Some("2025-12-03")
         );
-        // Sequential numbering 1..=66 (number_x100 = n * 100).
-        assert!(
-            m.chapters
-                .iter()
-                .enumerate()
-                .all(|(i, c)| c.number_x100 == ((i + 1) * 100) as i32)
-        );
+        // Every fixture row is a numbered chapter (no bonus markers).
+        assert!(m.chapters.iter().all(|c| !c.is_bonus));
         // No schedule keys in this payload — nothing is invented.
         assert!(m.update_schedule.is_none());
         assert!(m.next_update_at.is_none());

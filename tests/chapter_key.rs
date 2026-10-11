@@ -62,12 +62,11 @@ async fn no_bindings_keeps_mu_key() {
 
 #[tokio::test]
 async fn meta_less_source_is_filtered_out() {
-    // manga chain is ["mangaplus", "comicwalker", "mangaup", "alphapolis"], but
-    // mangaplus has no fetch_source arm -> Ok(default), so the key must not
-    // point at it.
+    // `mh5` is a real binding with no fetch_source arm -> Ok(default), so the
+    // key must not point at it; the meta-capable comicwalker wins instead.
     let ctx = setup().await;
     add_media_item(&ctx, "900000003", "manga").await;
-    bind(&ctx, "900000003", "mangaplus", "mp-1").await;
+    bind(&ctx, "900000003", "mh5", "mh-1").await;
     bind(&ctx, "900000003", "comicwalker", "cw-1").await;
 
     let (provider, external_id) = chapter_key(&ctx.pool, "mangaupdates", "900000003").await;
@@ -79,11 +78,25 @@ async fn meta_less_source_is_filtered_out() {
 async fn only_meta_less_binding_keeps_mu_key() {
     let ctx = setup().await;
     add_media_item(&ctx, "900000004", "manga").await;
-    bind(&ctx, "900000004", "mangaplus", "mp-2").await;
+    bind(&ctx, "900000004", "mh5", "mh-2").await;
 
     let (provider, external_id) = chapter_key(&ctx.pool, "mangaupdates", "900000004").await;
     assert_eq!(provider, "mangaupdates");
     assert_eq!(external_id, "900000004");
+}
+
+#[tokio::test]
+async fn chain_order_prefers_mangaplus_for_manga() {
+    // mangaplus gained its fetch arm after migration 028 and is first in the
+    // manga chain, so it must win over comicwalker now.
+    let ctx = setup().await;
+    add_media_item(&ctx, "900000012", "manga").await;
+    bind(&ctx, "900000012", "comicwalker", "cw-2").await;
+    bind(&ctx, "900000012", "mangaplus", "mp-3").await;
+
+    let (provider, external_id) = chapter_key(&ctx.pool, "mangaupdates", "900000012").await;
+    assert_eq!(provider, "mangaplus");
+    assert_eq!(external_id, "mp-3");
 }
 
 #[tokio::test]
@@ -198,6 +211,7 @@ fn sources_with_meta_matches_fetch_source_arms() {
         "mangaup",
         "kuaikan",
         "kakao",
+        "mangaplus",
     ];
 
     let mut arms: Vec<&str> = FETCH_SOURCE_ARMS.to_vec();
@@ -206,11 +220,9 @@ fn sources_with_meta_matches_fetch_source_arms() {
     with_meta.sort_unstable();
     assert_eq!(with_meta, arms);
 
-    // mangaplus has no arm -> Ok(default) -> must stay out.
-    assert!(
-        !SOURCES_WITH_META.contains(&"mangaplus"),
-        "mangaplus has no fetch arm"
-    );
+    // A source without a fetch arm must stay out (a binding to it keeps the
+    // chapters on the MU key).
+    assert!(!SOURCES_WITH_META.contains(&"mh5"), "mh5 has no fetch arm");
 }
 
 #[test]
@@ -225,7 +237,7 @@ fn global_source_order_has_the_same_set_as_supports_meta() {
 #[test]
 fn global_source_order_mirrors_migration_028_ranks() {
     // migrations/028_chapter_ownership.sql `supports_meta` global_rank order,
-    // with kuaikan and kakao appended (their fetch arms landed after that
+    // with kuaikan/kakao/mangaplus appended (their fetch arms landed after that
     // migration).
     assert_eq!(
         GLOBAL_SOURCE_ORDER,
@@ -241,7 +253,8 @@ fn global_source_order_mirrors_migration_028_ranks() {
             "kakuyomu",
             "qidian",
             "kuaikan",
-            "kakao"
+            "kakao",
+            "mangaplus"
         ]
     );
 }

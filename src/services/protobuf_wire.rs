@@ -3,7 +3,7 @@
 //! Only the bits needed to read nested length-delimited messages out of an
 //! upstream response: varint, length-delimited, fixed32 and fixed64. No
 //! `prost`, no `protoc`, no external crate - the same idea as the vendored
-//! MD5 helper in `chapter_count/mangaplus.rs`.
+//! MD5 helper in `external/official_mangaplus.rs`.
 
 /// A single decoded wire value.
 #[derive(Debug, PartialEq, Eq)]

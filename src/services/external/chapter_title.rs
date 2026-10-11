@@ -1,15 +1,17 @@
 //! Shared chapter-title classification for the meta-capable official sources.
 //!
 //! Sources report chapter numbers as free-form titles: Chinese `281`,
-//! `第533话`, `479-2`, `第533话（下）` and Korean `132화`. The classifiers here
-//! turn one title into a [`ShortTitle`]; [`rows_to_chapters`] then maps an
-//! oldest-first row list onto [`ChapterMeta`] rows (the first sighting of a key
-//! is a main chapter, every repeat a bonus duplicate) and [`main_count`]
-//! derives the chapter count from the highest main base.
+//! `第533话`, `479-2`, `第533话（下）`, Korean `132화`, Japanese `第1話`/
+//! `第9話-1`/`第2話前編`, Manga UP! `Chapter 25.5` and MangaPlus `#143`. The
+//! classifiers here turn one title into a [`ShortTitle`]; [`rows_to_chapters`]
+//! then maps an oldest-first row list onto [`ChapterMeta`] rows (the first
+//! sighting of a key is a main chapter, every repeat a bonus duplicate) and
+//! [`main_count`] derives the chapter count from the highest main base.
 //!
 //! Moved out of `official_bilibili` when kuaikan gained a fetcher: bilibili and
 //! kuaikan share the `第N话` + `（上）/（下）` + `N-M` dialect, naver/kakao the
-//! Korean `N화` one. The KR search-title normalization helpers
+//! Korean `N화` one, comicwalker/alphapolis the Japanese `第N話`/`第N回` one and
+//! mangaup the `Chapter N.M` one. The KR search-title normalization helpers
 //! ([`strip_catalog_markers`], [`strip_kr_episode_suffix`]) live here too:
 //! naver and ridibooks use them to reduce a hit title to the bare series name
 //! so [`crate::services::official_title::titles_match`] can compare it.
@@ -143,10 +145,7 @@ pub fn classify_short_title(raw: &str) -> ShortTitle {
     let (head, part) = strip_part_markers(raw);
     // A marker only refines a plain number; if the number already carries its
     // own part (`479-1（下）`) that part wins.
-    match (classify_number(head), part) {
-        (ShortTitle::Base(n), Some(p)) => ShortTitle::Part(n, p),
-        (other, _) => other,
-    }
+    with_part(classify_number(head), part)
 }
 
 /// Kuaikan titles read `第N话 <own title>（上）/（下）`: the number comes first,
@@ -161,7 +160,154 @@ pub fn classify_kuaikan_title(raw: &str) -> ShortTitle {
     }
     // No `第N话` prefix: the generic classifier handles plain numbers, dash
     // parts and fractional specials (the markers are already stripped).
-    match (classify_number(head), part) {
+    with_part(classify_number(head), part)
+}
+
+/// MangaPlus app rows carry `#NNN` names for numbered chapters; anything else
+/// (`ex`) is a bonus row, whose own label lives in the row's `subTitle`.
+pub fn classify_mangaplus_name(name: Option<&str>) -> ShortTitle {
+    let Some(raw) = name else {
+        return ShortTitle::Unnumbered;
+    };
+    let Some(digits) = raw.trim().strip_prefix('#') else {
+        return ShortTitle::Unnumbered;
+    };
+    match digits.trim().parse::<i32>() {
+        Ok(n) if n >= 1 => ShortTitle::Base(n),
+        _ => ShortTitle::Unnumbered,
+    }
+}
+
+/// Japanese manga episode titles: `第N話` / `第N回`, split releases
+/// (`第11話前編①`, `第16話後編`, `第10話①`, `第9話-1`) and bonus/extra content
+/// (`第0話`, プロローグ, 番外編, 特別編, 外伝, 読切, おまけ, 特典, 限定).
+///
+/// Split parts are keyed `N*100 + p` (see [`rows_to_chapters`]): a half is
+/// `10`/`20` (`前編`/`後編`) plus a circled sub-part number, so
+/// `第11話前編①` -> `11*100 + 11`. Titles without a `第N話/回` marker fall back
+/// to the generic classifier (plain numbers, dash parts).
+pub fn classify_jp_title(raw: &str) -> ShortTitle {
+    let s = raw.trim();
+    if is_jp_bonus_title(s) {
+        return ShortTitle::Unnumbered;
+    }
+    if let Some((n, rest)) = parse_jp_number(s) {
+        return match jp_part_index(rest) {
+            Some(p) => ShortTitle::Part(n, p),
+            None => ShortTitle::Base(n),
+        };
+    }
+    classify_number(s)
+}
+
+/// Japanese side-content markers (substring match, same trade-off as the KR
+/// list): a rare main episode that mentions one is folded into bonuses rather
+/// than lost.
+pub fn is_jp_bonus_title(title: &str) -> bool {
+    [
+        "プロローグ",
+        "エピローグ",
+        "番外編",
+        "番外",
+        "特別編",
+        "外伝",
+        "読切",
+        "おまけ",
+        "特典",
+        "限定",
+    ]
+    .iter()
+    .any(|marker| title.contains(marker))
+}
+
+/// `第N話` / `第N回` -> `Some((N, tail))` for `N >= 1`; ASCII and full-width
+/// digits are accepted (`第１回`). `第0話` yields `None` (a bonus row).
+fn parse_jp_number(s: &str) -> Option<(i32, &str)> {
+    let rest = s.strip_prefix('第')?;
+    let mut end = 0usize;
+    let mut value = 0i32;
+    for (i, c) in rest.char_indices() {
+        let digit = match c {
+            '0'..='9' => (c as u8 - b'0') as i32,
+            '０'..='９' => (c as u32 - '０' as u32) as i32,
+            _ => break,
+        };
+        value = value.saturating_mul(10).saturating_add(digit);
+        end = i + c.len_utf8();
+    }
+    if end == 0 || value < 1 {
+        return None;
+    }
+    let after = &rest[end..];
+    let tail = after
+        .strip_prefix('話')
+        .or_else(|| after.strip_prefix('话'))
+        .or_else(|| after.strip_prefix('回'))?;
+    Some((value, tail))
+}
+
+/// Split-part index for the text after `第N話`: `-M` dash (`第9話-1`), `前編`
+/// (10) / `後編` (20), plus a circled sub-part number (`①` -> 1). `None` for a
+/// plain chapter.
+fn jp_part_index(rest: &str) -> Option<i32> {
+    let t = rest.trim_start();
+    if let Some(after) = t.strip_prefix('-') {
+        let digits: String = after.chars().take_while(|c| c.is_ascii_digit()).collect();
+        if let Ok(p) = digits.parse::<i32>()
+            && (1..=99).contains(&p)
+        {
+            return Some(p);
+        }
+    }
+    let mut part = 0i32;
+    if t.contains("前編") {
+        part += 10;
+    } else if t.contains("後編") {
+        part += 20;
+    }
+    part += circled_number(t).unwrap_or(0);
+    (part > 0).then_some(part)
+}
+
+/// Circled digit `①`..`⑳` (U+2460..U+2473) -> `1..=20`.
+fn circled_number(s: &str) -> Option<i32> {
+    s.chars().find_map(|c| {
+        let v = c as u32;
+        (0x2460..=0x2473)
+            .contains(&v)
+            .then_some((v - 0x2460 + 1) as i32)
+    })
+}
+
+/// Manga UP! episode titles: `Chapter N` and `Chapter N.M` split parts;
+/// anything else (`Final`, `Special`, `Prologue`, `Bonus`, `Side Story`, …)
+/// is unnumbered bonus content. A subtitle after the number is ignored.
+pub fn classify_mangaup_title(raw: &str) -> ShortTitle {
+    let Some(rest) = raw.trim().strip_prefix("Chapter ") else {
+        return ShortTitle::Unnumbered;
+    };
+    let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+    let Ok(n) = digits.parse::<i32>() else {
+        return ShortTitle::Unnumbered;
+    };
+    if n < 1 {
+        return ShortTitle::Unnumbered;
+    }
+    let after = &rest[digits.len()..];
+    if let Some(frac) = after.strip_prefix('.') {
+        let part_digits: String = frac.chars().take_while(|c| c.is_ascii_digit()).collect();
+        return match part_digits.parse::<i32>() {
+            Ok(p) if (1..=99).contains(&p) => ShortTitle::Part(n, p),
+            _ => ShortTitle::Unnumbered,
+        };
+    }
+    ShortTitle::Base(n)
+}
+
+/// Apply a stripped part marker to a plain base number: `(Base(n), Some(p))`
+/// becomes `Part(n, p)`; every other classification is returned unchanged.
+fn with_part(kind: ShortTitle, part: Option<i32>) -> ShortTitle {
+    match (kind, part) {
         (ShortTitle::Base(n), Some(p)) => ShortTitle::Part(n, p),
         (other, _) => other,
     }
@@ -484,6 +630,76 @@ mod tests {
             strip_kr_episode_suffix("인류 최대의 실수"),
             "인류 최대의 실수"
         );
+    }
+
+    #[test]
+    fn classify_mangaplus_names() {
+        let c = classify_mangaplus_name;
+        assert_eq!(c(Some("#001")), ShortTitle::Base(1));
+        assert_eq!(c(Some("#143")), ShortTitle::Base(143));
+        assert_eq!(c(Some(" #7 ")), ShortTitle::Base(7));
+        // Bonus rows and anything unnumbered.
+        for raw in [Some("ex"), Some("#0"), Some("Chapter 1"), None] {
+            assert_eq!(c(raw), ShortTitle::Unnumbered, "{raw:?}");
+        }
+    }
+
+    #[test]
+    fn classify_jp_titles() {
+        let c = classify_jp_title;
+        // Plain and full-width numbers.
+        assert_eq!(c("第1話"), ShortTitle::Base(1));
+        assert_eq!(c("第１２回"), ShortTitle::Base(12));
+        assert_eq!(c("第16話前編"), ShortTitle::Part(16, 10));
+        assert_eq!(c("第16話後編"), ShortTitle::Part(16, 20));
+        // Circled sub-parts and the combined `前編①` form.
+        assert_eq!(c("第10話①"), ShortTitle::Part(10, 1));
+        assert_eq!(c("第10話④"), ShortTitle::Part(10, 4));
+        assert_eq!(c("第11話前編①"), ShortTitle::Part(11, 11));
+        assert_eq!(c("第11話後編③"), ShortTitle::Part(11, 23));
+        // Dash split release.
+        assert_eq!(c("第9話-1"), ShortTitle::Part(9, 1));
+        // An own-title tail does not disturb the number.
+        assert_eq!(c("第1話 オープニング・アゲイン"), ShortTitle::Base(1));
+        // Prologue / extras are unnumbered bonuses.
+        for raw in [
+            "第0話",
+            "第0回",
+            "プロローグ",
+            "エピローグ",
+            "番外編",
+            "特別編",
+            "外伝",
+        ] {
+            assert_eq!(c(raw), ShortTitle::Unnumbered, "{raw:?}");
+        }
+        // No `第N話` marker: the generic fallback still handles plain numbers.
+        assert_eq!(c("5"), ShortTitle::Base(5));
+    }
+
+    #[test]
+    fn classify_mangaup_titles() {
+        let c = classify_mangaup_title;
+        assert_eq!(c("Chapter 1"), ShortTitle::Base(1));
+        assert_eq!(c("Chapter 25"), ShortTitle::Base(25));
+        // Split parts keep their fractional number.
+        assert_eq!(c("Chapter 10.1"), ShortTitle::Part(10, 1));
+        assert_eq!(c("Chapter 25.5"), ShortTitle::Part(25, 5));
+        // A subtitle after the number is ignored.
+        assert_eq!(c("Chapter 3: The Beginning"), ShortTitle::Base(3));
+        // Bonus markers and unnumbered rows.
+        for raw in [
+            "Final",
+            "Special",
+            "Prologue",
+            "Bonus",
+            "Side Story",
+            "Omake",
+            "",
+        ] {
+            assert_eq!(c(raw), ShortTitle::Unnumbered, "{raw:?}");
+        }
+        assert_eq!(c("Chapter 0"), ShortTitle::Unnumbered);
     }
 
     #[test]

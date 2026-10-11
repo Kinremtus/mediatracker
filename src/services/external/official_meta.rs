@@ -18,16 +18,16 @@ pub struct ChapterMeta {
     pub title: Option<String>,
     pub release_date: Option<NaiveDate>,
     /// True for bonus rows (`00` prologues, non-numeric specials, repeated
-    /// numbers, Korean `예고편`/`외전` markers). Set by every source that
-    /// classifies titles through
+    /// numbers, Korean `예고편`/`외전`, Japanese `番外編`/`特別編`, MangaPlus `ex`
+    /// rows). Set by every source that classifies titles through
     /// [`chapter_title`](crate::services::external::chapter_title) (bilibili,
-    /// kuaikan, kakao, ridibooks) or `is_kr_bonus_title` (naver); the remaining
-    /// sources report their plain numbered rows as `false`.
+    /// kuaikan, kakao, ridibooks, mangaplus, comicwalker, mangaup, alphapolis)
+    /// or `is_kr_bonus_title` (naver); the remaining sources report their plain
+    /// numbered rows as `false`.
     pub is_bonus: bool,
-    /// Display label the source already knows (split parts `479-1`, from
-    /// bilibili or kuaikan), stored verbatim into
-    /// `series_chapters.chapter_label` by `apply_meta`. `None` lets
-    /// `apply_meta` derive one (fractional number / counter).
+    /// Display label the source already knows (split parts `479-1`, `2-1`),
+    /// stored verbatim into `series_chapters.chapter_label` by `apply_meta`.
+    /// `None` lets `apply_meta` derive one (fractional number / counter).
     pub label: Option<String>,
 }
 
@@ -61,11 +61,13 @@ impl ChapterMeta {
 }
 
 /// Sources with a real arm in `fetch_source` (each source here has a working fetch).
-/// mangaplus is intentionally absent: it has no arm -> Ok(default) (empty response).
-/// `kuaikan` and `kakao` gained their arms after
-/// `migrations/028_chapter_ownership.sql`; the `supports_meta` list in that
-/// migration is a frozen one-time-backfill snapshot, so this runtime list is
-/// the source of truth for `chapter_key` and the resolve walk.
+/// Every chained source is meta-capable today; the list still guards against a
+/// future arm-less source (such a binding must keep `chapter_key` on the MU key
+/// instead of pointing at rows no fetch ever writes).
+/// `kuaikan`, `kakao` and `mangaplus` gained their arms after
+/// `migrations/028_chapter_ownership.sql`; that migration's `supports_meta`
+/// list is a frozen one-time-backfill snapshot, so this runtime list is the
+/// source of truth for `chapter_key` and the resolve walk.
 pub const SOURCES_WITH_META: &[&str] = &[
     "bilibili",
     "naver",
@@ -79,6 +81,7 @@ pub const SOURCES_WITH_META: &[&str] = &[
     "qidian",
     "kuaikan",
     "kakao",
+    "mangaplus",
 ];
 
 /// Fetch one source's detail, dispatched by the binding name. Unknown/absent
@@ -106,6 +109,9 @@ pub async fn fetch_source(
         "kuaikan" => {
             crate::services::external::official_kuaikan::fetch_meta(client, source_id).await
         }
+        // MangaPlus needs the app registration handshake, so it builds its own
+        // client instead of taking the shared one.
+        "mangaplus" => crate::services::external::official_mangaplus::fetch_meta(source_id).await,
         "kakao" => crate::services::external::official_kakao::fetch_meta(client, source_id).await,
         "daum" => crate::services::external::official_daum::fetch_meta(client, source_id).await,
         "qidian" => crate::services::external::official_qidian::fetch_meta(client, source_id).await,
@@ -129,6 +135,34 @@ pub const MAX_DETAIL_BYTES: u64 = 4 * 1024 * 1024;
 /// the ids that land in a fetcher's URL path or query string.
 pub fn is_digit_id(id: &str) -> bool {
     !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// True when a bound source id is safe to embed in a URL path: non-empty, at
+/// most 64 chars, and only ASCII alphanumerics, `_` or `-` (Comic Walker work
+/// codes look like `KC_000001_S`).
+pub fn is_safe_path_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 64
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+
+/// Read a response body with a hard size cap: `content_length` is checked
+/// before buffering, the bytes actually read afterwards. Chunked responses
+/// carry no `content_length` and stay bounded only by the shared client
+/// timeout. The body is decoded lossily as UTF-8.
+pub async fn body_capped(resp: reqwest::Response, cap: u64) -> anyhow::Result<String> {
+    if let Some(len) = resp.content_length()
+        && len > cap
+    {
+        anyhow::bail!("response too large: {len} bytes (cap {cap})");
+    }
+    let bytes = resp.bytes().await?;
+    if bytes.len() as u64 > cap {
+        anyhow::bail!("response too large: {} bytes (cap {cap})", bytes.len());
+    }
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
 /// The embedded `__NEXT_DATA__` JSON of a Next.js SSR page, starting at its

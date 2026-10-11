@@ -438,8 +438,8 @@ pub async fn enrich_official_meta_with(
             }
         };
         if !is_useful_meta(&meta) {
-            // Empty answer != success: keep walking the chain (mangaplus has
-            // no arm in `fetch_source` and always lands here).
+            // Empty answer != success: keep walking the chain (an unknown
+            // source name has no arm in `fetch_source` and lands here).
             tracing::debug!(
                 provider,
                 external_id,

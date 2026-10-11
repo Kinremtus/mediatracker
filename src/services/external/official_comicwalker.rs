@@ -4,16 +4,22 @@
 //! as several *duplicate* lists: `firstEpisodes.result` (oldest -> newest),
 //! `latestEpisodes.result` (newest -> oldest) and one-element
 //! `firstComic.episodes` / `comics.result[n].episodes` lists. The episode key
-//! is `title` (the plan's candidate `episodeTitle` never appears). A
-//! string-scan would therefore emit 145 rows for 71 real episodes, so the
-//! parser fully parses the embedded JSON (`serde_json`, allowed for embedded
-//! JSON) and keeps the *longest* array whose items carry `title`/`updateDate`,
-//! then sorts rows by date (undated rows last) and numbers them 1..N.
+//! is `title` (the plan's candidate `episodeTitle` never appears; it is still
+//! accepted as a fallback). A string-scan would therefore emit 145 rows for 71
+//! real episodes, so the parser fully parses the embedded JSON (`serde_json`,
+//! allowed for embedded JSON) and keeps the *longest* array whose items carry
+//! `title`/`updateDate`, sorts rows by date (undated rows last), classifies
+//! each title with the shared JP classifier (parts `第9話-1`/前編/後編,
+//! bonuses `第0話`/番外編/特別編/外伝/読切/おまけ/特典) and counts main chapters
+//! only.
 //!
 //! `nextUpdateDateText` (the guaranteed anchor) is absent on the captured
 //! fixture, so `next_update_at` degrades to `None`. Search parses the SSR
 //! `__NEXT_DATA__` work items keyed by `workCode`.
 
+use crate::services::external::chapter_title::{
+    EpisodeRow, ShortTitle, classify_jp_title, main_count, rows_to_chapters,
+};
 use crate::services::external::official_meta::{self, ChapterMeta, OfficialMeta};
 use crate::services::official_types::OfficialHit;
 
@@ -22,15 +28,23 @@ const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
 
 /// GET `https://comic-walker.com/detail/<work_code>` and parse the SSR page.
 pub async fn fetch_meta(client: &reqwest::Client, work_code: &str) -> anyhow::Result<OfficialMeta> {
+    if !official_meta::is_safe_path_id(work_code) {
+        return Ok(OfficialMeta {
+            source: "comicwalker".to_string(),
+            ..OfficialMeta::default()
+        });
+    }
     let url = format!("https://comic-walker.com/detail/{work_code}");
-    let html = client
-        .get(&url)
-        .header(reqwest::header::USER_AGENT, UA)
-        .send()
-        .await?
-        .error_for_status()?
-        .text()
-        .await?;
+    let html = official_meta::body_capped(
+        client
+            .get(&url)
+            .header(reqwest::header::USER_AGENT, UA)
+            .send()
+            .await?
+            .error_for_status()?,
+        official_meta::MAX_DETAIL_BYTES,
+    )
+    .await?;
     Ok(parse_detail(&html))
 }
 
@@ -41,9 +55,10 @@ pub fn parse_detail(html: &str) -> OfficialMeta {
     let chapters = parse_episodes(next_data);
     let next_update_at = official_meta::json_string_field(next_data, "nextUpdateDateText")
         .and_then(|s| official_meta::parse_date(&s));
+    let count = main_count(&chapters);
     OfficialMeta {
         source: "comicwalker".to_string(),
-        count: (!chapters.is_empty()).then_some(chapters.len() as i32),
+        count: (count > 0).then_some(count as i32),
         chapters,
         update_schedule: None,
         next_update_at,
@@ -53,11 +68,7 @@ pub fn parse_detail(html: &str) -> OfficialMeta {
 /// Slice between `__NEXT_DATA__` and `</script>`, dropping the tag tail
 /// (` type="application/json">`) so the result starts at the opening `{`.
 fn next_data_json(html: &str) -> &str {
-    let seg = official_meta::between(html, "__NEXT_DATA__", "</script>").unwrap_or("");
-    match seg.find('{') {
-        Some(i) => &seg[i..],
-        None => "",
-    }
+    official_meta::next_data_str(html).unwrap_or("")
 }
 
 /// Parse the episode list out of the `__NEXT_DATA__` JSON. Picks the longest
@@ -80,16 +91,18 @@ pub fn parse_episodes(json: &str) -> Vec<ChapterMeta> {
         (None, Some(_)) => std::cmp::Ordering::Greater,
         (None, None) => std::cmp::Ordering::Equal,
     });
-    rows.into_iter()
-        .enumerate()
-        .map(|(i, (title, release_date))| ChapterMeta {
-            number_x100: ((i + 1) * 100) as i32,
+    let episodes: Vec<EpisodeRow> = rows
+        .into_iter()
+        .map(|(title, release_date)| EpisodeRow {
+            kind: title
+                .as_deref()
+                .map(classify_jp_title)
+                .unwrap_or(ShortTitle::Unnumbered),
             title,
             release_date,
-            is_bonus: false,
-            label: None,
         })
-        .collect()
+        .collect();
+    rows_to_chapters(episodes)
 }
 
 /// Depth-first walk over the JSON tree, collecting every array whose first
@@ -157,14 +170,16 @@ fn parse_update_date(raw: &str) -> Option<chrono::NaiveDate> {
 pub async fn search(client: &reqwest::Client, title: &str) -> anyhow::Result<Vec<OfficialHit>> {
     let mut url = url::Url::parse("https://comic-walker.com/search")?;
     url.query_pairs_mut().append_pair("keyword", title);
-    let html = client
-        .get(url)
-        .header(reqwest::header::USER_AGENT, UA)
-        .send()
-        .await?
-        .error_for_status()?
-        .text()
-        .await?;
+    let html = official_meta::body_capped(
+        client
+            .get(url)
+            .header(reqwest::header::USER_AGENT, UA)
+            .send()
+            .await?
+            .error_for_status()?,
+        official_meta::MAX_DETAIL_BYTES,
+    )
+    .await?;
     Ok(parse_search(&html))
 }
 
@@ -202,9 +217,22 @@ mod tests {
         let html = include_str!("../../../tests/fixtures/comicwalker_detail.html");
         let m = parse_detail(html);
         assert_eq!(m.source, "comicwalker");
-        // One 71-episode list wins over the duplicated first/latest views.
+        // One 71-episode list wins over the duplicated first/latest views. The
+        // split rows stay tickable parts; the two unnumbered rows (`第0話` /
+        // extras) fold into the bonus section.
         assert_eq!(m.chapters.len(), 71);
-        assert_eq!(m.count, Some(71));
+        assert_eq!(m.chapters.iter().filter(|c| !c.is_bonus).count(), 69);
+        assert_eq!(m.chapters.iter().filter(|c| c.is_bonus).count(), 2);
+        // `count` is the highest main base, not the row count: parts collapse
+        // into their chapter (`第11話前編①` is a part of chapter 11).
+        assert_eq!(m.count, Some(18));
+        assert_eq!(main_count(&m.chapters), 18);
+        // A split part carries a `N*100 + p` key and an `N-p` label.
+        assert!(
+            m.chapters
+                .iter()
+                .any(|c| c.number_x100 == 1111 && c.label.as_deref() == Some("11-11"))
+        );
         // Oldest-first numbering: the fixture's first row is dated.
         assert_eq!(m.chapters[0].number_x100, 100);
         assert!(m.chapters[0].release_date.is_some());
@@ -221,14 +249,17 @@ mod tests {
 
     #[test]
     fn sorts_newest_first_list_ascending() {
-        // A single newest-first list must still come out oldest-first.
-        let json = r#"{"latest":[{"title":"B","updateDate":"2024-05-01"},
-                      {"title":"A","updateDate":"2023-01-01"}]}"#;
+        // A single newest-first list must still come out oldest-first, and the
+        // split markers must survive the sort (`第2話 後編` -> Part(2, 20)).
+        let json = r#"{"latest":[{"title":"第2話 後編","updateDate":"2024-05-01"},
+                      {"title":"第1話","updateDate":"2023-01-01"}]}"#;
         let rows = parse_episodes(json);
         assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0].title.as_deref(), Some("A"));
-        assert_eq!(rows[1].title.as_deref(), Some("B"));
-        assert_eq!(rows[1].number_x100, 200);
+        assert_eq!(rows[0].title.as_deref(), Some("第1話"));
+        assert_eq!(rows[0].number_x100, 100);
+        assert_eq!(rows[1].title.as_deref(), Some("第2話 後編"));
+        assert_eq!(rows[1].number_x100, 220);
+        assert_eq!(rows[1].label.as_deref(), Some("2-20"));
     }
 
     #[test]

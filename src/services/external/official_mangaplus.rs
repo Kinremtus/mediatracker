@@ -1,14 +1,13 @@
-//! MangaPlus (official app API) client: device registration, chapter count and
-//! the full browse catalog.
+//! MangaPlus (official app API) client: device registration, the full chapter
+//! list / chapter count and the browse catalog.
 //!
 //! The MANGA Plus app talks protobuf over HTTPS and authenticates with a
 //! `device_secret` obtained from `PUT /api/register`. The response bodies are
 //! decoded with the vendored [`crate::services::protobuf_wire`] parser so no
 //! `prost`/`protoc` dependency is pulled in.
-//!
-//! This module is intentionally not registered in `external/mod.rs` yet
-//! (task 2.5 wires it in).
 
+use crate::services::external::chapter_title::{self, EpisodeRow, ShortTitle, main_count};
+use crate::services::external::official_meta::{self, OfficialMeta};
 use crate::services::official_types::OfficialHit;
 use crate::services::protobuf_wire::{WireValue, field_values, message_field};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -34,10 +33,10 @@ pub const OS_VER: &str = "35";
 /// How long a catalog snapshot stays fresh before a refetch.
 const CATALOG_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 
-/// Hard cap on a single catalog response body (4 MiB). The real response is
+/// Hard cap on a single catalog response body. The real response is
 /// ~450 KiB; the cap defends against a misbehaving upstream streaming
 /// gigabytes through `Bytes::collect`.
-const MAX_CATALOG_BYTES: u64 = 4 * 1024 * 1024;
+const MAX_CATALOG_BYTES: u64 = official_meta::MAX_DETAIL_BYTES;
 
 /// Cached catalog snapshot plus the instant it was fetched.
 type CatalogCache = Mutex<Option<(Instant, Arc<Vec<OfficialHit>>)>>;
@@ -46,20 +45,21 @@ type CatalogCache = Mutex<Option<(Instant, Arc<Vec<OfficialHit>>)>>;
 /// after a restart (cheap, so no on-disk persistence).
 static CATALOG: OnceLock<CatalogCache> = OnceLock::new();
 
-/// Thin async client for the MangaPlus app API.
-pub struct MangaPlusClient {
-    http: reqwest::Client,
-    device_token: String,
-}
+/// Process-wide device token: one per process, not one per request. Derived
+/// from the clock + pid the first time it is needed.
+static DEVICE_TOKEN: OnceLock<String> = OnceLock::new();
 
-impl MangaPlusClient {
-    /// Build a client with a freshly derived device token.
-    pub fn new() -> Self {
-        // DEVIATION FROM PLAN: the plan prose says the reqwest client should
-        // carry `cookie_store(true)`. We deliberately omit it here: `/register`
-        // and `/title_detailV3` need no cookies, and only the image reader
-        // (`manga_viewer_v3` -> jumpg-assets3) depends on the `plus_vw_token`
-        // cookie. Omitting it avoids enabling the reqwest `cookies` feature.
+/// Cached `(registered_at, device_token, device_secret)`. `PUT /api/register`
+/// issues a fresh registration on every call, so a drawer open, the 6 h refresh
+/// and the count provider would otherwise hammer the upstream register endpoint.
+static REGISTRATION: OnceLock<Mutex<Option<(Instant, String, String)>>> = OnceLock::new();
+
+/// How long a cached registration is reused before re-registering.
+const REGISTRATION_TTL: Duration = Duration::from_secs(6 * 60 * 60);
+
+/// The process-wide device token, derived once from the clock + pid.
+pub fn device_token() -> &'static str {
+    DEVICE_TOKEN.get_or_init(|| {
         let seed = format!(
             "{}:{}",
             std::time::SystemTime::now()
@@ -68,69 +68,103 @@ impl MangaPlusClient {
                 .unwrap_or(0),
             std::process::id()
         );
-        let device_token = md5_hex(seed.as_bytes());
-        Self {
-            http: crate::services::external::http_client(),
-            device_token,
+        md5_hex(seed.as_bytes())
+    })
+}
+
+/// A cached `device_secret`, registering on first use or after
+/// [`REGISTRATION_TTL`]. Shared by `fetch_meta` and the chapter-count provider.
+pub async fn cached_secret(client: &reqwest::Client) -> anyhow::Result<String> {
+    let cell = REGISTRATION.get_or_init(|| Mutex::new(None));
+    {
+        let guard = cell.lock().expect("mangaplus registration mutex poisoned");
+        if let Some((at, _token, secret)) = guard.as_ref()
+            && at.elapsed() < REGISTRATION_TTL
+        {
+            return Ok(secret.clone());
         }
     }
+    let token = device_token().to_string();
+    let secret = register_with(client, &token).await?;
+    *cell.lock().expect("mangaplus registration mutex poisoned") =
+        Some((Instant::now(), token, secret.clone()));
+    Ok(secret)
+}
 
-    /// `PUT /api/register` -> `RegistrationData.device_secret`.
-    ///
-    /// `device_token` is an opaque per-install key; the server treats it as a
-    /// key, not something validated against device attestation.
-    pub async fn register(&self, device_token: &str) -> anyhow::Result<String> {
-        // reqwest 0.13 gates `.query()` behind the optional `query` feature,
-        // which this crate does not enable, so the query string is built with
-        // the `url` crate (same pattern as chapter_count/mangaplus.rs).
-        let sk = security_key(device_token);
-        let mut url = url::Url::parse(&format!("https://{API_HOST}/api/register"))?;
-        url.query_pairs_mut()
-            .append_pair("os", "android")
-            .append_pair("os_ver", OS_VER)
-            .append_pair("app_ver", APP_VER)
-            .append_pair("device_token", device_token)
-            .append_pair("security_key", sk.as_str());
-        let resp = self
-            .http
-            .put(url)
-            .header(reqwest::header::USER_AGENT, UA)
-            .send()
-            .await?
-            .error_for_status()?;
-        let bytes = resp.bytes().await?;
-        parse_device_secret(&bytes)
-            .ok_or_else(|| anyhow::anyhow!("mangaplus register: no device_secret"))
+/// `PUT /api/register` -> `RegistrationData.device_secret`.
+///
+/// The URL carries the device token and the derived security key, so every
+/// error is stripped of its URL before it can reach a log.
+pub async fn register_with(client: &reqwest::Client, device_token: &str) -> anyhow::Result<String> {
+    let sk = security_key(device_token);
+    let mut url = url::Url::parse(&format!("https://{API_HOST}/api/register"))?;
+    url.query_pairs_mut()
+        .append_pair("os", "android")
+        .append_pair("os_ver", OS_VER)
+        .append_pair("app_ver", APP_VER)
+        .append_pair("device_token", device_token)
+        .append_pair("security_key", sk.as_str());
+    let resp = client
+        .put(url)
+        .header(reqwest::header::USER_AGENT, UA)
+        .send()
+        .await
+        .map_err(reqwest::Error::without_url)?
+        .error_for_status()
+        .map_err(reqwest::Error::without_url)?;
+    let bytes = resp.bytes().await.map_err(reqwest::Error::without_url)?;
+    parse_device_secret(&bytes)
+        .ok_or_else(|| anyhow::anyhow!("mangaplus register: no device_secret"))
+}
+
+/// `GET /api/title_detailV3` raw protobuf body, size-guarded. The URL carries
+/// the secret, so errors are stripped of it (see [`register_with`]).
+pub async fn title_detail_bytes(
+    client: &reqwest::Client,
+    secret: &str,
+    title_id: &str,
+) -> anyhow::Result<Vec<u8>> {
+    let mut url = url::Url::parse(&format!("https://{API_HOST}/api/title_detailV3"))?;
+    url.query_pairs_mut()
+        .append_pair("os", "android")
+        .append_pair("os_ver", OS_VER)
+        .append_pair("app_ver", APP_VER)
+        .append_pair("title_id", title_id)
+        .append_pair("secret", secret)
+        .append_pair("lang", "eng")
+        .append_pair("clang", "eng")
+        .append_pair("country_code", "US");
+    let resp = client
+        .get(url)
+        .header(reqwest::header::USER_AGENT, UA)
+        .send()
+        .await
+        .map_err(reqwest::Error::without_url)?
+        .error_for_status()
+        .map_err(reqwest::Error::without_url)?;
+    if let Some(len) = resp.content_length()
+        && len > official_meta::MAX_DETAIL_BYTES
+    {
+        anyhow::bail!("mangaplus detail too large: {len} bytes");
     }
+    let bytes = resp.bytes().await.map_err(reqwest::Error::without_url)?;
+    if bytes.len() as u64 > official_meta::MAX_DETAIL_BYTES {
+        anyhow::bail!("mangaplus detail too large: {} bytes", bytes.len());
+    }
+    Ok(bytes.to_vec())
+}
 
-    /// `GET /api/title_detailV3` -> total chapter count.
-    ///
-    /// Returns `Ok(None)` when the payload is missing/undecodable so the
-    /// caller can keep the existing count (raise-only safe).
-    pub async fn title_chapter_count(
-        &self,
-        secret: &str,
-        title_id: &str,
-    ) -> anyhow::Result<Option<i32>> {
-        let mut url = url::Url::parse(&format!("https://{API_HOST}/api/title_detailV3"))?;
-        url.query_pairs_mut()
-            .append_pair("os", "android")
-            .append_pair("os_ver", OS_VER)
-            .append_pair("app_ver", APP_VER)
-            .append_pair("title_id", title_id)
-            .append_pair("secret", secret)
-            .append_pair("lang", "eng")
-            .append_pair("clang", "eng")
-            .append_pair("country_code", "US");
-        let resp = self
-            .http
-            .get(url)
-            .header(reqwest::header::USER_AGENT, UA)
-            .send()
-            .await?
-            .error_for_status()?;
-        let bytes = resp.bytes().await?;
-        Ok(parse_chapter_count(&bytes))
+/// Thin async client for the MangaPlus app API (catalog search).
+pub struct MangaPlusClient {
+    http: reqwest::Client,
+}
+
+impl MangaPlusClient {
+    /// Build a client around the shared outbound HTTP client.
+    pub fn new() -> Self {
+        Self {
+            http: crate::services::external::http_client(),
+        }
     }
 
     /// Full browse catalog, merged across the `serializing` and `completed`
@@ -146,7 +180,7 @@ impl MangaPlusClient {
             }
         }
 
-        let secret = self.register(&self.device_token).await?;
+        let secret = cached_secret(&self.http).await?;
         let mut merged: Vec<OfficialHit> = Vec::new();
 
         // DEVIATION FROM PLAN PROSE: the plan names `/api/title_list/search`
@@ -227,22 +261,20 @@ pub fn parse_device_secret(body: &[u8]) -> Option<String> {
     }
 }
 
-/// Decode the chapter count from `title_detailV3`.
+/// Number of MAIN chapters from `title_detailV3`.
 ///
-/// Prefers `chapter_list_v2` (field 38); falls back to the legacy
-/// `chapter_list_group` (field 28) summing first/mid/last lists. Returns
-/// `None` when neither is present so the caller keeps the current count.
+/// Counts `chapter_list_v2` (field 38) rows whose `name` is `#NNN` — bonus
+/// rows (`ex`) never inflate the count. Falls back to the legacy
+/// `chapter_list_group` (field 28) summing first/mid/last lists when v2 is
+/// absent. Returns `None` when neither is present so the caller keeps the
+/// current count.
 pub fn parse_chapter_count(body: &[u8]) -> Option<i32> {
     let success = message_field(body, 1)?;
     let view = message_field(success, 8)?;
 
-    let v2 = field_values(view, 38);
-    let v2_count = v2
-        .iter()
-        .filter(|value| matches!(value, WireValue::Bytes(_)))
-        .count();
-    if v2_count > 0 {
-        return Some(v2_count as i32);
+    let rows = v2_rows(view);
+    if !rows.is_empty() {
+        return Some(main_count(&chapter_title::rows_to_chapters(rows)) as i32);
     }
 
     let group = message_field(view, 28)?;
@@ -260,6 +292,133 @@ pub fn parse_chapter_count(body: &[u8]) -> Option<i32> {
     } else {
         None
     }
+}
+
+/// First string value of `field` in `msg`, trimmed.
+fn string_field(msg: &[u8], field: u32) -> Option<String> {
+    field_values(msg, field)
+        .into_iter()
+        .find_map(|value| match value {
+            WireValue::Bytes(bytes) => Some(String::from_utf8_lossy(bytes).trim().to_string()),
+            _ => None,
+        })
+}
+
+/// First integer value of `field` in `msg` (a varint, or a numeric string as
+/// protojson encodes int64).
+fn int_field(msg: &[u8], field: u32) -> Option<i64> {
+    field_values(msg, field)
+        .into_iter()
+        .find_map(|value| match value {
+            WireValue::Varint(number) => i64::try_from(number).ok(),
+            WireValue::Bytes(bytes) => std::str::from_utf8(bytes).ok()?.trim().parse().ok(),
+            _ => None,
+        })
+}
+
+/// `chapter_list_v2` (field 38) -> oldest-first rows. Each row's `name` (3) is
+/// `#NNN` for a numbered chapter, anything else (`ex`) is a bonus row whose
+/// `subTitle` (4) becomes its title; `startTimeStamp` (6) is unix seconds.
+/// The list is oldest-first; reverse when a descending list slips through (the
+/// proto carries a `chapters_descending` flag we do not read). Shared by
+/// [`parse_detail`] and [`parse_chapter_count`] so the count can never disagree
+/// with the chapter list.
+fn v2_rows(view: &[u8]) -> Vec<EpisodeRow> {
+    let mut rows: Vec<EpisodeRow> = field_values(view, 38)
+        .into_iter()
+        .filter_map(|value| {
+            let WireValue::Bytes(chapter) = value else {
+                return None;
+            };
+            let kind = chapter_title::classify_mangaplus_name(string_field(chapter, 3).as_deref());
+            let release_date = int_field(chapter, 6)
+                .and_then(|secs| chrono::DateTime::from_timestamp(secs, 0))
+                .map(|dt| dt.date_naive());
+            // Bonus rows carry their human label (`Bonus Chapter 1`); numbered
+            // rows have no title of their own.
+            let title = matches!(kind, ShortTitle::Unnumbered)
+                .then(|| string_field(chapter, 4))
+                .flatten();
+            Some(EpisodeRow {
+                title,
+                release_date,
+                kind,
+            })
+        })
+        .collect();
+    if is_descending(&rows) {
+        rows.reverse();
+    }
+    rows
+}
+
+/// Decode `title_detailV3` into chapter metadata.
+///
+/// `chapter_list_v2` (field 38) holds the complete list: each row's `name` (3)
+/// is `#NNN` for a numbered chapter, anything else (`ex`) is a bonus row whose
+/// `subTitle` (4) becomes its title. `startTimeStamp` (6) is unix seconds.
+/// `count` is the main count — bonuses never inflate it. An undecodable
+/// payload degrades to an empty meta so the resolve chain just moves on.
+pub fn parse_detail(body: &[u8]) -> OfficialMeta {
+    let empty = || OfficialMeta {
+        source: "mangaplus".to_string(),
+        ..OfficialMeta::default()
+    };
+    let Some(success) = message_field(body, 1) else {
+        return empty();
+    };
+    let Some(view) = message_field(success, 8) else {
+        return empty();
+    };
+    let chapters = chapter_title::rows_to_chapters(v2_rows(view));
+    let main = main_count(&chapters);
+    if !chapters.is_empty() {
+        tracing::debug!(
+            source = "mangaplus",
+            rows = chapters.len(),
+            main,
+            "chapter list parsed"
+        );
+    }
+    OfficialMeta {
+        source: "mangaplus".to_string(),
+        count: (main > 0).then_some(main as i32),
+        chapters,
+        update_schedule: None,
+        next_update_at: None,
+    }
+}
+
+/// True when the first main number is ahead of the last one (descending list).
+fn is_descending(rows: &[EpisodeRow]) -> bool {
+    let number = |row: &EpisodeRow| match row.kind {
+        ShortTitle::Base(n) => Some(n),
+        _ => None,
+    };
+    match (
+        rows.iter().find_map(number),
+        rows.iter().rev().find_map(number),
+    ) {
+        (Some(first), Some(last)) => first > last,
+        _ => false,
+    }
+}
+
+/// Fetch the full chapter list for one MangaPlus title id.
+///
+/// The app API needs a registration handshake, so this builds its own client
+/// (unlike the other `fetch_meta` arms, which reuse the shared HTTP client).
+pub async fn fetch_meta(title_id: &str) -> anyhow::Result<OfficialMeta> {
+    if !official_meta::is_digit_id(title_id) {
+        return Ok(OfficialMeta {
+            source: "mangaplus".to_string(),
+            ..OfficialMeta::default()
+        });
+    }
+    let client = crate::services::external::http_client();
+    let secret = cached_secret(&client).await?;
+    let body = title_detail_bytes(&client, &secret, title_id).await?;
+    Ok(parse_detail(&body))
 }
 
 /// Decode `Response.success` (1) -> `SearchView` (35) -> `all_titles_group` (3)
@@ -301,9 +460,10 @@ pub fn parse_catalog(body: &[u8]) -> Vec<OfficialHit> {
 
 /// Minimal MD5 (RFC 1321) so no new dependency is added. Returns lowercase hex.
 ///
-/// Vendored verbatim from `chapter_count/mangaplus.rs`: `md-5` is only a
-/// transitive entry in `Cargo.lock`, so it cannot be used without promoting it
-/// to a direct dependency.
+/// Vendored so no new dependency is added: `md-5` is only a transitive entry
+/// in `Cargo.lock`, so it cannot be used without promoting it to a direct
+/// dependency. The chapter-count provider reuses this function instead of
+/// carrying its own copy.
 pub(crate) fn md5_hex(input: &[u8]) -> String {
     // Per-round left-rotation amounts (RFC 1321, section 3.4).
     const S: [u32; 64] = [
@@ -390,6 +550,8 @@ mod tests {
         include_bytes!("../../../tests/fixtures/mangaplus_register.bin");
     const DETAIL_FIXTURE: &[u8] =
         include_bytes!("../../../tests/fixtures/mangaplus_title_detail.bin");
+    const BONUS_FIXTURE: &[u8] =
+        include_bytes!("../../../tests/fixtures/mangaplus_detail_bonus.bin");
     const SEARCH_FIXTURE: &[u8] =
         include_bytes!("../../../tests/fixtures/mangaplus_search_view.bin");
 
@@ -421,7 +583,45 @@ mod tests {
 
     #[test]
     fn parse_chapter_count_reads_detail_fixture() {
-        assert_eq!(parse_chapter_count(DETAIL_FIXTURE), Some(5));
+        // Real Tokyo Ghoul payload: 143 `#NNN` rows, no bonuses.
+        assert_eq!(parse_chapter_count(DETAIL_FIXTURE), Some(143));
+        // The bonus fixture has two numbered rows and one `ex` row.
+        assert_eq!(parse_chapter_count(BONUS_FIXTURE), Some(2));
+    }
+
+    #[test]
+    fn parse_detail_reads_the_real_fixture() {
+        let meta = parse_detail(DETAIL_FIXTURE);
+        assert_eq!(meta.source, "mangaplus");
+        assert_eq!(meta.chapters.len(), 143);
+        assert_eq!(meta.count, Some(143));
+        assert!(meta.chapters.iter().all(|c| !c.is_bonus));
+        assert_eq!(meta.chapters[0].number_x100, 100);
+        assert_eq!(
+            meta.chapters[0].release_date,
+            official_meta::parse_date("2019-01-20")
+        );
+        assert_eq!(meta.chapters[142].number_x100, 14300);
+    }
+
+    #[test]
+    fn parse_detail_classifies_bonus_rows() {
+        let meta = parse_detail(BONUS_FIXTURE);
+        assert_eq!(meta.chapters.len(), 3);
+        // Main count excludes the `ex` row.
+        assert_eq!(meta.count, Some(2));
+        assert_eq!(meta.chapters[0].number_x100, 100);
+        assert_eq!(meta.chapters[1].number_x100, 200);
+        let bonus = &meta.chapters[2];
+        assert!(bonus.is_bonus);
+        assert_eq!(bonus.number_x100, 0);
+        assert_eq!(bonus.title.as_deref(), Some("Bonus Chapter 1"));
+    }
+
+    #[test]
+    fn parse_detail_is_safe_on_truncated_and_empty_buffers() {
+        assert_eq!(parse_detail(&DETAIL_FIXTURE[..3]).chapters.len(), 0);
+        assert_eq!(parse_detail(&[]).chapters.len(), 0);
     }
 
     #[test]

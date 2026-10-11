@@ -1,10 +1,17 @@
-//! Alpha Polis: schedule/next-date enricher + auto-bind guest search.
+//! Alpha Polis: schedule/next-date enricher + full TOC + auto-bind guest search.
 //!
-//! The manga detail page carries the schedule block
-//! (`<span class="date">毎月第4水曜日</span>更新`) and the exact next date
-//! (`(次回更新日 : 2026.10.28)`). The TOC is behind a JS charge-widget, so the
-//! enricher deliberately reports **no count and no chapters** — schedule and
-//! next-date only.
+//! The detail page carries the schedule block
+//! (`<span class="date">毎月第4水曜日</span>更新`), the exact next date
+//! (`(次回更新日 : 2026.10.28)`) and the complete episode list embedded in the
+//! `app-official-*-toc` widget as `<script type="application/json">` with an
+//! `episodes[]` array. That list is exactly what the widget would fetch from
+//! `/manga/official/episodes.json` (verified live: the SSR count matches the
+//! endpoint count for every probed title), so no extra request is made.
+//!
+//! Episode titles read `第N回` / `第N回（前編）` with full-width digits; they are
+//! classified by the shared [`crate::services::external::chapter_title`] JP
+//! helpers. The `mainTitle` carries the chapter's own title after the number
+//! prefix, which is what gets stored as the row title.
 //!
 //! Search encodes the media kind in the hit id because the `OfficialSearch`
 //! trait passes no `media_type`: `novel/{userId}/{workId}` (composite path)
@@ -16,7 +23,8 @@
 //! two numeric path segments, which excludes the `/novel/index` and
 //! `/novel/add_tag_counter/{n}` navigation/tag links.
 
-use crate::services::external::official_meta::{self, OfficialMeta};
+use crate::services::external::chapter_title::{self, EpisodeRow, classify_jp_title, main_count};
+use crate::services::external::official_meta::{self, ChapterMeta, OfficialMeta};
 use crate::services::official_types::OfficialHit;
 
 const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
@@ -29,6 +37,12 @@ const SCHEDULE_END: &str = "</span>";
 const NEXT_START: &str = "次回更新日 : ";
 const NEXT_END: &str = ")";
 
+/// The TOC widget id (`app-official-manga-toc`, `app-official-novel-toc`, …).
+const TOC_ID_PREFIX: &str = "id=\"app-official-";
+const TOC_ID_SUFFIX: &str = "-toc";
+const TOC_SCRIPT: &str = "<script type=\"application/json\">";
+const TOC_SCRIPT_END: &str = "</script>";
+
 const NOVEL_MARKER: &str = "href=\"/novel/";
 /// Absolute manga result links (a relative marker matches zero rows).
 const MANGA_MARKER: &str = "href=\"https://www.alphapolis.co.jp/manga/official/";
@@ -37,24 +51,52 @@ const MANGA_MARKER: &str = "href=\"https://www.alphapolis.co.jp/manga/official/"
 /// (`novel/{u}/{w}` / `manga/official/{id}`); legacy admin-bound ids are
 /// bare manga ids.
 pub async fn fetch_meta(client: &reqwest::Client, source_id: &str) -> anyhow::Result<OfficialMeta> {
+    // The id lands in the URL path: only the shapes the search can emit are
+    // accepted.
+    if !is_alphapolis_id(source_id) {
+        return Ok(OfficialMeta {
+            source: "alphapolis".to_string(),
+            ..OfficialMeta::default()
+        });
+    }
     let url = if source_id.starts_with("novel/") || source_id.starts_with("manga/official/") {
         format!("https://www.alphapolis.co.jp/{source_id}")
     } else {
         format!("https://www.alphapolis.co.jp/manga/official/{source_id}")
     };
-    let html = client
-        .get(&url)
-        .header(reqwest::header::USER_AGENT, UA)
-        .send()
-        .await?
-        .error_for_status()?
-        .text()
-        .await?;
+    let html = official_meta::body_capped(
+        client
+            .get(&url)
+            .header(reqwest::header::USER_AGENT, UA)
+            .send()
+            .await?
+            .error_for_status()?,
+        official_meta::MAX_DETAIL_BYTES,
+    )
+    .await?;
     Ok(parse_detail(&html))
 }
 
-/// Pure parser: schedule + exact next date. Never reports a count or chapters
-/// (the TOC is not readable without JS). Malformed input degrades to `None`.
+/// True for the id shapes the search emits: `novel/{n}/{n}`,
+/// `manga/official/{n}`, or a bare digit run (legacy admin binding).
+fn is_alphapolis_id(id: &str) -> bool {
+    if official_meta::is_digit_id(id) {
+        return true;
+    }
+    if let Some(rest) = id.strip_prefix("manga/official/") {
+        return official_meta::is_digit_id(rest);
+    }
+    if let Some(rest) = id.strip_prefix("novel/") {
+        let mut parts = rest.split('/');
+        return matches!((parts.next(), parts.next(), parts.next()),
+            (Some(a), Some(b), None)
+                if official_meta::is_digit_id(a) && official_meta::is_digit_id(b));
+    }
+    false
+}
+
+/// Pure parser: schedule + exact next date + the embedded TOC episode list.
+/// Malformed input degrades to `None` / an empty list.
 pub fn parse_detail(html: &str) -> OfficialMeta {
     let schedule = official_meta::between(html, SCHEDULE_START, SCHEDULE_END)
         .map(|s| official_meta::strip_tags(s).trim().to_string())
@@ -64,13 +106,93 @@ pub fn parse_detail(html: &str) -> OfficialMeta {
         .and_then(|s| official_meta::normalize_schedule(&s));
     let next_update_at = official_meta::between(html, NEXT_START, NEXT_END)
         .and_then(|s| official_meta::parse_date(s.trim()));
+    let chapters = parse_episodes(html);
+    let main = main_count(&chapters);
     OfficialMeta {
         source: "alphapolis".to_string(),
-        chapters: Vec::new(),
-        count: None,
+        count: (main > 0).then_some(main as i32),
+        chapters,
         update_schedule: schedule,
         next_update_at,
     }
+}
+
+/// The `episodes[]` array of the `app-official-*-toc` widget, oldest-first.
+/// Rows are classified by [`classify_jp_title`]; the row title is the chapter's
+/// own title (`mainTitle` minus the `第N回…` prefix). Absent widget or broken
+/// JSON -> empty.
+pub fn parse_episodes(html: &str) -> Vec<ChapterMeta> {
+    let Some(json) = toc_json(html) else {
+        return Vec::new();
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
+        return Vec::new();
+    };
+    let Some(items) = value.get("episodes").and_then(|v| v.as_array()) else {
+        return Vec::new();
+    };
+    let rows: Vec<EpisodeRow> = items
+        .iter()
+        .filter_map(|item| {
+            let short = str_field(item, "shortTitle");
+            let main = str_field(item, "mainTitle");
+            let raw = short.or(main)?;
+            let title = main
+                .zip(short)
+                .and_then(|(m, s)| m.strip_prefix(s))
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string);
+            let release_date = str_field(item, "upTime").and_then(parse_up_time);
+            Some(EpisodeRow {
+                title,
+                release_date,
+                kind: classify_jp_title(raw),
+            })
+        })
+        .collect();
+    chapter_title::rows_to_chapters(rows)
+}
+
+fn str_field<'a>(item: &'a serde_json::Value, key: &str) -> Option<&'a str> {
+    item.get(key)
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+}
+
+/// `2026.09.30更新` -> `2026-09-30`.
+fn parse_up_time(raw: &str) -> Option<chrono::NaiveDate> {
+    official_meta::parse_date(raw.trim().trim_end_matches("更新").trim())
+}
+
+/// Slice the JSON body of the `app-official-*-toc` widget. `None` when the
+/// widget (or its JSON script) is absent.
+fn toc_json(html: &str) -> Option<&str> {
+    let mut from = 0usize;
+    while let Some(rel) = html[from..].find(TOC_ID_PREFIX) {
+        let start = from + rel + TOC_ID_PREFIX.len();
+        // Always advance past this marker so a broken widget cannot abort the
+        // scan for a later one.
+        from = start;
+        let rest = &html[start..];
+        let Some(quote) = rest.find('"') else {
+            continue;
+        };
+        if !rest[..quote].ends_with(TOC_ID_SUFFIX) {
+            continue;
+        }
+        let after_id = &rest[quote..];
+        let Some(script) = after_id.find(TOC_SCRIPT) else {
+            continue;
+        };
+        let body = &after_id[script + TOC_SCRIPT.len()..];
+        let Some(end) = body.find(TOC_SCRIPT_END) else {
+            continue;
+        };
+        return Some(body[..end].trim());
+    }
+    None
 }
 
 /// Guest search `https://www.alphapolis.co.jp/search?query=<kw>` (no category
@@ -78,14 +200,16 @@ pub fn parse_detail(html: &str) -> OfficialMeta {
 pub async fn search(client: &reqwest::Client, title: &str) -> anyhow::Result<Vec<OfficialHit>> {
     let mut url = url::Url::parse("https://www.alphapolis.co.jp/search")?;
     url.query_pairs_mut().append_pair("query", title);
-    let html = client
-        .get(url)
-        .header(reqwest::header::USER_AGENT, UA)
-        .send()
-        .await?
-        .error_for_status()?
-        .text()
-        .await?;
+    let html = official_meta::body_capped(
+        client
+            .get(url)
+            .header(reqwest::header::USER_AGENT, UA)
+            .send()
+            .await?
+            .error_for_status()?,
+        official_meta::MAX_DETAIL_BYTES,
+    )
+    .await?;
     Ok(parse_search(&html))
 }
 
@@ -188,12 +312,51 @@ mod tests {
         let html = include_str!("../../../tests/fixtures/alphapolis_manga.html");
         let m = parse_detail(html);
         assert_eq!(m.source, "alphapolis");
-        // Schedule-only enricher: never a count, never chapters.
-        assert!(m.count.is_none());
-        assert!(m.chapters.is_empty());
+        // The embedded TOC widget carries the episode list.
+        assert_eq!(m.chapters.len(), 2);
+        // Both rows are parts of chapter 1 (`第１回（前編）` / `（後編）`).
+        assert_eq!(m.chapters[0].number_x100, 110);
+        assert_eq!(m.chapters[0].label.as_deref(), Some("1-10"));
+        assert_eq!(m.chapters[1].number_x100, 120);
+        assert_eq!(m.chapters[1].label.as_deref(), Some("1-20"));
+        assert_eq!(m.count, Some(1));
+        assert_eq!(
+            m.chapters[0].release_date,
+            official_meta::parse_date("2026-09-30")
+        );
+        // The chapter's own title rides after the `第N回…` prefix.
+        assert!(
+            m.chapters[0]
+                .title
+                .as_deref()
+                .is_some_and(|t| t.starts_with('『'))
+        );
         assert_eq!(m.update_schedule.as_deref(), Some("毎月第4水曜日更新"));
         let expected = chrono::NaiveDate::from_ymd_opt(2026, 10, 28).unwrap();
         assert_eq!(m.next_update_at, Some(expected));
+    }
+
+    #[test]
+    fn parses_toc_episodes_and_bonuses() {
+        let html = r#"<div id="app-official-manga-toc">
+            <script type="application/json">
+            {"mangaTitle":"T","episodes":[
+              {"shortTitle":"第1回","mainTitle":"第1回『A』","upTime":"2024.01.02更新"},
+              {"shortTitle":"第2回","mainTitle":"第2回","upTime":"2024.02.03更新"},
+              {"shortTitle":"番外編","mainTitle":"番外編『特別』","upTime":"2024.03.04更新"}
+            ]}
+            </script></div>"#;
+        let m = parse_detail(html);
+        assert_eq!(m.chapters.len(), 3);
+        // `count` is main-only: the `番外編` row is a bonus.
+        assert_eq!(m.count, Some(2));
+        assert_eq!(m.chapters[0].number_x100, 100);
+        assert_eq!(m.chapters[0].title.as_deref(), Some("『A』"));
+        // A bare `第2回` carries no own title.
+        assert_eq!(m.chapters[1].number_x100, 200);
+        assert!(m.chapters[1].title.is_none());
+        assert!(m.chapters[2].is_bonus);
+        assert_eq!(m.chapters[2].number_x100, 0);
     }
 
     #[test]
