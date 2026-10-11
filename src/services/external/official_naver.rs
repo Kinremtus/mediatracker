@@ -88,6 +88,15 @@ pub fn parse_search(html: &str) -> Vec<OfficialHit> {
         let Some(id) = href_product_no(tag) else {
             continue;
         };
+        // The cover link (`class="pic"`) wraps the thumbnail and may carry a
+        // reward badge such as `광고보고무료` as its text; the real title anchor
+        // follows inside `div.cont`. Skipping the thumbnail wrapper by its
+        // class (not by the `<img` it contains) lets the title anchor win the
+        // per-id dedup below without risking a title anchor that embeds an
+        // inline icon.
+        if tag.contains("class=\"pic") {
+            continue;
+        }
         if hits.iter().any(|h| h.id == id) {
             continue;
         }
@@ -314,6 +323,35 @@ mod tests {
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].id, "1");
         assert_eq!(hits[0].title, "제목");
+    }
+
+    #[test]
+    fn skips_thumbnail_wrappers_but_keeps_the_title_anchor() {
+        // Live Naver markup: the cover link (`class="pic"`) carries a reward
+        // badge (`광고보고무료`) or nothing at all; the real title anchor
+        // follows. Both wrapper shapes must be skipped.
+        let with_badge = "<div class=\"com_srch\"><li>\
+            <a href=\"/comic/detail.series?productNo=6448122\" class=\"pic N=a:com.img\">\
+                <em class=\"ico ico_reword_video\">광고보고무료</em>\
+                <img src=\"x.jpg\" alt=\"역대급 영지 설계사 [독점]\">\
+            </a>\
+            <div class=\"cont\"><h3>\
+                <a href=\"/comic/detail.series?productNo=6448122\">역대급 영지 설계사 [독점]</a>\
+            </h3></div>\
+        </li></div>";
+        let hits = parse_search(with_badge);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].id, "6448122");
+        assert_eq!(hits[0].title, "역대급 영지 설계사");
+
+        // A badge without any `<img>` (lazy cover) must be skipped too.
+        let badge_no_img = "<div class=\"com_srch\">\
+            <a href=\"/comic/detail.series?productNo=7\" class=\"pic\">광고보고무료</a>\
+            <a href=\"/comic/detail.series?productNo=7\" class=\"t\">진짜 제목</a>\
+        </div>";
+        let hits = parse_search(badge_no_img);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].title, "진짜 제목");
     }
 
     #[test]
