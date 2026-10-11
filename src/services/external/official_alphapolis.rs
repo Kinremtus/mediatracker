@@ -17,9 +17,11 @@
 //! trait passes no `media_type`: `novel/{userId}/{workId}` (composite path)
 //! vs `manga/official/{id}`. `official_resolve::hit_matches_media_type`
 //! filters by the item's kind; the prefixed id **is** the site path
-//! (Decision #9). Manga links in the results page are **absolute**
-//! (`https://www.alphapolis.co.jp/manga/official/{id}`) — a relative
-//! `href="/manga/official/"` marker matches nothing. Novel links must have
+//! (Decision #9). Manga detail links appear both relative
+//! (`/manga/official/{id}` — the real search results) and absolute
+//! (`https://www.alphapolis.co.jp/manga/official/{id}` — the pickup carousel);
+//! both are collected, and unrelated carousel entries are dropped later by
+//! `titles_match`. Novel links must have
 //! two numeric path segments, which excludes the `/novel/index` and
 //! `/novel/add_tag_counter/{n}` navigation/tag links.
 
@@ -44,8 +46,6 @@ const TOC_SCRIPT: &str = "<script type=\"application/json\">";
 const TOC_SCRIPT_END: &str = "</script>";
 
 const NOVEL_MARKER: &str = "href=\"/novel/";
-/// Absolute manga result links (a relative marker matches zero rows).
-const MANGA_MARKER: &str = "href=\"https://www.alphapolis.co.jp/manga/official/";
 
 /// GET one Alpha Polis title. Auto-bind ids are already site paths
 /// (`novel/{u}/{w}` / `manga/official/{id}`); legacy admin-bound ids are
@@ -215,7 +215,8 @@ pub async fn search(client: &reqwest::Client, title: &str) -> anyhow::Result<Vec
 
 /// Pure search parser. Novel links must be `href="/novel/{num}/{num}"` (two
 /// numeric segments — rejects `/novel/index`, `/novel/add_tag_counter/{n}`);
-/// manga links are absolute `…/manga/official/{num}`. Title = anchor text,
+/// manga links are `…/manga/official/{num}`, relative (real results) or
+/// absolute (carousel). Title = anchor text,
 /// falling back to the banner `alt="…"` (manga anchors hold only an `<img>`).
 /// Deduped by prefixed id; malformed input degrades to an empty vector.
 pub fn parse_search(html: &str) -> Vec<OfficialHit> {
@@ -251,20 +252,38 @@ fn collect_novel_hits(html: &str, hits: &mut Vec<OfficialHit>) {
     }
 }
 
-/// Absolute `href="https://www.alphapolis.co.jp/manga/official/{id}"`.
+/// Every `href` whose target is a manga detail path, relative
+/// (`/manga/official/{id}` — the real search results) or absolute
+/// (`https://www.alphapolis.co.jp/manga/official/{id}` — the carousel).
 fn collect_manga_hits(html: &str, hits: &mut Vec<OfficialHit>) {
+    const HREF: &str = "href=\"";
+    const HOST: &str = "https://www.alphapolis.co.jp";
+    const PATH: &str = "/manga/official/";
     let mut rest = html;
-    while let Some(pos) = rest.find(MANGA_MARKER) {
-        let after = &rest[pos + MANGA_MARKER.len()..];
+    while let Some(pos) = rest.find(HREF) {
+        let after = &rest[pos + HREF.len()..];
         rest = after;
-        let Some((id_digits, tail)) = take_digits(after) else {
+        let Some(end) = after.find('"') else { break };
+        let href = &after[..end];
+        // Relative result links and absolute carousel links share the path.
+        let path = href.strip_prefix(HOST).unwrap_or(href);
+        let Some(tail) = path.strip_prefix(PATH) else {
             continue;
         };
-        if !(tail.starts_with('"') || tail.starts_with('?')) {
+        let Some((id_digits, rest_of_href)) = take_digits(tail) else {
+            continue;
+        };
+        // The id ends the path: the value itself, or a query/fragment.
+        if !(rest_of_href.is_empty()
+            || rest_of_href.starts_with('?')
+            || rest_of_href.starts_with('#'))
+        {
             continue;
         }
         let id = format!("manga/official/{id_digits}");
-        let title = anchor_title(tail);
+        // `after[end..]` starts at the closing quote so `anchor_title` can walk
+        // to the tag end and read the anchor body (cover `alt`).
+        let title = anchor_title(&after[end..]);
         push_hit(hits, id, title);
     }
 }
@@ -417,6 +436,28 @@ mod tests {
         let hits = parse_search(html);
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].id, "manga/official/977000734");
+        assert_eq!(hits[0].title, "悪役令嬢は想定外の溺愛に困惑中");
+    }
+
+    #[test]
+    fn manga_hits_from_relative_results_and_absolute_carousel() {
+        // Live results use a relative path and carry the title in the cover
+        // `alt`; the pickup carousel below uses absolute links.
+        let html = r#"<span class="label-tag">ノーチェ（TL）</span>
+            <a href="/manga/official/977000734" class="manga-banner">
+              <img src="x.webp" alt="悪役令嬢は想定外の溺愛に困惑中">
+            </a>
+            <a href="/manga/official/977000734" class="title">悪役令嬢は想定外の溺愛に困惑中</a>
+            <a href="https://www.alphapolis.co.jp/manga/official/111222333">
+              <img src="y.webp" alt="Carousel Title">
+            </a>"#;
+        let hits = parse_search(html);
+        let ids: Vec<&str> = hits.iter().map(|h| h.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec!["manga/official/977000734", "manga/official/111222333"]
+        );
+        // The banner anchor wins the id, so the title comes from its `alt`.
         assert_eq!(hits[0].title, "悪役令嬢は想定外の溺愛に困惑中");
     }
 
