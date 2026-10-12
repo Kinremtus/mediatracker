@@ -152,8 +152,8 @@ async fn without_media_item_row_global_fallback_order_decides() {
 
 #[tokio::test]
 async fn chain_order_beats_global_order_for_novel() {
-    // Discriminating case: novel chain is ["syosetu", "kakuyomu", "qidian",
-    // "ridibooks", "alphapolis"] but GLOBAL_SOURCE_ORDER ranks ridibooks(4)
+    // Discriminating case: novel chain starts ["syosetu", "kakuyomu", "qidian",
+    // "ridibooks", "alphapolis", ...] but GLOBAL_SOURCE_ORDER ranks ridibooks(4)
     // before syosetu(8). Chain must win here, so this test fails if the
     // chain block is removed and the global order is applied unconditionally.
     let ctx = setup().await;

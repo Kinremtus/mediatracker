@@ -455,7 +455,15 @@ fn mapping_table() {
     );
     assert_eq!(
         official_source_for_media_type("novel"),
-        &["syosetu", "kakuyomu", "qidian", "ridibooks", "alphapolis"][..]
+        &[
+            "syosetu",
+            "kakuyomu",
+            "qidian",
+            "ridibooks",
+            "alphapolis",
+            "kakao",
+            "naver"
+        ][..]
     );
     assert!(official_source_for_media_type("comic").is_empty());
     assert!(official_source_for_media_type("other-comics").is_empty());
@@ -749,6 +757,41 @@ async fn bilibili_is_tried_when_kuaikan_has_no_match() {
     let calls = calls.lock().unwrap();
     let order: Vec<&str> = calls.iter().map(|c| c.0.as_str()).collect();
     assert_eq!(order, vec!["kuaikan", "bilibili"]);
+}
+
+/// A web-novel hit (`novel/`-prefixed id) binds only a `novel` item: the kind
+/// gate in `hit_matches_media_type` keeps the prefix from binding comics.
+#[tokio::test]
+async fn novel_hit_binds_only_a_novel_item() {
+    let ctx = setup().await;
+    let series = SERIES_ID.to_string();
+    let search =
+        FixtureSearch::with_sources(&[("naver", vec![hit("novel/3400123", "전지적 독자 시점")])]);
+
+    let outcome = resolve_and_bind(
+        &ctx.pool,
+        &search,
+        "mangaupdates",
+        &series,
+        "novel",
+        "전지적 독자 시점",
+        &[],
+    )
+    .await;
+
+    assert_eq!(
+        outcome,
+        Some(ResolveOutcome {
+            source: "naver".to_string(),
+            source_id: "novel/3400123".to_string(),
+        })
+    );
+    assert_eq!(
+        get_source_id(&ctx.pool, "mangaupdates", &series, "naver")
+            .await
+            .unwrap(),
+        Some("novel/3400123".to_string())
+    );
 }
 
 /// A fresh meta-capable bind moves the MU-key chapter rows and read progress

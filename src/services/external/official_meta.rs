@@ -118,7 +118,7 @@ pub const MAX_DETAIL_BYTES: u64 = 4 * 1024 * 1024;
 /// True when a bound source id is a plain digit run — the only valid shape for
 /// the ids that land in a fetcher's URL path or query string.
 pub fn is_digit_id(id: &str) -> bool {
-    !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit())
+    !id.is_empty() && id.len() <= 32 && id.bytes().all(|b| b.is_ascii_digit())
 }
 
 /// True when a bound source id is safe to embed in a URL path: non-empty, at

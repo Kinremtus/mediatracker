@@ -29,8 +29,17 @@ pub fn official_source_for_media_type(media_type: &str) -> &'static [&'static st
         "manhwa" => &["kakao", "naver", "ridibooks"],
         // mangaplus existing; comicwalker/mangaup new; alphapolis last.
         "manga" => &["mangaplus", "comicwalker", "mangaup", "alphapolis"],
-        // syosetu existing; kakuyomu new JP; qidian CN; ridibooks/alphapolis last.
-        "novel" => &["syosetu", "kakuyomu", "qidian", "ridibooks", "alphapolis"],
+        // syosetu existing; kakuyomu new JP; qidian CN; ridibooks/alphapolis
+        // KR/JP; kakao/naver added for KR web novels.
+        "novel" => &[
+            "syosetu",
+            "kakuyomu",
+            "qidian",
+            "ridibooks",
+            "alphapolis",
+            "kakao",
+            "naver",
+        ],
         _ => &[],
     }
 }
@@ -159,18 +168,24 @@ impl OfficialSearch for HttpOfficialSearch {
     }
 }
 
-/// Alphapolis search returns both novel and manga hits in one list, tagged by an
-/// id prefix (`novel/...` vs `manga/official/...`). Keep only ids that match the
-/// item's `media_type`; every other source (and unknown media type) is unaffected
-/// where it matters. Pure + total: never panics.
+/// Alphapolis tags novel hits `novel/...` and manga hits `manga/official/...`;
+/// naver and kakao tag web-novel hits `novel/{id}` while comic ids stay bare
+/// (existing bindings keep working). Keep only ids that match the item's
+/// `media_type`; every other source is unaffected. Pure + total: never panics.
 fn hit_matches_media_type(source: &str, id: &str, media_type: &str) -> bool {
-    if source != "alphapolis" {
-        return true;
-    }
-    match media_type {
-        "novel" => id.starts_with("novel/"),
-        "manga" => id.starts_with("manga/official/"),
-        _ => false,
+    match source {
+        "alphapolis" => match media_type {
+            "novel" => id.starts_with("novel/"),
+            "manga" => id.starts_with("manga/official/"),
+            _ => false,
+        },
+        // Naver and Kakao encode the kind in the hit id (`novel/{id}`); comic
+        // ids stay bare so existing bindings keep working.
+        "naver" | "kakao" => match media_type {
+            "novel" => id.starts_with("novel/"),
+            _ => !id.starts_with("novel/"),
+        },
+        _ => true,
     }
 }
 
@@ -480,7 +495,15 @@ mod tests {
         );
         assert_eq!(
             official_source_for_media_type("novel"),
-            &["syosetu", "kakuyomu", "qidian", "ridibooks", "alphapolis"][..]
+            &[
+                "syosetu",
+                "kakuyomu",
+                "qidian",
+                "ridibooks",
+                "alphapolis",
+                "kakao",
+                "naver"
+            ][..]
         );
     }
 
@@ -520,6 +543,20 @@ mod tests {
         assert!(!hit_matches_media_type("alphapolis", "novel/1", "other"));
         // Non-alphapolis sources are untouched.
         assert!(hit_matches_media_type("kuaikan", "12345", "manhua"));
+    }
+
+    #[test]
+    fn naver_and_kakao_hits_are_filtered_by_the_novel_prefix() {
+        // A novel item keeps `novel/...` and drops bare comic ids.
+        assert!(hit_matches_media_type("naver", "novel/3400123", "novel"));
+        assert!(!hit_matches_media_type("naver", "6448122", "novel"));
+        assert!(hit_matches_media_type("kakao", "novel/47050646", "novel"));
+        assert!(!hit_matches_media_type("kakao", "64096846", "novel"));
+        // Every other media type keeps bare ids and drops the novel ones.
+        assert!(hit_matches_media_type("naver", "6448122", "manhwa"));
+        assert!(!hit_matches_media_type("naver", "novel/3400123", "manhwa"));
+        assert!(hit_matches_media_type("kakao", "64096846", "manhwa"));
+        assert!(!hit_matches_media_type("kakao", "novel/47050646", "manhwa"));
     }
 
     #[test]

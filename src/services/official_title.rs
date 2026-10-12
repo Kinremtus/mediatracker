@@ -118,13 +118,30 @@ pub fn pick_candidate<'a>(candidates: &'a [String], source: &str) -> Option<&'a 
             candidates
                 .iter()
                 .find(|candidate| detect_script(candidate) == *script)
-                .map(|candidate| candidate.as_str())
+                .map(|candidate| strip_media_suffix(candidate))
         })
 }
 
-/// Title equality after normalization.
+/// MU stores a media-type suffix on associated titles (`… (Novel)`,
+/// `… (Manga)`); it is not part of the title, would narrow the search query and
+/// would defeat [`titles_match`]'s normalized comparison.
+fn strip_media_suffix(s: &str) -> &str {
+    for suffix in [" (Novel)", " (Manga)", " (Manhwa)", " (Manhua)", " (Anime)"] {
+        if let Some(head) = s.strip_suffix(suffix) {
+            let head = head.trim_end();
+            // A title that is *only* a suffix would strip to nothing and make
+            // every such title compare equal - keep the original then.
+            if !head.is_empty() {
+                return head;
+            }
+        }
+    }
+    s
+}
+
+/// Title equality after normalization and media-suffix stripping.
 pub fn titles_match(a: &str, b: &str) -> bool {
-    normalize_title(a) == normalize_title(b)
+    normalize_title(strip_media_suffix(a)) == normalize_title(strip_media_suffix(b))
 }
 
 #[cfg(test)]
@@ -150,6 +167,19 @@ mod tests {
     fn normalize_idempotent() {
         let once = normalize_title("One Piece");
         assert_eq!(normalize_title(&once), once);
+    }
+
+    #[test]
+    fn media_type_suffix_is_ignored() {
+        // MU associated titles carry a `(Novel)` suffix; the search hit does not.
+        assert!(titles_match("巫界术士", "巫界术士 (Novel)"));
+        assert!(titles_match(
+            "Warlock of the Magus World",
+            "Warlock of the Magus World (Novel)"
+        ));
+        // The query drops the suffix too.
+        let candidates = vec!["巫界术士 (Novel)".to_string()];
+        assert_eq!(pick_candidate(&candidates, "qidian"), Some("巫界术士"));
     }
 
     #[test]

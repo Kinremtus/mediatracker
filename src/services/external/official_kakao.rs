@@ -21,7 +21,8 @@ use std::time::{Duration, Instant};
 use chrono::NaiveDate;
 
 use crate::services::external::chapter_title::{
-    self, EpisodeRow, ShortTitle, classify_kakao_title, main_count, parse_kr_chapter_number,
+    self, EpisodeRow, RawRow, ShortTitle, classify_kakao_title, is_kr_bonus_title, main_count,
+    parse_kr_chapter_number,
 };
 use crate::services::external::official_meta::{self, OfficialMeta};
 use crate::services::official_types::OfficialHit;
@@ -154,9 +155,10 @@ pub async fn search_cached(
 ///
 /// Reads `result.list[]` where each entry has a `title` (string) and a numeric
 /// `series_id` (number or numeric string — non-numeric ids are rejected because
-/// they would land in the product-list query). Only webtoon entries
-/// (`category_uid == 10`) are kept: Kakao returns the same title as both a web
-/// novel (11) and a webtoon (10), and only the latter is a valid manhwa match.
+/// they would land in the product-list query). Webtoon entries
+/// (`category_uid == 10`) keep a bare id; web-novel entries (11) get a
+/// `novel/` prefix so `hit_matches_media_type` can tell the kinds apart. Any
+/// other `category_uid` is skipped.
 /// Entries with a missing/non-numeric `category_uid` are skipped too.
 /// Malformed JSON, a missing `result` branch, or any non-array `list` yields an
 /// empty vector - never a panic. Entries without a title or series_id are skipped.
@@ -177,10 +179,14 @@ pub fn parse_search(body: &str) -> Vec<OfficialHit> {
         .iter()
         .filter_map(|entry| {
             // Kakao category ids: 10 = 웹툰 (webtoon), 11 = 웹소설 (web novel),
-            // 16 = 책 (book). A missing/non-numeric uid is treated as no match.
-            if entry.get("category_uid").and_then(|uid| uid.as_u64()) != Some(10) {
-                return None;
-            }
+            // 16 = 책 (book). Webtoons keep a bare id; novels carry a `novel/`
+            // prefix so the resolve walk can tell the kinds apart
+            // (`hit_matches_media_type`). A missing/non-numeric uid is no match.
+            let prefix = match entry.get("category_uid").and_then(|uid| uid.as_u64()) {
+                Some(10) => "",
+                Some(11) => "novel/",
+                _ => return None,
+            };
             let title = entry.get("title")?.as_str()?.to_string();
             let series_id = entry.get("series_id")?;
             let id = series_id
@@ -188,7 +194,10 @@ pub fn parse_search(body: &str) -> Vec<OfficialHit> {
                 .map(str::to_string)
                 .or_else(|| series_id.as_number().map(|n| n.to_string()))?;
             // The id ends up in the product-list query string: digits only.
-            official_meta::is_digit_id(&id).then_some(OfficialHit { id, title })
+            official_meta::is_digit_id(&id).then_some(OfficialHit {
+                id: format!("{prefix}{id}"),
+                title,
+            })
         })
         .collect()
 }
@@ -212,25 +221,34 @@ struct ProductPage {
 
 /// GET the guest product list page by page, following the cursor. Cached for
 /// `META_TTL` so a drawer open does not re-walk the whole list every time.
-pub async fn fetch_meta(client: &reqwest::Client, series_id: &str) -> anyhow::Result<OfficialMeta> {
+pub async fn fetch_meta(
+    client: &reqwest::Client,
+    binding_id: &str,
+) -> anyhow::Result<OfficialMeta> {
     // The id lands in the query string: only digits are ever valid (search
-    // returns numeric series ids), so a malformed binding cannot smuggle params.
+    // returns numeric series ids), so a malformed binding cannot smuggle
+    // params. Novel bindings carry a `novel/` prefix: their volumes restart the
+    // numbering (`… 1권 - 1화`), so those rows are numbered by position.
+    let (novel, series_id) = match binding_id.strip_prefix("novel/") {
+        Some(id) => (true, id),
+        None => (false, binding_id),
+    };
     if !official_meta::is_digit_id(series_id) {
-        return Ok(build_meta(Vec::new(), None));
+        return Ok(build_meta(Vec::new(), None, novel));
     }
     let now = Instant::now();
     if let Some(meta) = meta_cache()
         .lock()
         .expect("kakao meta cache poisoned")
-        .get(series_id, now)
+        .get(binding_id, now)
     {
         return Ok(meta);
     }
-    let meta = fetch_meta_uncached(client, series_id).await?;
+    let meta = fetch_meta_uncached(client, series_id, novel).await?;
     meta_cache()
         .lock()
         .expect("kakao meta cache poisoned")
-        .put(series_id, meta.clone(), now);
+        .put(binding_id, meta.clone(), now);
     Ok(meta)
 }
 
@@ -239,6 +257,7 @@ pub async fn fetch_meta(client: &reqwest::Client, series_id: &str) -> anyhow::Re
 async fn fetch_meta_uncached(
     client: &reqwest::Client,
     series_id: &str,
+    novel: bool,
 ) -> anyhow::Result<OfficialMeta> {
     let total = probe_total_count(client, series_id).await;
     let window = product_window(total);
@@ -257,14 +276,12 @@ async fn fetch_meta_uncached(
         }
         let response = bff_get(client, url).send().await?.error_for_status()?;
         // A hostile or broken page must not be buffered whole.
-        if response
-            .content_length()
-            .is_some_and(|len| len > official_meta::MAX_DETAIL_BYTES)
-        {
+        let Ok(body) = official_meta::body_capped(response, official_meta::MAX_DETAIL_BYTES).await
+        else {
             tracing::warn!(series_id, "kakao: product page too large, stopping");
             break;
-        }
-        let page = parse_product_list(&response.text().await?);
+        };
+        let page = parse_product_list(&body);
         if page.rows.is_empty() {
             break;
         }
@@ -294,7 +311,7 @@ async fn fetch_meta_uncached(
             );
         }
     }
-    Ok(build_meta(rows, series_title.as_deref()))
+    Ok(build_meta(rows, series_title.as_deref(), novel))
 }
 
 /// Window for the product walk. Small windows are LOSSY on this endpoint
@@ -318,13 +335,9 @@ async fn probe_total_count(client: &reqwest::Client, series_id: &str) -> Option<
         .ok()?
         .error_for_status()
         .ok()?;
-    if response
-        .content_length()
-        .is_some_and(|len| len > official_meta::MAX_DETAIL_BYTES)
-    {
-        return None;
-    }
-    let body = response.text().await.ok()?;
+    let body = official_meta::body_capped(response, official_meta::MAX_DETAIL_BYTES)
+        .await
+        .ok()?;
     parse_product_list(&body).total_count
 }
 
@@ -422,7 +435,7 @@ fn parse_product_list(body: &str) -> ProductPage {
 /// chapter model. Small windows make the endpoint repeat items, so the dedupe
 /// stays as a safety net; the series-name prefix is stripped from the stored
 /// title and a bare `N화` remainder becomes no title at all.
-fn build_meta(rows: Vec<ProductRow>, series_title: Option<&str>) -> OfficialMeta {
+fn build_meta(rows: Vec<ProductRow>, series_title: Option<&str>, novel: bool) -> OfficialMeta {
     let mut seen: HashSet<i64> = HashSet::new();
     let mut unique: Vec<ProductRow> = rows
         .into_iter()
@@ -433,18 +446,36 @@ fn build_meta(rows: Vec<ProductRow>, series_title: Option<&str>) -> OfficialMeta
             .cmp(&b.release_date)
             .then_with(|| a.product_id.cmp(&b.product_id))
     });
-    let episodes: Vec<EpisodeRow> = unique
-        .into_iter()
-        .map(|row| {
-            let kind = classify_kakao_title(&row.title);
-            EpisodeRow {
-                title: display_title(&row.title, series_title, kind),
-                release_date: row.release_date,
-                kind,
-            }
-        })
-        .collect();
-    let chapters = chapter_title::rows_to_chapters(episodes);
+    let chapters = if novel {
+        // Novel volumes restart their numbering (`… 1권 - 1화`), so titles
+        // cannot supply a chapter number: main rows are numbered by position
+        // and the KR bonus markers classify side content.
+        let raw: Vec<RawRow> = unique
+            .into_iter()
+            .map(|row| {
+                let kind = classify_kakao_title(&row.title);
+                RawRow {
+                    title: display_title(&row.title, series_title, kind),
+                    release_date: row.release_date,
+                    is_bonus: is_kr_bonus_title(&row.title),
+                }
+            })
+            .collect();
+        chapter_title::positional_rows(raw)
+    } else {
+        let episodes: Vec<EpisodeRow> = unique
+            .into_iter()
+            .map(|row| {
+                let kind = classify_kakao_title(&row.title);
+                EpisodeRow {
+                    title: display_title(&row.title, series_title, kind),
+                    release_date: row.release_date,
+                    kind,
+                }
+            })
+            .collect();
+        chapter_title::rows_to_chapters(episodes)
+    };
     let main = main_count(&chapters);
     if !chapters.is_empty() {
         tracing::debug!(
@@ -524,16 +555,18 @@ mod tests {
     }
 
     #[test]
-    fn filters_out_web_novel_listed_first() {
-        // Same title as both a web novel (listed first) and a webtoon.
+    fn kinds_are_encoded_in_the_hit_id() {
+        // Same title as both a web novel and a webtoon: the novel keeps its
+        // own `novel/`-prefixed hit so the resolve walk can pick the right kind.
         let body = r#"{"result":{"list":[
             {"series_id":58736258,"title":"용사파티","category_uid":11,"category":"웹소설"},
             {"series_id":64096846,"title":"용사파티","category_uid":10,"category":"웹툰"}
         ]}}"#;
         let hits = parse_search(body);
-        assert_eq!(hits.len(), 1);
-        assert_eq!(hits[0].id, "64096846");
+        assert_eq!(hits.len(), 2);
+        assert_eq!(hits[0].id, "novel/58736258");
         assert_eq!(hits[0].title, "용사파티");
+        assert_eq!(hits[1].id, "64096846");
     }
 
     #[test]
@@ -550,7 +583,7 @@ mod tests {
     }
 
     #[test]
-    fn mixed_list_keeps_only_webtoons() {
+    fn mixed_list_keeps_comics_and_novels() {
         let body = r#"{"result":{"list":[
             {"series_id":1,"title":"A","category_uid":10},
             {"series_id":2,"title":"B","category_uid":11},
@@ -558,9 +591,43 @@ mod tests {
             {"series_id":4,"title":"D","category_uid":10}
         ]}}"#;
         let hits = parse_search(body);
-        assert_eq!(hits.len(), 2);
+        assert_eq!(hits.len(), 3, "book (16) is not a chapter source");
         assert_eq!(hits[0].id, "1");
-        assert_eq!(hits[1].id, "4");
+        assert_eq!(hits[1].id, "novel/2");
+        assert_eq!(hits[2].id, "4");
+    }
+
+    #[test]
+    fn novel_volumes_are_numbered_by_position() {
+        // Novel volume numbering restarts per volume (`1권 - 1화`, `2권 - 1화`),
+        // so a title-derived number would collide; position wins instead.
+        let rows = vec![
+            ProductRow {
+                product_id: 1,
+                title: "제목 1권 - 1화".into(),
+                release_date: official_meta::parse_date("2024-01-01"),
+            },
+            ProductRow {
+                product_id: 2,
+                title: "제목 1권 - 2화".into(),
+                release_date: official_meta::parse_date("2024-01-02"),
+            },
+            ProductRow {
+                product_id: 3,
+                title: "제목 2권 - 1화".into(),
+                release_date: official_meta::parse_date("2024-01-03"),
+            },
+            ProductRow {
+                product_id: 4,
+                title: "제목 외전".into(),
+                release_date: official_meta::parse_date("2024-01-04"),
+            },
+        ];
+        let meta = build_meta(rows, Some("제목"), true);
+        let keys: Vec<i32> = meta.chapters.iter().map(|c| c.number_x100).collect();
+        assert_eq!(keys, vec![100, 200, 300, 0]);
+        assert_eq!(meta.count, Some(3));
+        assert!(meta.chapters[3].is_bonus);
     }
 
     #[test]
@@ -576,7 +643,7 @@ mod tests {
         // window to it (small windows are lossy on this endpoint).
         assert_eq!(page.total_count, Some(158));
         // The first page is the oldest block, numbered from the title.
-        let meta = build_meta(page.rows, page.series_title.as_deref());
+        let meta = build_meta(page.rows, page.series_title.as_deref(), false);
         assert_eq!(meta.source, "kakao");
         // 25 products: the `0화` prologue is a bonus, 1..24 are main chapters.
         assert_eq!(meta.count, Some(24));
@@ -690,7 +757,7 @@ mod tests {
                 release_date: official_meta::parse_date("2024-02-01"),
             },
         ];
-        let meta = build_meta(rows, Some("제목"));
+        let meta = build_meta(rows, Some("제목"), false);
         // 3 unique products: two main chapters + one bonus prologue.
         assert_eq!(meta.chapters.len(), 3);
         assert_eq!(meta.count, Some(3));

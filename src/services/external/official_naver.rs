@@ -1,10 +1,10 @@
 //! Naver Series (series.naver.com) official-source title search.
 //!
 //! The search endpoint is public and keyless (no Referer/Origin needed; a
-//! browser User-Agent is enough). `fs=comic` does NOT actually filter web
-//! novels out, so the parser keeps ONLY links whose href starts with
-//! `/comic/detail.series?productNo=`; the same title may arrive in the
-//! `웹소설` (web novel) section and must be dropped.
+//! browser User-Agent is enough). The parser keeps comic links
+//! (`/comic/detail.series?productNo=`, bare id) and web-novel links
+//! (`/novel/detail.series?productNo=`, `novel/`-prefixed id); the kind is
+//! filtered downstream by `official_resolve::hit_matches_media_type`.
 //!
 //! All failures are non-fatal: the caller treats an empty result (or an `Err`)
 //! as "no official match".
@@ -16,13 +16,14 @@ use crate::services::official_types::OfficialHit;
 pub const NAVER_SEARCH_BASE: &str = "https://series.naver.com/search/search.series";
 
 const NAVER_VOLUME_LIST: &str = "https://series.naver.com/comic/volumeList.series";
-const NAVER_NOTICE_AJAX: &str = "https://m.series.naver.com/comic/moreNotiDetail.series";
+const NAVER_NOVEL_VOLUME_LIST: &str = "https://series.naver.com/novel/volumeList.series";
 
 /// Browser-like User-Agent; the endpoint rejects obvious bot clients.
 const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
                   (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
-/// Volume-list pages to walk (30 rows each) and a per-page row cap, so a
+/// Volume-list pages to walk (the endpoint serves 30 rows per page) plus a
+/// defensive per-page row cap, so a
 /// hostile or buggy `resultData` cannot blow up memory or DB writes.
 const NAVER_VOLUME_PAGES: u32 = 20;
 const NAVER_ROWS_PER_PAGE: usize = 60;
@@ -35,11 +36,24 @@ fn empty_meta() -> OfficialMeta {
     }
 }
 
-/// GET https://series.naver.com/search/search.series?fs=comic&q=<urlencoded>
+/// GET https://series.naver.com/search/search.series?fs=<kind>&q=<urlencoded>
+/// for both `comic` and `novel`; the parser prefixes novel ids with `novel/`
+/// so the resolve walk can tell the kinds apart.
 pub async fn search(client: &reqwest::Client, title: &str) -> anyhow::Result<Vec<OfficialHit>> {
+    let mut hits = search_kind(client, title, "comic").await?;
+    hits.extend(search_kind(client, title, "novel").await?);
+    Ok(hits)
+}
+
+/// One `fs=<kind>` search page.
+async fn search_kind(
+    client: &reqwest::Client,
+    title: &str,
+    kind: &str,
+) -> anyhow::Result<Vec<OfficialHit>> {
     let mut url = url::Url::parse(NAVER_SEARCH_BASE)?;
     url.query_pairs_mut()
-        .append_pair("fs", "comic")
+        .append_pair("fs", kind)
         .append_pair("q", title);
     let body = client
         .get(url)
@@ -55,9 +69,10 @@ pub async fn search(client: &reqwest::Client, title: &str) -> anyhow::Result<Vec
 /// Pure parser, unit-testable without network. Manual string scanning (zero
 /// deps, no regex crate).
 ///
-/// Keeps only `/comic/detail.series?productNo=<digits>` anchors with non-empty
-/// link text; strips the parasitic ` (총 N화/…)` suffix; dedups by productNo.
-/// Malformed / truncated HTML yields an empty vector - never a panic.
+/// Keeps `/comic/detail.series?productNo=<digits>` (bare id) and
+/// `/novel/detail.series?productNo=<digits>` (`novel/`-prefixed id) anchors
+/// with non-empty link text; strips the parasitic ` (총 N화/…)` suffix; dedups
+/// by id. Malformed / truncated HTML yields an empty vector - never a panic.
 pub fn parse_search(html: &str) -> Vec<OfficialHit> {
     // Only the search-results container is relevant; text before/after (LNB,
     // footer) is ignored. `class="com_srch"` matches the container div only
@@ -109,20 +124,32 @@ pub fn parse_search(html: &str) -> Vec<OfficialHit> {
     hits
 }
 
-/// `/comic/detail.series?productNo=10319749` -> `Some("10319749")`.
-/// The `/comic/` prefix is what filters out the `/novel/` trap.
+/// `/comic/detail.series?productNo=10319749` -> `Some("10319749")`;
+/// `/novel/detail.series?productNo=3400123` -> `Some("novel/3400123")`.
+/// The kind prefix keeps a novel hit from binding a comic title (and vice
+/// versa); any other path is not a series link.
 fn href_product_no(tag: &str) -> Option<String> {
     let start = tag.find("href=\"")? + "href=\"".len();
     let rest = &tag[start..];
     let end = rest.find('"')?;
     let href = &rest[..end];
-    let marker = "/comic/detail.series?productNo=";
-    let idx = href.find(marker)? + marker.len();
+    const MARKER: &str = "/detail.series?productNo=";
+    let idx = href.find(MARKER)? + MARKER.len();
     let digits: String = href[idx..]
         .chars()
         .take_while(|c| c.is_ascii_digit())
         .collect();
-    (!digits.is_empty()).then_some(digits)
+    if digits.is_empty() {
+        return None;
+    }
+    let path = &href[..idx - MARKER.len()];
+    if path.ends_with("/comic") {
+        Some(digits)
+    } else if path.ends_with("/novel") {
+        Some(format!("novel/{digits}"))
+    } else {
+        None
+    }
 }
 
 /// Strip tags, collapse runs of whitespace, then cut the ` (총 N화/…)` suffix
@@ -147,15 +174,25 @@ pub async fn fetch_meta(
     client: &reqwest::Client,
     product_no: &str,
 ) -> anyhow::Result<OfficialMeta> {
-    // The id lands in the query string: only digits are ever valid.
+    // The id lands in the query string: only digits are ever valid; a novel
+    // binding carries a `novel/` prefix that picks the novel endpoints.
+    let (kind, product_no) = match product_no.strip_prefix("novel/") {
+        Some(id) => ("novel", id),
+        None => ("comic", product_no),
+    };
     if !official_meta::is_digit_id(product_no) {
         return Ok(empty_meta());
     }
     let mut chapters: Vec<ChapterMeta> = Vec::new();
     let mut schedule: Option<String> = None;
 
+    let volume_base = if kind == "novel" {
+        NAVER_NOVEL_VOLUME_LIST
+    } else {
+        NAVER_VOLUME_LIST
+    };
     for page in 1..=NAVER_VOLUME_PAGES {
-        let mut url = url::Url::parse(NAVER_VOLUME_LIST)?;
+        let mut url = url::Url::parse(volume_base)?;
         url.query_pairs_mut()
             .append_pair("productNo", product_no)
             .append_pair("page", &page.to_string());
@@ -165,14 +202,12 @@ pub async fn fetch_meta(
             .send()
             .await?
             .error_for_status()?;
-        if response
-            .content_length()
-            .is_some_and(|len| len > official_meta::MAX_DETAIL_BYTES)
-        {
+        let Ok(body) = official_meta::body_capped(response, official_meta::MAX_DETAIL_BYTES).await
+        else {
             tracing::warn!(product_no, "naver: volume page too large, stopping");
             break;
-        }
-        let rows = parse_volume_list(&response.text().await?);
+        };
+        let rows = parse_volume_list(&body, kind);
         if rows.is_empty() {
             break;
         }
@@ -203,7 +238,9 @@ pub async fn fetch_meta(
         );
     }
 
-    let mut url = url::Url::parse(NAVER_NOTICE_AJAX)?;
+    let mut url = url::Url::parse(&format!(
+        "https://m.series.naver.com/{kind}/moreNotiDetail.series"
+    ))?;
     url.query_pairs_mut().append_pair("productNo", product_no);
     let notice = client
         .get(url)
@@ -213,7 +250,7 @@ pub async fn fetch_meta(
         .ok()
         .and_then(|r| r.error_for_status().ok());
     if let Some(resp) = notice
-        && let Ok(body) = resp.text().await
+        && let Ok(body) = official_meta::body_capped(resp, official_meta::MAX_DETAIL_BYTES).await
     {
         schedule = parse_naver_notice(&body);
     }
@@ -229,12 +266,12 @@ pub async fn fetch_meta(
 
 /// Parse the volumeList AJAX response. The live endpoint returns JSON, not
 /// HTML: `{"resultData":[{"productName":..,"volumnNameText":"1화",..},..]}`.
-/// The title is the episode name (`volumnNameText`, fallback `volumeName`,
-/// then `productName`); the release date is the `YYYY-MM-DD` prefix of
-/// `lastVolumeUpdateDate`. Numbers are assigned globally in [`fetch_meta`] -
-/// rows here carry `number_x100 = 0`. At most `NAVER_ROWS_PER_PAGE` rows are
-/// read. Malformed or truncated input yields an empty vector - never a panic.
-pub fn parse_volume_list(json: &str) -> Vec<ChapterMeta> {
+/// The title is the episode name ([`episode_title`]); the release date is the
+/// `YYYY-MM-DD` prefix of `lastVolumeUpdateDate`. Numbers are assigned
+/// globally in [`fetch_meta`] - rows here carry `number_x100 = 0`. At most
+/// `NAVER_ROWS_PER_PAGE` rows are read. Malformed or truncated input yields an
+/// empty vector - never a panic.
+pub fn parse_volume_list(json: &str, kind: &str) -> Vec<ChapterMeta> {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
         return Vec::new();
     };
@@ -243,7 +280,7 @@ pub fn parse_volume_list(json: &str) -> Vec<ChapterMeta> {
     };
     let mut rows = Vec::new();
     for item in items.iter().take(NAVER_ROWS_PER_PAGE) {
-        let Some(title) = episode_title(item) else {
+        let Some(title) = episode_title(item, kind) else {
             continue;
         };
         let date = item
@@ -263,19 +300,36 @@ pub fn parse_volume_list(json: &str) -> Vec<ChapterMeta> {
 }
 
 /// Episode name from a volumeList JSON row: the first non-empty of
-/// `volumnNameText` (the real episode name: `1화`, `1부-1화`, `예고편`),
-/// `volumeName`, then the series name `productName`. The emptiness check runs
-/// per candidate — an empty `volumnNameText` must not shadow the fallback.
-fn episode_title(item: &serde_json::Value) -> Option<String> {
-    ["volumnNameText", "volumeName", "productName"]
-        .iter()
-        .find_map(|key| {
-            item.get(key)
-                .and_then(|v| v.as_str())
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .map(str::to_string)
-        })
+/// `volumnNameText` (the real comic episode name: `1화`, `1부-1화`, `예고편`),
+/// `subProductName` (the novel episode name: `Episode 1. …`), `volumeName`,
+/// then the series name `productName`. The emptiness check runs per candidate —
+/// an empty `volumnNameText` must not shadow the fallback.
+/// Episode title for one volume row. Novels carry a generic `volumnNameText`
+/// (`1화`) and the real episode name in `subProductName` (`Episode 1. …`), so
+/// novels read `subProductName` first; comics keep the volume name first.
+fn episode_title(item: &serde_json::Value, kind: &str) -> Option<String> {
+    let order: &[&str] = if kind == "novel" {
+        &[
+            "subProductName",
+            "volumnNameText",
+            "volumeName",
+            "productName",
+        ]
+    } else {
+        &[
+            "volumnNameText",
+            "volumeName",
+            "subProductName",
+            "productName",
+        ]
+    };
+    order.iter().find_map(|key| {
+        item.get(key)
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    })
 }
 
 /// Schedule text from a notice block. The marker is `연재 공지` (Naver encodes
@@ -299,10 +353,16 @@ mod tests {
     const FIXTURE: &str = include_str!("../../../tests/fixtures/naver_search.html");
 
     #[test]
-    fn parses_fixture_only_comic() {
+    fn parses_fixture_with_kind_prefixed_ids() {
         let hits = parse_search(FIXTURE);
-        assert_eq!(hits.len(), 1, "web-novel section must be filtered out");
+        // One comic result plus the novel section, each with its kind encoded
+        // in the id (`novel/{n}` vs bare digits).
+        assert_eq!(hits.len(), 3);
         assert_eq!(hits[0].id, "10319749");
+        assert_eq!(
+            hits.iter().filter(|h| h.id.starts_with("novel/")).count(),
+            2
+        );
     }
 
     #[test]
@@ -355,11 +415,13 @@ mod tests {
     }
 
     #[test]
-    fn novel_only_is_empty() {
+    fn novel_ids_are_prefixed() {
         let html = "<div class=\"com_srch\">\
             <a href=\"/novel/detail.series?productNo=5108800\">소설 (총 742화/완결)</a>\
         </div>";
-        assert!(parse_search(html).is_empty());
+        let hits = parse_search(html);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].id, "novel/5108800");
     }
 
     #[test]
@@ -389,7 +451,7 @@ mod tests {
     #[test]
     fn parse_volume_list_fixture() {
         let html = include_str!("../../../tests/fixtures/naver_volume_list.html");
-        let rows = parse_volume_list(html);
+        let rows = parse_volume_list(html, "comic");
         assert!(!rows.is_empty());
         // Numbers are assigned in `fetch_meta`; rows carry the episode name.
         assert!(rows.iter().all(|r| r.number_x100 == 0));
@@ -427,19 +489,19 @@ mod tests {
 
     #[test]
     fn truncated_volume_list_no_panic() {
-        assert!(parse_volume_list("<li><a>hi").is_empty());
+        assert!(parse_volume_list("<li><a>hi", "comic").is_empty());
     }
 
     #[test]
     fn empty_volume_name_falls_back() {
         let body = r#"{"resultData":[{"volumnNameText":"","volumeName":"1화",
             "productName":"제목","lastVolumeUpdateDate":"2024-01-02 00:00:00"}]}"#;
-        let rows = parse_volume_list(body);
+        let rows = parse_volume_list(body, "comic");
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].title.as_deref(), Some("1화"));
         // An all-empty name chain drops the row.
         let body = r#"{"resultData":[{"volumnNameText":" ","volumeName":"","productName":""}]}"#;
-        assert!(parse_volume_list(body).is_empty());
+        assert!(parse_volume_list(body, "comic").is_empty());
     }
 
     #[test]
@@ -448,7 +510,22 @@ mod tests {
             .map(|i| format!(r#"{{"volumnNameText":"{i}화","productName":"제목"}}"#))
             .collect();
         let body = format!(r#"{{"resultData":[{}]}}"#, items.join(","));
-        assert_eq!(parse_volume_list(&body).len(), NAVER_ROWS_PER_PAGE);
+        assert_eq!(parse_volume_list(&body, "comic").len(), NAVER_ROWS_PER_PAGE);
+    }
+
+    #[test]
+    fn novel_rows_prefer_the_sub_product_name() {
+        // Novels carry a generic `volumnNameText` (`1화`) and the real episode
+        // name in `subProductName`; comics keep `volumnNameText` first.
+        let body = r#"{"resultData":[{"volumnNameText":"1화",
+            "subProductName":"Episode 1. 유료 서비스 시작","productName":"제목"}]}"#;
+        let novel = parse_volume_list(body, "novel");
+        assert_eq!(
+            novel[0].title.as_deref(),
+            Some("Episode 1. 유료 서비스 시작")
+        );
+        let comic = parse_volume_list(body, "comic");
+        assert_eq!(comic[0].title.as_deref(), Some("1화"));
     }
 
     #[tokio::test]
