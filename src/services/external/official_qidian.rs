@@ -13,6 +13,7 @@
 //!   text node inside `<h2><mark>…</mark></h2>`. The anchor `title=` attribute
 //!   carries the `在线阅读` suffix and is deliberately ignored.
 
+use crate::services::external::chapter_title::{self, RawRow, main_count};
 use crate::services::external::official_meta::{self, ChapterMeta, OfficialMeta};
 use crate::services::official_types::OfficialHit;
 
@@ -22,14 +23,13 @@ const UA: &str = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 \
 /// GET `https://m.qidian.com/book/{id}/catalog/` (mobile; PC → anti-bot).
 pub async fn fetch_meta(client: &reqwest::Client, book_id: &str) -> anyhow::Result<OfficialMeta> {
     let url = format!("https://m.qidian.com/book/{book_id}/catalog/");
-    let html = client
+    let resp = client
         .get(&url)
         .header(reqwest::header::USER_AGENT, UA)
         .send()
         .await?
-        .error_for_status()?
-        .text()
-        .await?;
+        .error_for_status()?;
+    let html = official_meta::body_capped(resp, official_meta::MAX_DETAIL_BYTES).await?;
     Ok(parse_detail(&html))
 }
 
@@ -38,7 +38,7 @@ pub fn parse_detail(html: &str) -> OfficialMeta {
     let chapters = parse_catalog(html);
     OfficialMeta {
         source: "qidian".to_string(),
-        count: (!chapters.is_empty()).then_some(chapters.len() as i32),
+        count: (!chapters.is_empty()).then_some(main_count(&chapters) as i32),
         chapters,
         // Status (`完本`/`连载`) is not a frequency and there is no field for
         // it in `OfficialMeta` — never invent a schedule value here.
@@ -50,10 +50,12 @@ pub fn parse_detail(html: &str) -> OfficialMeta {
 /// Scan `//m.qidian.com/chapter/{bid}/{cid}/` anchors. Title comes from the
 /// `<h2>` inside the anchor (which also skips the header block), the date from
 /// `alt="… 首发时间: YYYY-MM-DD HH:MM:SS …"` (first 10 chars). Deduped by cid.
+/// Titles matching a CN bonus marker (`番外`/`序章`/`公告`/…) become unnumbered
+/// bonus rows; the rest are numbered in catalog order.
 /// Total: any anchor without `<h2>` or cid is skipped, never a panic.
 pub fn parse_catalog(html: &str) -> Vec<ChapterMeta> {
     const MARKER: &str = "//m.qidian.com/chapter/";
-    let mut rows: Vec<ChapterMeta> = Vec::new();
+    let mut raw: Vec<RawRow> = Vec::new();
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut rest = html;
     while let Some(pos) = rest.find(MARKER) {
@@ -88,14 +90,14 @@ pub fn parse_catalog(html: &str) -> Vec<ChapterMeta> {
         let release_date = official_meta::between(anchor, "首发时间: ", " ")
             .and_then(|s| s.get(..10))
             .and_then(official_meta::parse_date);
-        let n = rows.len() as f64 + 1.0;
-        if let Some(mut c) = ChapterMeta::from_f64(n) {
-            c.title = Some(title);
-            c.release_date = release_date;
-            rows.push(c);
-        }
+        let is_bonus = chapter_title::is_cn_positional_bonus(&title);
+        raw.push(RawRow {
+            title: Some(title),
+            release_date,
+            is_bonus,
+        });
     }
-    rows
+    chapter_title::positional_rows(raw)
 }
 
 /// Status marker from a *detail* page: `完本` (completed) or `连载` (ongoing).
@@ -104,7 +106,7 @@ pub fn parse_catalog(html: &str) -> Vec<ChapterMeta> {
 /// result is documented, not wired into `OfficialMeta`.
 pub fn parse_status(html: &str) -> Option<String> {
     let idx = html.find("detail__header-detail__time")?;
-    let window = &html[idx.saturating_sub(400)..idx];
+    let window = html.get(idx.saturating_sub(400)..idx).unwrap_or("");
     let completed = window.rfind("完本").map(|p| (p, "完本"));
     let ongoing = window.rfind("连载").map(|p| (p, "连载"));
     match (completed, ongoing) {
@@ -119,14 +121,13 @@ pub fn parse_status(html: &str) -> Option<String> {
 /// form 302s here). UA is not critical; the WAF script does not trigger.
 pub async fn search(client: &reqwest::Client, title: &str) -> anyhow::Result<Vec<OfficialHit>> {
     let kw: String = url::form_urlencoded::byte_serialize(title.as_bytes()).collect();
-    let html = client
+    let resp = client
         .get(format!("https://m.qidian.com/soushu/{kw}.html"))
         .header(reqwest::header::USER_AGENT, UA)
         .send()
         .await?
-        .error_for_status()?
-        .text()
-        .await?;
+        .error_for_status()?;
+    let html = official_meta::body_capped(resp, official_meta::MAX_DETAIL_BYTES).await?;
     Ok(parse_search(&html))
 }
 
@@ -179,14 +180,20 @@ mod tests {
         assert!(m.next_update_at.is_none());
         // 1418 unique rows; the `_lastChapterUT` header shortcut is skipped.
         assert_eq!(m.chapters.len(), 1418);
-        assert_eq!(m.count, Some(1418));
+        // 11 rows carry CN bonus markers (番外/上架感言/请假/…): kept as bonus
+        // rows, excluded from the count. Numbered titles that merely mention a
+        // marker word (`第三十九章 尾声`) stay main chapters.
+        assert_eq!(m.count, Some(1407));
+        assert_eq!(m.chapters.iter().filter(|c| c.is_bonus).count(), 11);
         assert_eq!(m.chapters[0].number_x100, 100);
         assert_eq!(m.chapters[0].title.as_deref(), Some("第一章 绯红"));
         assert_eq!(
             m.chapters[0].release_date,
             official_meta::parse_date("2018-04-01")
         );
-        assert_eq!(m.chapters[1417].number_x100, 141800);
+        // The final row is the 番外 announcement -> unnumbered bonus.
+        assert!(m.chapters[1417].is_bonus);
+        assert_eq!(m.chapters[1417].number_x100, 0);
         assert_eq!(
             m.chapters[1417].title.as_deref(),
             Some("12月1日《诡秘之主》新番外发布")

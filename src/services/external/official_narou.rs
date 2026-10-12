@@ -1,34 +1,45 @@
 //! Narō (ncode.syosetu.com) detail enrichment: episode titles/dates + status.
-//! Counts are owned by the existing `chapter_count::syosetu` provider.
+//! The main-only count written here supersedes the coarse
+//! `chapter_count::syosetu` provider (which counts bonuses too); once the
+//! official stamp is set that provider is skipped.
 
-use crate::services::external::official_meta::{self, ChapterMeta, OfficialMeta};
+use crate::services::external::chapter_title::{self, RawRow, main_count};
+use crate::services::external::official_meta::{self, OfficialMeta};
 
 const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
                   (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
+/// Hard cap on rows accumulated across the paged walk.
+const MAX_ROWS: usize = 20_000;
+
 pub async fn fetch_meta(client: &reqwest::Client, ncode: &str) -> anyhow::Result<OfficialMeta> {
-    let mut chapters: Vec<ChapterMeta> = Vec::new();
+    // Rows are numbered once, after every page is collected: numbering each
+    // page on its own would restart at 1 and collide across pages.
+    let mut raw: Vec<RawRow> = Vec::new();
     for page in 1..=50 {
         let url = format!("https://ncode.syosetu.com/{ncode}/?p={page}");
-        let body = client
+        let resp = client
             .get(&url)
             .header(reqwest::header::USER_AGENT, UA)
             .send()
             .await?
-            .error_for_status()?
-            .text()
-            .await?;
-        let rows = parse_episode_list(&body);
+            .error_for_status()?;
+        let body = official_meta::body_capped(resp, official_meta::MAX_DETAIL_BYTES).await?;
+        let rows = parse_episode_rows(&body);
         if rows.is_empty() {
             break;
         }
-        chapters.extend(rows);
+        raw.extend(rows);
+        if raw.len() >= MAX_ROWS {
+            break;
+        }
     }
+    let chapters = chapter_title::positional_rows(raw);
 
     let schedule = fetch_status(client, ncode).await.unwrap_or(None);
     Ok(OfficialMeta {
         source: "syosetu".to_string(),
-        count: (!chapters.is_empty()).then_some(chapters.len() as i32),
+        count: (!chapters.is_empty()).then_some(main_count(&chapters) as i32),
         chapters,
         update_schedule: schedule,
         next_update_at: None,
@@ -37,20 +48,22 @@ pub async fn fetch_meta(client: &reqwest::Client, ncode: &str) -> anyhow::Result
 
 async fn fetch_status(client: &reqwest::Client, ncode: &str) -> anyhow::Result<Option<String>> {
     let url = format!("https://ncode.syosetu.com/novelview/infotop/ncode/{ncode}/");
-    let body = client
+    let resp = client
         .get(&url)
         .header(reqwest::header::USER_AGENT, UA)
         .send()
         .await?
-        .error_for_status()?
-        .text()
-        .await?;
+        .error_for_status()?;
+    let body = official_meta::body_capped(resp, official_meta::MAX_DETAIL_BYTES).await?;
     Ok(parse_status(&body))
 }
 
 /// Rows carry `p-eplist__subtitle` (title) and `p-eplist__update` (date).
-pub fn parse_episode_list(html: &str) -> Vec<ChapterMeta> {
-    let mut rows = Vec::new();
+/// Narō's own episode index counts bonuses (a `プロローグ` is episode 1), so
+/// the rows are flagged here and numbered later by
+/// [`chapter_title::positional_rows`].
+pub fn parse_episode_rows(html: &str) -> Vec<RawRow> {
+    let mut raw: Vec<RawRow> = Vec::new();
     let mut rest = html;
     while let Some(pos) = rest.find("p-eplist__subtitle") {
         let after = &rest[pos..];
@@ -69,24 +82,28 @@ pub fn parse_episode_list(html: &str) -> Vec<ChapterMeta> {
             let date_part = s.split_whitespace().next()?;
             official_meta::parse_date(date_part)
         });
-        let number = rows.len() as f64 + 1.0;
-        if let Some(mut c) = ChapterMeta::from_f64(number) {
-            c.title = (!title.is_empty()).then_some(title);
-            c.release_date = date;
-            rows.push(c);
-        }
+        let is_bonus = chapter_title::is_jp_positional_bonus(&title);
+        raw.push(RawRow {
+            title: (!title.is_empty()).then_some(title),
+            release_date: date,
+            is_bonus,
+        });
     }
-    rows
+    raw
 }
 
-/// Status line contains `連載中` (ongoing) or `完結` (completed). Return a short
-/// human label; there is no free-text frequency on Narō.
+/// Status badge carries `連載中` (ongoing) or `完結` (completed). The badge is
+/// read in isolation because the description can mention the other state
+/// ("完結後の番外編はこちらで連載中です"); on the page-wide fallback `完結`
+/// wins. There is no free-text frequency on Narō.
 pub fn parse_status(html: &str) -> Option<String> {
-    let text = official_meta::strip_tags(html);
-    if text.contains("連載中") {
-        Some("連載中".to_string())
-    } else if text.contains("完結") {
+    let text = official_meta::between(html, "p-infotop-type__type", "</span>")
+        .map(official_meta::strip_tags)
+        .unwrap_or_else(|| official_meta::strip_tags(html));
+    if text.contains("完結") {
         Some("完結".to_string())
+    } else if text.contains("連載中") {
+        Some("連載中".to_string())
     } else {
         None
     }
@@ -99,7 +116,7 @@ mod tests {
     #[test]
     fn parses_narou_fixture() {
         let html = include_str!("../../../tests/fixtures/narou_episodes.html");
-        let rows = parse_episode_list(html);
+        let rows = parse_episode_rows(html);
         assert!(!rows.is_empty());
         assert!(rows[0].title.is_some());
         assert!(rows[0].release_date.is_some());

@@ -18,12 +18,13 @@ pub struct ChapterMeta {
     pub title: Option<String>,
     pub release_date: Option<NaiveDate>,
     /// True for bonus rows (`00` prologues, non-numeric specials, repeated
-    /// numbers, Korean `예고편`/`외전`, Japanese `番外編`/`特別編`, MangaPlus `ex`
-    /// rows). Set by every source that classifies titles through
+    /// numbers, Korean `예고편`/`외전`, Japanese `番外編`/`特別編`, Chinese
+    /// `番外`/`序章`, MangaPlus `ex` rows). Set by every source that classifies
+    /// titles through
     /// [`chapter_title`](crate::services::external::chapter_title) (bilibili,
-    /// kuaikan, kakao, ridibooks, mangaplus, comicwalker, mangaup, alphapolis)
-    /// or `is_kr_bonus_title` (naver); the remaining sources report their plain
-    /// numbered rows as `false`.
+    /// kuaikan, kakao, ridibooks, mangaplus, comicwalker, mangaup, alphapolis,
+    /// narou, kakuyomu, qidian) or `is_kr_bonus_title` (naver); the remaining
+    /// sources report their plain numbered rows as `false`.
     pub is_bonus: bool,
     /// Display label the source already knows (split parts `479-1`, `2-1`),
     /// stored verbatim into `series_chapters.chapter_label` by `apply_meta`.
@@ -41,23 +42,6 @@ pub struct OfficialMeta {
     pub count: Option<i32>,
     pub update_schedule: Option<String>,
     pub next_update_at: Option<NaiveDate>,
-}
-
-impl ChapterMeta {
-    /// Integer chapter n -> x100. `n = 10.5` -> `1050`.
-    pub fn from_f64(n: f64) -> Option<Self> {
-        if !n.is_finite() || n <= 0.0 {
-            return None;
-        }
-        let scaled = (n * 100.0).round() as i32;
-        (scaled > 0).then_some(Self {
-            number_x100: scaled,
-            title: None,
-            release_date: None,
-            is_bonus: false,
-            label: None,
-        })
-    }
 }
 
 /// Sources with a real arm in `fetch_source` (each source here has a working fetch).
@@ -364,13 +348,5 @@ mod tests {
         );
         assert_eq!(normalize_schedule("未定"), None);
         assert_eq!(normalize_schedule(""), None);
-    }
-
-    #[test]
-    fn chapter_meta_from_f64_scales() {
-        assert_eq!(ChapterMeta::from_f64(10.5).unwrap().number_x100, 1050);
-        assert_eq!(ChapterMeta::from_f64(1.0).unwrap().number_x100, 100);
-        assert!(ChapterMeta::from_f64(0.0).is_none());
-        assert!(ChapterMeta::from_f64(-3.0).is_none());
     }
 }

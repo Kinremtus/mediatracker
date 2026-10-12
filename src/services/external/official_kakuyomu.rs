@@ -12,6 +12,7 @@
 //! `"description"` string in the page is the SEO `<meta name="description">`,
 //! not a schedule — `update_schedule` degrades to `None`.
 
+use crate::services::external::chapter_title::{self, RawRow, main_count};
 use crate::services::external::official_meta::{self, ChapterMeta, OfficialMeta};
 use crate::services::official_types::OfficialHit;
 
@@ -21,14 +22,13 @@ const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
 /// GET `https://kakuyomu.jp/works/<work_id>` and parse the SSR page.
 pub async fn fetch_meta(client: &reqwest::Client, work_id: &str) -> anyhow::Result<OfficialMeta> {
     let url = format!("https://kakuyomu.jp/works/{work_id}");
-    let html = client
+    let resp = client
         .get(&url)
         .header(reqwest::header::USER_AGENT, UA)
         .send()
         .await?
-        .error_for_status()?
-        .text()
-        .await?;
+        .error_for_status()?;
+    let html = official_meta::body_capped(resp, official_meta::MAX_DETAIL_BYTES).await?;
     Ok(parse_detail(&html))
 }
 
@@ -46,7 +46,7 @@ pub fn parse_detail(html: &str) -> OfficialMeta {
     let chapters = parse_episodes(json);
     OfficialMeta {
         source: "kakuyomu".to_string(),
-        count: (!chapters.is_empty()).then_some(chapters.len() as i32),
+        count: (!chapters.is_empty()).then_some(main_count(&chapters) as i32),
         chapters,
         update_schedule: schedule,
         next_update_at: None,
@@ -75,16 +75,20 @@ pub fn parse_episodes(json: &str) -> Vec<ChapterMeta> {
         (None, Some(_)) => std::cmp::Ordering::Greater,
         (None, None) => std::cmp::Ordering::Equal,
     });
-    rows.into_iter()
-        .enumerate()
-        .map(|(i, (title, release_date))| ChapterMeta {
-            number_x100: ((i + 1) * 100) as i32,
-            title,
-            release_date,
-            is_bonus: false,
-            label: None,
+    let rows = rows
+        .into_iter()
+        .map(|(title, release_date)| {
+            let is_bonus = title
+                .as_deref()
+                .is_some_and(chapter_title::is_jp_positional_bonus);
+            RawRow {
+                title,
+                release_date,
+                is_bonus,
+            }
         })
-        .collect()
+        .collect();
+    chapter_title::positional_rows(rows)
 }
 
 /// Depth-first walk collecting `Episode` objects (`title` + `publishedAt`).

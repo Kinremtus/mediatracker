@@ -7,6 +7,9 @@
 //! then maps an oldest-first row list onto [`ChapterMeta`] rows (the first
 //! sighting of a key is a main chapter, every repeat a bonus duplicate) and
 //! [`main_count`] derives the chapter count from the highest main base.
+//! Sources that report no number in their titles at all (narou, kakuyomu,
+//! qidian, naver) go through [`positional_rows`] instead: marker titles become
+//! bonus rows and the rest are numbered `1..N` in order.
 //!
 //! Moved out of `official_bilibili` when kuaikan gained a fetcher: bilibili and
 //! kuaikan share the `第N话` + `（上）/（下）` + `N-M` dialect, naver/kakao the
@@ -188,7 +191,8 @@ pub fn classify_mangaplus_name(name: Option<&str>) -> ShortTitle {
 /// to the generic classifier (plain numbers, dash parts).
 pub fn classify_jp_title(raw: &str) -> ShortTitle {
     let s = raw.trim();
-    if is_jp_bonus_title(s) {
+    // A numbered title wins over a marker (`第5話 幕間` is chapter 5).
+    if !has_chapter_number_prefix(s) && is_jp_bonus_title(s) {
         return ShortTitle::Unnumbered;
     }
     if let Some((n, rest)) = parse_jp_number(s) {
@@ -202,7 +206,8 @@ pub fn classify_jp_title(raw: &str) -> ShortTitle {
 
 /// Japanese side-content markers (substring match, same trade-off as the KR
 /// list): a rare main episode that mentions one is folded into bonuses rather
-/// than lost.
+/// than lost. Shared kanji markers (`序章`/`幕間`/`終章`/`間話`/`閑話`) also
+/// cover Chinese titles.
 pub fn is_jp_bonus_title(title: &str) -> bool {
     [
         "プロローグ",
@@ -215,9 +220,77 @@ pub fn is_jp_bonus_title(title: &str) -> bool {
         "おまけ",
         "特典",
         "限定",
+        "幕間",
+        "幕间",
+        "序章",
+        "終章",
+        "终章",
+        "間話",
+        "间话",
+        "閑話",
+        "闲话",
     ]
     .iter()
     .any(|marker| title.contains(marker))
+}
+
+/// True when the title starts with a numbered `第…<unit>` chapter marker
+/// (Chinese numerals included: `第三十九章`, `第35话`, `第１２章`). The numeral
+/// must be non-zero — `第0話`/`第0章` are prologues, exactly like in
+/// [`parse_jp_number`]/[`parse_cn_chapter`]. A numbered title is a real chapter
+/// even when the rest mentions side content (`第三十九章 尾声`), so the
+/// bonus-marker checks must not override it.
+pub fn has_chapter_number_prefix(raw: &str) -> bool {
+    let Some(rest) = raw.trim().strip_prefix('第') else {
+        return false;
+    };
+    let token = rest.split_whitespace().next().unwrap_or("");
+    let mut numeral = false;
+    let mut nonzero = false;
+    let mut unit = false;
+    for c in token.chars() {
+        match c {
+            '0' | '０' | '○' | '〇' | '零' => numeral = true,
+            '1'..='9' | '１'..='９' => {
+                numeral = true;
+                nonzero = true;
+            }
+            '一' | '二' | '三' | '四' | '五' | '六' | '七' | '八' | '九' | '十' | '百' | '千'
+            | '万' | '两' | '壹' | '贰' | '叁' | '肆' | '伍' | '陆' | '柒' | '捌' | '玖' =>
+            {
+                numeral = true;
+                nonzero = true;
+            }
+            '章' | '话' | '話' | '节' | '節' | '回' => unit = true,
+            _ => {}
+        }
+    }
+    numeral && nonzero && unit
+}
+
+/// Chinese sources mark side content in the title: `番外`/`外传` (side story),
+/// `序章`/`楔子` (prologue), `后记`/`尾声` (afterword) and
+/// `公告`/`上架`/`感言`/`请假` (notices). Such rows are bonus rows, never
+/// numbered chapters.
+pub fn is_cn_bonus_title(title: &str) -> bool {
+    [
+        "番外", "外传", "外傳", "序章", "楔子", "后记", "后記", "尾声", "尾聲", "公告", "上架",
+        "感言", "请假", "請假",
+    ]
+    .iter()
+    .any(|marker| title.contains(marker))
+}
+
+/// Bonus-row rule for the positional sources: a title matching a Japanese
+/// side-content marker is a bonus row unless it also carries a chapter number
+/// (`第三十九章 尾声` is a real chapter).
+pub fn is_jp_positional_bonus(title: &str) -> bool {
+    !has_chapter_number_prefix(title) && is_jp_bonus_title(title)
+}
+
+/// [`is_jp_positional_bonus`] with the Chinese marker set.
+pub fn is_cn_positional_bonus(title: &str) -> bool {
+    !has_chapter_number_prefix(title) && is_cn_bonus_title(title)
 }
 
 /// `第N話` / `第N回` -> `Some((N, tail))` for `N >= 1`; ASCII and full-width
@@ -350,10 +423,14 @@ pub fn is_kr_bonus_title(title: &str) -> bool {
         .any(|marker| title.contains(marker))
 }
 
-/// The number in a trailing `<n>화` suffix: `132화` -> `Some(132)`, `0화` ->
-/// `Some(0)`; `None` when the title does not end in a numeric `화` marker.
+/// The number in a trailing `<n>화` (episode) or `<n>권` (volume) suffix:
+/// `132화` -> `Some(132)`, `3권` -> `Some(3)`, `0화` -> `Some(0)`; `None`
+/// when the title does not end in a numeric marker.
 pub fn parse_kr_chapter_number(raw: &str) -> Option<i32> {
-    let stem = raw.trim().strip_suffix('화')?;
+    let trimmed = raw.trim();
+    let stem = trimmed
+        .strip_suffix('화')
+        .or_else(|| trimmed.strip_suffix('권'))?;
     let digits: String = stem
         .chars()
         .rev()
@@ -368,9 +445,10 @@ pub fn parse_kr_chapter_number(raw: &str) -> Option<i32> {
     digits.parse().ok()
 }
 
-/// Kakao episode titles end with `<n>화` (`… 132화`). `0화` prologues and
-/// unnumbered notices (`… 프롤로그`) are bonus rows; a numbered title wins even
-/// when it mentions side content, matching the duplicate-number rule elsewhere.
+/// Kakao episode titles end with `<n>화` (`… 132화`) or `<n>권` (`… 3권`).
+/// `0화` prologues and unnumbered notices (`… 프롤로그`) are bonus rows; a
+/// numbered title wins even when it mentions side content, matching the
+/// duplicate-number rule elsewhere.
 pub fn classify_kakao_title(raw: &str) -> ShortTitle {
     match parse_kr_chapter_number(raw) {
         Some(n) if n >= 1 => ShortTitle::Base(n),
@@ -491,6 +569,46 @@ pub fn rows_to_chapters(rows: Vec<EpisodeRow>) -> Vec<ChapterMeta> {
         .collect()
 }
 
+/// One raw row from a source that reports no chapter number in its titles:
+/// title, date and whether the title marks it as side content.
+pub struct RawRow {
+    pub title: Option<String>,
+    pub release_date: Option<NaiveDate>,
+    pub is_bonus: bool,
+}
+
+/// Rows from a source that reports no chapter number in its titles (narou,
+/// kakuyomu, qidian, naver): rows flagged `is_bonus` become unnumbered bonus
+/// rows and every other row is numbered `1..N` in the given order, so a bonus
+/// never consumes a chapter number. Numbering stops at the `i32` key ceiling
+/// instead of saturating into duplicate keys.
+pub fn positional_rows(rows: Vec<RawRow>) -> Vec<ChapterMeta> {
+    let mut out = Vec::with_capacity(rows.len());
+    let mut main = 0i32;
+    for row in rows {
+        let (number_x100, is_bonus) = if row.is_bonus {
+            (0, true)
+        } else {
+            let Some(next) = main.checked_add(1) else {
+                break;
+            };
+            let Some(key) = next.checked_mul(100) else {
+                break;
+            };
+            main = next;
+            (key, false)
+        };
+        out.push(ChapterMeta {
+            number_x100,
+            title: row.title,
+            release_date: row.release_date,
+            is_bonus,
+            label: None,
+        });
+    }
+    out
+}
+
 /// Number of main chapters — the highest main base number
 /// (`MAX(chapter_number) / 100`): split parts (`479-1`, `479-2`) count as the
 /// single chapter 479. Feeds `media_items.chapters` and the drawer badge.
@@ -543,6 +661,95 @@ mod tests {
         }
         // A wide second number that is not a forward range stays unnumbered.
         assert_eq!(c("900-100"), ShortTitle::Unnumbered);
+    }
+
+    #[test]
+    fn positional_rows_number_only_mains() {
+        let rows = vec![
+            RawRow {
+                title: Some("プロローグ".into()),
+                release_date: None,
+                is_bonus: true,
+            },
+            RawRow {
+                title: Some("第一話".into()),
+                release_date: None,
+                is_bonus: false,
+            },
+            RawRow {
+                title: Some("第二話".into()),
+                release_date: None,
+                is_bonus: false,
+            },
+        ];
+        let chapters = positional_rows(rows);
+        let keys: Vec<i32> = chapters.iter().map(|c| c.number_x100).collect();
+        assert_eq!(keys, vec![0, 100, 200]);
+        assert!(chapters[0].is_bonus);
+        assert_eq!(main_count(&chapters), 2);
+    }
+
+    #[test]
+    fn chapter_number_prefix_needs_a_nonzero_numeral() {
+        for yes in [
+            "第一章 绯红",
+            "第35话",
+            "第１２章",
+            "第三十九章 尾声",
+            "第5回",
+            "第1話「タイトル」",
+        ] {
+            assert!(has_chapter_number_prefix(yes), "{yes}");
+        }
+        for no in [
+            "第0話",
+            "第0章",
+            "第00話",
+            "第０話",
+            "第X章",
+            "序章",
+            "第 1 話",
+            "プロローグ",
+        ] {
+            assert!(!has_chapter_number_prefix(no), "{no}");
+        }
+    }
+
+    #[test]
+    fn cn_bonus_markers_and_kr_volume_suffix() {
+        for yes in [
+            "番外 后篇",
+            "上架感言",
+            "请假条",
+            "序章",
+            "楔子",
+            "完本感言",
+        ] {
+            assert!(is_cn_bonus_title(yes), "{yes}");
+        }
+        assert!(!is_cn_bonus_title("第一章 绯红"));
+        assert_eq!(parse_kr_chapter_number("3권"), Some(3));
+        assert_eq!(parse_kr_chapter_number("12화"), Some(12));
+        assert_eq!(parse_kr_chapter_number("프롤로그"), None);
+    }
+
+    #[test]
+    fn positional_bonus_respects_numbered_titles() {
+        assert!(is_jp_positional_bonus("プロローグ"));
+        assert!(is_jp_positional_bonus("幕間 閑話"));
+        assert!(!is_jp_positional_bonus("第5話 幕間"));
+        assert!(is_cn_positional_bonus("上架感言"));
+        assert!(!is_cn_positional_bonus("第三十九章 尾声"));
+    }
+
+    #[test]
+    fn numbered_titles_win_over_bonus_markers() {
+        assert!(has_chapter_number_prefix("第三十九章 尾声"));
+        assert!(has_chapter_number_prefix("第35话"));
+        assert!(has_chapter_number_prefix("第１２章 番外"));
+        assert!(!has_chapter_number_prefix("上架感言"));
+        assert!(!has_chapter_number_prefix("12月1日《诡秘之主》新番外发布"));
+        assert!(!has_chapter_number_prefix("プロローグ"));
     }
 
     #[test]
