@@ -447,7 +447,7 @@ fn mapping_table() {
     );
     assert_eq!(
         official_source_for_media_type("manhwa"),
-        &["kakao", "naver", "ridibooks"][..]
+        &["kakao", "naver", "ridibooks", "tappytoon", "webtoons"][..]
     );
     assert_eq!(
         official_source_for_media_type("manga"),
@@ -612,7 +612,7 @@ async fn no_match_anywhere_binds_nothing() {
     assert_eq!(
         calls.lock().unwrap().len(),
         3,
-        "all three manhwa sources were tried once"
+        "the three Hangul-capable manhwa sources were tried once (tappytoon and webtoons are English-only)"
     );
     assert_eq!(
         get_source_id(&ctx.pool, "mangaupdates", &series, "naver")

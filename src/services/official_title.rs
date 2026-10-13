@@ -106,6 +106,10 @@ fn search_scripts(source: &str) -> &'static [Script] {
         }
         // The global app indexes English names but also serves JP titles.
         "mangaplus" => &[Script::Latin, Script::Japanese, Script::Other],
+        // Tappytoon's catalogue is English-only.
+        "tappytoon" => &[Script::Latin],
+        // WEBTOON's English site indexes English names.
+        "webtoons" => &[Script::Latin],
         _ => &[],
     }
 }
@@ -239,6 +243,35 @@ mod tests {
     fn pick_mangaplus_returns_latin() {
         let candidates = ["One Piece".to_string(), "원피스".to_string()];
         assert_eq!(pick_candidate(&candidates, "mangaplus"), Some("One Piece"));
+    }
+
+    #[test]
+    fn pick_tappytoon_requires_latin() {
+        let candidates = ["Solo Leveling".to_string(), "나 혼자만 레벨업".to_string()];
+        assert_eq!(
+            pick_candidate(&candidates, "tappytoon"),
+            Some("Solo Leveling")
+        );
+        assert_eq!(
+            pick_candidate(&["나 혼자만 레벨업".to_string()], "tappytoon"),
+            None
+        );
+    }
+
+    #[test]
+    fn pick_webtoons_requires_latin() {
+        let candidates = [
+            "Omniscient Reader".to_string(),
+            "전지적 독자 시점".to_string(),
+        ];
+        assert_eq!(
+            pick_candidate(&candidates, "webtoons"),
+            Some("Omniscient Reader")
+        );
+        assert_eq!(
+            pick_candidate(&["전지적 독자 시점".to_string()], "webtoons"),
+            None
+        );
     }
 
     #[test]

@@ -25,8 +25,8 @@ pub fn official_source_for_media_type(media_type: &str) -> &'static [&'static st
         "manhua" => &["kuaikan", "bilibili"],
         // kakao/naver existing; daum was dropped: the service merged into
         // Kakao and its gateway API is token-gated (no guest search), so it can
-        // never bind; ridibooks last.
-        "manhwa" => &["kakao", "naver", "ridibooks"],
+        // never bind; ridibooks and the English-only platforms last.
+        "manhwa" => &["kakao", "naver", "ridibooks", "tappytoon", "webtoons"],
         // mangaplus existing; comicwalker/mangaup new; alphapolis last.
         "manga" => &["mangaplus", "comicwalker", "mangaup", "alphapolis"],
         // syosetu existing; kakuyomu new JP; qidian CN; ridibooks/alphapolis
@@ -49,9 +49,9 @@ pub fn official_source_for_media_type(media_type: &str) -> &'static [&'static st
 ///
 /// The first ten entries mirror the `supports_meta` global ranks of
 /// `migrations/028_chapter_ownership.sql` (bilibili=1 ... qidian=10); kuaikan,
-/// kakao and mangaplus gained their fetch arms after that migration, so they
-/// are appended last (in that order). The set must match `SOURCES_WITH_META`
-/// (enforced by `tests/chapter_key.rs`).
+/// kakao, mangaplus, tappytoon and webtoons gained their fetch arms after that
+/// migration, so they are appended last (in that order). The set must match
+/// `SOURCES_WITH_META` (enforced by `tests/chapter_key.rs`).
 pub const GLOBAL_SOURCE_ORDER: &[&str] = &[
     "bilibili",
     "naver",
@@ -66,6 +66,8 @@ pub const GLOBAL_SOURCE_ORDER: &[&str] = &[
     "kuaikan",
     "kakao",
     "mangaplus",
+    "tappytoon",
+    "webtoons",
 ];
 
 /// Network abstraction so tests can inject a fixture-backed searcher.
@@ -114,6 +116,12 @@ impl OfficialSearch for HttpOfficialSearch {
                 }
                 "naver" => {
                     crate::services::external::official_naver::search(&self.client, query).await
+                }
+                "tappytoon" => {
+                    crate::services::external::official_tappytoon::search(&self.client, query).await
+                }
+                "webtoons" => {
+                    crate::services::external::official_webtoons::search(&self.client, query).await
                 }
                 "mangaplus" => {
                     let catalog = self.mangaplus.catalog().await?;
@@ -487,7 +495,7 @@ mod tests {
         );
         assert_eq!(
             official_source_for_media_type("manhwa"),
-            &["kakao", "naver", "ridibooks"][..]
+            &["kakao", "naver", "ridibooks", "tappytoon", "webtoons"][..]
         );
         assert_eq!(
             official_source_for_media_type("manga"),

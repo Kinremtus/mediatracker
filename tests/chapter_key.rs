@@ -212,6 +212,8 @@ fn sources_with_meta_matches_fetch_source_arms() {
         "kuaikan",
         "kakao",
         "mangaplus",
+        "tappytoon",
+        "webtoons",
     ];
 
     let mut arms: Vec<&str> = FETCH_SOURCE_ARMS.to_vec();
@@ -237,8 +239,8 @@ fn global_source_order_has_the_same_set_as_supports_meta() {
 #[test]
 fn global_source_order_mirrors_migration_028_ranks() {
     // migrations/028_chapter_ownership.sql `supports_meta` global_rank order,
-    // with kuaikan/kakao/mangaplus appended (their fetch arms landed after that
-    // migration).
+    // with kuaikan/kakao/mangaplus/tappytoon/webtoons appended (their fetch arms
+    // landed after that migration).
     assert_eq!(
         GLOBAL_SOURCE_ORDER,
         &[
@@ -254,7 +256,9 @@ fn global_source_order_mirrors_migration_028_ranks() {
             "qidian",
             "kuaikan",
             "kakao",
-            "mangaplus"
+            "mangaplus",
+            "tappytoon",
+            "webtoons"
         ]
     );
 }

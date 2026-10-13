@@ -207,6 +207,8 @@ fn new_official_sources_are_bindable_and_narou_is_not() {
         "kuaikan",
         "kakao",
         "naver",
+        "tappytoon",
+        "webtoons",
     ] {
         assert!(
             is_known_source(source),

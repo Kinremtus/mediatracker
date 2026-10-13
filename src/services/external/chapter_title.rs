@@ -8,8 +8,8 @@
 //! sighting of a key is a main chapter, every repeat a bonus duplicate) and
 //! [`main_count`] derives the chapter count from the highest main base.
 //! Sources that report no number in their titles at all (narou, kakuyomu,
-//! qidian, naver) go through [`positional_rows`] instead: marker titles become
-//! bonus rows and the rest are numbered `1..N` in order.
+//! qidian, naver, tappytoon) go through [`positional_rows`] instead: marker
+//! titles become bonus rows and the rest are numbered `1..N` in order.
 //!
 //! Moved out of `official_bilibili` when kuaikan gained a fetcher: bilibili and
 //! kuaikan share the `第N话` + `（上）/（下）` + `N-M` dialect, naver/kakao the
@@ -18,6 +18,8 @@
 //! ([`strip_catalog_markers`], [`strip_kr_episode_suffix`]) live here too:
 //! naver and ridibooks use them to reduce a hit title to the bare series name
 //! so [`crate::services::official_title::titles_match`] can compare it.
+//! [`starts_with_word`] backs the Latin side-content markers of the English
+//! sources (tappytoon, webtoons).
 
 use std::collections::HashSet;
 
@@ -422,6 +424,18 @@ pub fn is_kr_bonus_title(title: &str) -> bool {
     ["예고편", "외전", "번외", "프롤로그", "공지", "휴재", "후기"]
         .iter()
         .any(|marker| title.contains(marker))
+}
+
+/// `lower` starts with `marker` and the next character does not continue the
+/// word: `extra 3` matches, `extraordinary` does not. A single trailing plural
+/// `s` is accepted (`extras 3`), but `extraspecial` still fails. Used by sources
+/// whose markers are Latin words (`official_tappytoon`, `official_webtoons`).
+pub fn starts_with_word(lower: &str, marker: &str) -> bool {
+    let Some(rest) = lower.strip_prefix(marker) else {
+        return false;
+    };
+    let rest = rest.strip_prefix('s').unwrap_or(rest);
+    !rest.chars().next().is_some_and(char::is_alphabetic)
 }
 
 /// The number in a trailing `<n>화` (episode) or `<n>권` (volume) suffix:

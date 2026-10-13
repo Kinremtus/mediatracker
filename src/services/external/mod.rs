@@ -23,6 +23,8 @@ pub mod official_narou;
 pub mod official_naver;
 pub mod official_qidian;
 pub mod official_ridibooks;
+pub mod official_tappytoon;
+pub mod official_webtoons;
 pub mod openlibrary;
 pub mod rawg;
 pub mod shikimori;

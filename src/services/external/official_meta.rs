@@ -23,8 +23,9 @@ pub struct ChapterMeta {
     /// titles through
     /// [`chapter_title`](crate::services::external::chapter_title) (bilibili,
     /// kuaikan, kakao, ridibooks, mangaplus, comicwalker, mangaup, alphapolis,
-    /// narou, kakuyomu, qidian) or `is_kr_bonus_title` (naver); the remaining
-    /// sources report their plain numbered rows as `false`.
+    /// narou, kakuyomu, qidian, tappytoon, webtoons) or `is_kr_bonus_title`
+    /// (naver); the remaining sources report their plain numbered rows as
+    /// `false`.
     pub is_bonus: bool,
     /// Display label the source already knows (split parts `479-1`, `2-1`),
     /// stored verbatim into `series_chapters.chapter_label` by `apply_meta`.
@@ -48,8 +49,8 @@ pub struct OfficialMeta {
 /// Every chained source is meta-capable today; the list still guards against a
 /// future arm-less source (such a binding must keep `chapter_key` on the MU key
 /// instead of pointing at rows no fetch ever writes).
-/// `kuaikan`, `kakao` and `mangaplus` gained their arms after
-/// `migrations/028_chapter_ownership.sql`; that migration's `supports_meta`
+/// `kuaikan`, `kakao`, `mangaplus`, `tappytoon` and `webtoons` gained their arms
+/// after `migrations/028_chapter_ownership.sql`; that migration's `supports_meta`
 /// list is a frozen one-time-backfill snapshot, so this runtime list is the
 /// source of truth for `chapter_key` and the resolve walk.
 pub const SOURCES_WITH_META: &[&str] = &[
@@ -66,6 +67,8 @@ pub const SOURCES_WITH_META: &[&str] = &[
     "kuaikan",
     "kakao",
     "mangaplus",
+    "tappytoon",
+    "webtoons",
 ];
 
 /// Fetch one source's detail, dispatched by the binding name. Unknown/absent
@@ -105,6 +108,12 @@ pub async fn fetch_source(
         "mangaup" => {
             crate::services::external::official_mangaup::fetch_meta(client, source_id).await
         }
+        "tappytoon" => {
+            crate::services::external::official_tappytoon::fetch_meta(client, source_id).await
+        }
+        "webtoons" => {
+            crate::services::external::official_webtoons::fetch_meta(client, source_id).await
+        }
         _ => Ok(OfficialMeta::default()),
     }
 }
@@ -132,21 +141,24 @@ pub fn is_safe_path_id(id: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
 
-/// Read a response body with a hard size cap: `content_length` is checked
-/// before buffering, the bytes actually read afterwards. Chunked responses
-/// carry no `content_length` and stay bounded only by the shared client
-/// timeout. The body is decoded lossily as UTF-8.
-pub async fn body_capped(resp: reqwest::Response, cap: u64) -> anyhow::Result<String> {
+/// Read a response body with a hard size cap. `content_length` is checked
+/// before buffering, then every chunk is counted as it arrives — a chunked
+/// response (no `content_length`) is cut off mid-stream instead of being
+/// buffered whole. The body is decoded lossily as UTF-8.
+pub async fn body_capped(mut resp: reqwest::Response, cap: u64) -> anyhow::Result<String> {
     if let Some(len) = resp.content_length()
         && len > cap
     {
         anyhow::bail!("response too large: {len} bytes (cap {cap})");
     }
-    let bytes = resp.bytes().await?;
-    if bytes.len() as u64 > cap {
-        anyhow::bail!("response too large: {} bytes (cap {cap})", bytes.len());
+    let mut buf: Vec<u8> = Vec::new();
+    while let Some(chunk) = resp.chunk().await? {
+        if buf.len() as u64 + chunk.len() as u64 > cap {
+            anyhow::bail!("response too large: over {cap} bytes");
+        }
+        buf.extend_from_slice(&chunk);
     }
-    Ok(String::from_utf8_lossy(&bytes).into_owned())
+    Ok(String::from_utf8_lossy(&buf).into_owned())
 }
 
 /// The embedded `__NEXT_DATA__` JSON of a Next.js SSR page, starting at its
@@ -178,7 +190,17 @@ pub fn strip_tags(html: &str) -> String {
             _ => {}
         }
     }
-    out.split_whitespace().collect::<Vec<_>>().join(" ")
+    // Titles compare through `normalize_title`, which keeps the digits of an
+    // undecoded `&#39;` and would then miss the real series name.
+    let decoded = out
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&#x27;", "'")
+        .replace("&nbsp;", " ");
+    decoded.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// Extract the string value of a JSON-ish key `"key":"value"` without a full
