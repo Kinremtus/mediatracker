@@ -459,6 +459,38 @@ async fn same_source_meta_replaces_its_count_provider_reading() {
     );
 }
 
+/// The meta's own earlier reading may be lowered too: when a row is
+/// reclassified from main to bonus (a newer afterword marker), the stored
+/// `official_<source>` counter sits one bonus above the walk's main count.
+#[tokio::test]
+async fn official_meta_lowers_its_own_previous_reading() {
+    let ctx = setup().await;
+    sqlx::query(
+        "UPDATE media_items SET chapters = 2, chapters_source = 'official_bilibili' \
+         WHERE provider = $1 AND external_id = $2",
+    )
+    .bind(PROVIDER)
+    .bind(EXTERNAL_ID)
+    .execute(&ctx.pool)
+    .await
+    .expect("seed official reading");
+
+    let mut m = meta(None, None, None);
+    m.count = Some(1);
+    // One main + one bonus: the earlier pass counted the afterword as a main,
+    // so the walk's main-only count is one lower (bounded by that bonus row).
+    m.chapters = vec![main_chapter(100), bonus_chapter(0)];
+    apply_meta(&ctx.pool, PROVIDER, EXTERNAL_ID, SOURCE, &m)
+        .await
+        .expect("apply_meta");
+
+    assert_eq!(
+        counter_columns(&ctx).await,
+        (Some(1), Some("official_bilibili".to_string())),
+        "a reclassified row may lower the official's own reading"
+    );
+}
+
 /// A truncated walk must NOT lower the counter: the gap between the coarse
 /// reading and the walk count may not exceed the bonus rows the walk found.
 #[tokio::test]
@@ -670,6 +702,47 @@ async fn orphan_cleanup_spares_read_manual_and_progress_rows() {
         numbers,
         vec![100, 800, 900, 1000],
         "only the unread, untracked, origin='mu' orphan (700) may be removed"
+    );
+}
+
+/// A re-apply also drops THIS source's own stale main rows: a row the source no
+/// longer reports (a reclassified afterword) must not linger next to the bonus
+/// that replaced it. Rows still in the answer, read rows, rows carrying read
+/// progress and other sources' rows survive.
+#[tokio::test]
+async fn orphan_cleanup_removes_the_sources_own_stale_main() {
+    let ctx = setup().await;
+    let user_id = seed_user(&ctx).await;
+
+    // The walk reports 100 (seeded by `setup`) and 200.
+    let mut m = meta(None, None, None);
+    m.chapters.push(main_chapter(200));
+    m.count = Some(2);
+
+    // Still in the answer -> kept even though it is this source's row.
+    seed_chapter(&ctx, PROVIDER, EXTERNAL_ID, 200, SOURCE, false, false).await;
+    // Not in the answer -> the source's own unread main row is removed.
+    seed_chapter(&ctx, PROVIDER, EXTERNAL_ID, 22300, SOURCE, false, false).await;
+    // ... but read state is never sacrificed.
+    seed_chapter(&ctx, PROVIDER, EXTERNAL_ID, 22400, SOURCE, true, false).await;
+    seed_chapter(&ctx, PROVIDER, EXTERNAL_ID, 22500, SOURCE, false, false).await;
+    seed_read_progress(&ctx, user_id, PROVIDER, EXTERNAL_ID, 22500).await;
+    // Another source's row is never touched.
+    seed_chapter(&ctx, PROVIDER, EXTERNAL_ID, 22600, "kakao", false, false).await;
+
+    apply_meta(&ctx.pool, PROVIDER, EXTERNAL_ID, SOURCE, &m)
+        .await
+        .expect("apply_meta");
+
+    let numbers: Vec<i32> = chapter_rows(&ctx)
+        .await
+        .into_iter()
+        .map(|(_, _, n, _, _)| n)
+        .collect();
+    assert_eq!(
+        numbers,
+        vec![100, 200, 22400, 22500, 22600],
+        "only the source's own unread stale main (22300) may be removed"
     );
 }
 

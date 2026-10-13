@@ -47,11 +47,13 @@ pub async fn apply_meta(
 
     // Counter: raise-only (`raised_value`, same rule as `chapter_enrich`), only
     // for non-manual counts, with ONE exception: a detailed meta from the SAME
-    // source supersedes that source's coarse count-provider reading
-    // (`chapters_source = 'auto:<source>'`), whose number counts bonus rows
-    // (kakao's `on_sale_count` includes the `0화` prologue). The lowering is
-    // bounded by the bonus rows the walk actually found — a larger gap means a
-    // truncated answer, so the counter is left untouched.
+    // source supersedes that source's earlier reading when that reading counts
+    // bonus rows — the coarse count provider (`chapters_source =
+    // 'auto:<source>'`, kakao's `on_sale_count` includes the `0화` prologue) or
+    // this meta's own earlier pass (`official_<source>`, e.g. an afterword that
+    // a newer marker reclassified from main to bonus). The lowering is bounded
+    // by the bonus rows the walk actually found — a larger gap means a truncated
+    // answer, so the counter is left untouched.
     //
     // The row is read ONLY when the source reported a count (no point spending
     // a query otherwise); a failed read is debug-logged instead of propagated —
@@ -65,8 +67,13 @@ pub async fn apply_meta(
         match crate::services::chapters::get_chapter_meta(db, provider, external_id).await {
             Ok(Some((current, _, stored_source))) => {
                 let auto_source = format!("auto:{source}");
+                let official_source = format!("{OFFICIAL_SOURCE_PREFIX}{source}");
                 let bonus_rows = meta.chapters.iter().filter(|c| c.is_bonus).count() as i32;
-                let same_source = stored_source.as_deref() == Some(auto_source.as_str());
+                // Both readings may sit above the walk's main-only count: the
+                // coarse provider counts bonuses, and this meta's own earlier
+                // pass counted a row that is a bonus now.
+                let same_source = stored_source.as_deref() == Some(auto_source.as_str())
+                    || stored_source.as_deref() == Some(official_source.as_str());
                 let bounded = current
                     .is_some_and(|cur| count > 0 && count <= cur && cur - count <= bonus_rows);
                 if same_source && bounded {
@@ -167,10 +174,11 @@ pub async fn apply_meta(
         // pre-transaction read, so a concurrent raise must not be lowered. The
         // same-source supersede is the one lowering branch, and it re-checks
         // the provenance INSIDE the statement: if the row no longer belongs to
-        // this source's provider, the write falls back to a plain raise.
+        // this source (`auto:<source>` or `official_<source>`), the write falls
+        // back to a plain raise.
         sqlx::query(
             "UPDATE media_items \
-             SET chapters = CASE WHEN $5 AND chapters_source = $6 THEN $3 \
+             SET chapters = CASE WHEN $5 AND chapters_source IN ($6, $7) THEN $3 \
                                  ELSE GREATEST(chapters, $3) END, \
                  chapters_source = $4, updated_at = NOW() \
              WHERE provider = $1 AND external_id = $2 AND chapters_manual = FALSE",
@@ -181,6 +189,7 @@ pub async fn apply_meta(
         .bind(format!("{OFFICIAL_SOURCE_PREFIX}{source}"))
         .bind(may_lower)
         .bind(format!("auto:{source}"))
+        .bind(format!("{OFFICIAL_SOURCE_PREFIX}{source}"))
         .execute(&mut *tx)
         .await?;
     }
@@ -222,17 +231,23 @@ pub async fn apply_meta(
         );
     }
 
-    // Orphan cleanup: MU-skeleton rows under the resolved key that the official
-    // answer does not mention anymore, and that nobody ever read. `read` rows,
-    // rows with a read progress entry of any user and `origin='manual'` rows are
-    // kept (design :99-101). Skipped entirely for an empty chapter list: an
-    // answer without episodes must never delete the fallback skeleton.
+    // Orphan cleanup: rows under the resolved key that the official answer does
+    // not mention anymore, and that nobody ever read. Two kinds: MU-skeleton
+    // rows, and THIS source's own main rows it no longer reports — a re-apply
+    // can reclassify a row (an afterword that a newer marker turns into a bonus
+    // would otherwise leave a stale main duplicating it). This source's bonus
+    // rows are excluded: they are rewritten above with their own negative keys.
+    // `read` rows, rows with a read progress entry of any user and
+    // `origin='manual'` rows are kept (design :99-101). Skipped entirely for an
+    // empty chapter list: an answer without episodes must never delete the
+    // fallback skeleton.
     if !meta.chapters.is_empty() {
         let numbers: Vec<i32> = meta.chapters.iter().map(|c| c.number_x100).collect();
         let removed = sqlx::query(
             r#"
             DELETE FROM series_chapters sc
-            WHERE sc.provider = $1 AND sc.external_id = $2 AND sc.origin = 'mu'
+            WHERE sc.provider = $1 AND sc.external_id = $2
+              AND (sc.origin = 'mu' OR (sc.origin = $4 AND NOT sc.is_bonus))
               AND NOT sc.read
               AND NOT (sc.chapter_number = ANY($3::int[]))
               AND NOT EXISTS (SELECT 1 FROM user_chapter_progress p
@@ -245,6 +260,7 @@ pub async fn apply_meta(
         .bind(&ch_provider)
         .bind(&ch_id)
         .bind(&numbers)
+        .bind(source)
         .execute(&mut *tx)
         .await?;
         if removed.rows_affected() > 0 {
@@ -253,7 +269,7 @@ pub async fn apply_meta(
                 external_id,
                 source,
                 orphans = removed.rows_affected(),
-                "official_meta: removed unread MU skeleton rows missing from the official answer"
+                "official_meta: removed unread rows missing from the official answer"
             );
         }
     }
