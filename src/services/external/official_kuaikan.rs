@@ -218,11 +218,12 @@ mod tests {
         assert_eq!(m.chapters[0].title.as_deref(), Some("第1话 重生"));
         // `created_at` epoch ms becomes a real date.
         assert!(m.chapters[0].release_date.is_some());
-        // 923 numbered rows minus 9 repeated keys -> 914 main; the 9 repeats
-        // plus 4 unnumbered specials -> 13 bonus.
+        // 923 numbered rows minus 8 repeated keys -> 915 main; the 8 repeats
+        // plus 4 unnumbered specials -> 12 bonus. (One repeat used to be a
+        // missed mixed-bracket part marker: `47(上）`-style rows now pair up.)
         let main = m.chapters.iter().filter(|c| !c.is_bonus).count();
         let bonus = m.chapters.iter().filter(|c| c.is_bonus).count();
-        assert_eq!((main, bonus), (914, 13));
+        assert_eq!((main, bonus), (915, 12));
         // Split parts stay tickable: `（上）/（下）` rows carry an `N-p` label.
         let parts = m.chapters.iter().filter(|c| c.label.is_some()).count();
         assert!(parts > 700, "expected split parts, got {parts}");

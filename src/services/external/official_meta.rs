@@ -182,15 +182,29 @@ pub fn floor_boundary(s: &str, idx: usize) -> usize {
     i
 }
 
-/// `name="value"` of one attribute inside a tag. `<a data-x="1" class="y">`
-/// yields `Some("y")` for `class`. Shared by the HTML sources whose hits live in
-/// tag attributes (webtoons, acqq).
+/// `name="value"` of one attribute inside a tag. The name must start a word, so
+/// `title` never matches inside `data-title`. `<a data-x="1" class="y">` yields
+/// `Some("y")` for `class`. Shared by the HTML sources whose hits live in tag
+/// attributes (webtoons, acqq).
 pub fn attr(tag: &str, name: &str) -> Option<String> {
     let key = format!("{name}=\"");
-    let start = tag.find(&key)? + key.len();
-    let rest = &tag[start..];
-    let end = rest.find('"')?;
-    Some(rest[..end].to_string())
+    let mut from = 0usize;
+    while let Some(rel) = tag[from..].find(&key) {
+        let at = from + rel;
+        let boundary = at == 0
+            || tag[..at]
+                .chars()
+                .next_back()
+                .is_some_and(|c| c.is_whitespace() || c == '<');
+        if boundary {
+            let start = at + key.len();
+            let rest = &tag[start..];
+            let end = rest.find('"')?;
+            return Some(rest[..end].to_string());
+        }
+        from = at + key.len();
+    }
+    None
 }
 
 /// Return the substring strictly between `start` and the next `end` after it.

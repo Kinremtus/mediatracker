@@ -51,21 +51,24 @@ pub struct EpisodeRow {
 }
 
 /// Strip one trailing part marker `（上）/（下）/(上)/(下)/【上】/【下】`:
-/// `Some((head, part))`, part 1 for 上 and 2 for 下.
+/// `Some((head, part))`, part 1 for 上 and 2 for 下. The open and close
+/// brackets are checked independently — live pages mix their widths
+/// (`47(上）`, `105（下)`), and a missed marker would merge two halves into one
+/// chapter number, folding the second into a bonus.
 fn split_part_marker(s: &str) -> Option<(&str, i32)> {
-    for (suffix, part) in [
-        ("（上）", 1),
-        ("（下）", 2),
-        ("(上)", 1),
-        ("(下)", 2),
-        ("【上】", 1),
-        ("【下】", 2),
-    ] {
-        if let Some(head) = s.strip_suffix(suffix) {
-            return Some((head.trim_end(), part));
-        }
+    let mut chars = s.char_indices().rev();
+    let (_, close) = chars.next()?;
+    let (_, mid) = chars.next()?;
+    let (open_at, open) = chars.next()?;
+    if !matches!(open, '(' | '（' | '【') || !matches!(close, ')' | '）' | '】') {
+        return None;
     }
-    None
+    let part = match mid {
+        '上' => 1,
+        '下' => 2,
+        _ => return None,
+    };
+    Some((s[..open_at].trim_end(), part))
 }
 
 /// `第N话` / `第N話` -> `Some(N)` for `N >= 1` when the whole string is the
@@ -811,17 +814,25 @@ mod tests {
     fn classify_acqq_titles() {
         assert_eq!(classify_acqq_title("01"), ShortTitle::Base(1));
         assert_eq!(classify_acqq_title("96（上）"), ShortTitle::Part(96, 1));
+        // The live page mixes bracket widths: both halves must still pair up.
+        assert_eq!(classify_acqq_title("47(上）"), ShortTitle::Part(47, 1));
+        assert_eq!(classify_acqq_title("47(下）"), ShortTitle::Part(47, 2));
+        assert_eq!(classify_acqq_title("105（下)"), ShortTitle::Part(105, 2));
+        assert_eq!(classify_acqq_title("117（上)"), ShortTitle::Part(117, 1));
         assert_eq!(
             classify_acqq_title("第190回 魂殿的秘密"),
             ShortTitle::Base(190)
         );
         assert_eq!(classify_acqq_title("296回 十护法"), ShortTitle::Base(296));
         assert_eq!(classify_acqq_title("第521回 完结篇"), ShortTitle::Base(521));
+        assert_eq!(classify_acqq_title("320 黑龙"), ShortTitle::Base(320));
         assert_eq!(
             classify_acqq_title("番外01 初遇（上）"),
             ShortTitle::Unnumbered
         );
         assert_eq!(classify_acqq_title("预告"), ShortTitle::Unnumbered);
+        // A year is an own title, not a chapter number.
+        assert_eq!(classify_acqq_title("2020年回顾"), ShortTitle::Unnumbered);
     }
 
     #[test]

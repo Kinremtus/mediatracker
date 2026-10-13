@@ -140,12 +140,15 @@ pub fn parse_chapters(html: &str) -> OfficialMeta {
         }
         let at = cursor + idx + BLOCK.len();
         cursor = at;
-        let hi = official_meta::floor_boundary(html, at + WINDOW);
+        // Bound the row to its own block: an anchor-less row must not borrow
+        // the anchor of the next one.
+        let block_end = html[at..].find(BLOCK).map_or(html.len(), |rel| at + rel);
+        let hi = official_meta::floor_boundary(html, (at + WINDOW).min(block_end));
         let Some(a_rel) = html[at..hi].find("<a ") else {
             continue;
         };
         let a_start = at + a_rel;
-        let a_hi = official_meta::floor_boundary(html, a_start + WINDOW);
+        let a_hi = official_meta::floor_boundary(html, (a_start + WINDOW).min(block_end));
         let Some(a_end) = html[a_start..a_hi].find('>') else {
             continue;
         };
