@@ -24,6 +24,8 @@ k8s/secrets/age-key*.txt
 
 # Local AI tooling config
 .opencode/
+AGENTS.md
+opencode.json
 
 terraform/terraform.tfvars
 terraform/**/*.tfstate

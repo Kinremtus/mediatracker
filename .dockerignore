@@ -29,6 +29,7 @@ terraform/
 # Local AI tooling / planning artifacts
 .opencode/
 thoughts/
+opencode.json
 
 # Helm chart / IaC / local env files are not needed in the build context
 chart/
