@@ -411,14 +411,15 @@ fn classify_number(s: &str) -> ShortTitle {
 
 /// Korean sources mark side content in the episode title: `예고편` (preview),
 /// `외전` (side story), `번외` (extra), `프롤로그` (prologue), `공지` (notice),
-/// `휴재` (hiatus). Such rows are bonus rows, never numbered chapters.
+/// `휴재` (hiatus), `후기` (afterword). Such rows are bonus rows, never
+/// numbered chapters.
 ///
 /// Substring matching is deliberate (Naver mixes markers into longer titles,
 /// e.g. `101화 (시즌2 마지막화)` is a main row while `1화 예고편` is a bonus); a
 /// rare main episode whose own title happens to mention one of the markers is
 /// folded into the bonus section rather than being lost.
 pub fn is_kr_bonus_title(title: &str) -> bool {
-    ["예고편", "외전", "번외", "프롤로그", "공지", "휴재"]
+    ["예고편", "외전", "번외", "프롤로그", "공지", "휴재", "후기"]
         .iter()
         .any(|marker| title.contains(marker))
 }
@@ -799,6 +800,8 @@ mod tests {
             "프롤로그",
             "연재 공지",
             "휴재 안내",
+            "후기",
+            "작가 후기",
         ] {
             assert!(is_kr_bonus_title(title), "{title}");
         }
