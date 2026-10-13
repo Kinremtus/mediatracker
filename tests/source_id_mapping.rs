@@ -209,6 +209,7 @@ fn new_official_sources_are_bindable_and_narou_is_not() {
         "naver",
         "tappytoon",
         "webtoons",
+        "acqq",
     ] {
         assert!(
             is_known_source(source),

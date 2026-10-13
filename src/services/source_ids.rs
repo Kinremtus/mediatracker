@@ -27,6 +27,7 @@ pub const KNOWN_SOURCES: &[&str] = &[
     "mangaup",
     "tappytoon",
     "webtoons",
+    "acqq",
 ];
 
 /// True when `source` is a whitelisted bindable source.
@@ -151,6 +152,7 @@ mod tests {
             "mangaup",
             "tappytoon",
             "webtoons",
+            "acqq",
         ] {
             assert!(is_known_source(source), "{source} must be known");
             assert!(

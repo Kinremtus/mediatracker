@@ -9,6 +9,7 @@ pub mod mal;
 pub mod mangadex;
 pub mod mangaupdates;
 pub mod nuxt_payload;
+pub mod official_acqq;
 pub mod official_alphapolis;
 pub mod official_bilibili;
 pub mod official_comicwalker;

@@ -89,7 +89,7 @@ pub fn detect_script(s: &str) -> Script {
 fn search_scripts(source: &str) -> &'static [Script] {
     match source {
         // CN catalogs are Han-only.
-        "kuaikan" | "bilibili" | "qidian" => &[Script::Han],
+        "kuaikan" | "bilibili" | "qidian" | "acqq" => &[Script::Han],
         // KR catalogs are Hangul-only; ridibooks also indexes Latin/JP rows.
         "kakao" | "naver" | "daum" => &[Script::Hangul],
         "ridibooks" => &[
@@ -272,6 +272,13 @@ mod tests {
             pick_candidate(&["전지적 독자 시점".to_string()], "webtoons"),
             None
         );
+    }
+
+    #[test]
+    fn pick_acqq_requires_han() {
+        let candidates = ["One Piece".to_string(), "斗破苍穹".to_string()];
+        assert_eq!(pick_candidate(&candidates, "acqq"), Some("斗破苍穹"));
+        assert_eq!(pick_candidate(&["One Piece".to_string()], "acqq"), None);
     }
 
     #[test]

@@ -168,6 +168,46 @@ pub fn classify_kuaikan_title(raw: &str) -> ShortTitle {
     with_part(classify_number(head), part)
 }
 
+/// AC.QQ chapter titles read `01`, `96（上）`, `第190回 魂殿的秘密`,
+/// `296回 十护法` or `番外01 初遇（上）`: an optional `第`, digits, an optional
+/// `话`/`回`/`章` unit and an own title; the bracketed part marker sits at the
+/// end. A numbered title wins over a marker; only marker-only rows (`番外…`)
+/// become bonuses.
+pub fn classify_acqq_title(raw: &str) -> ShortTitle {
+    let (head, part) = strip_part_markers(raw.trim());
+    if !has_chapter_number_prefix(head) && is_cn_bonus_title(head) {
+        return ShortTitle::Unnumbered;
+    }
+    if let Some(n) = parse_acqq_number(head) {
+        return match part {
+            Some(p) => ShortTitle::Part(n, p),
+            None => ShortTitle::Base(n),
+        };
+    }
+    with_part(classify_number(head), part)
+}
+
+/// Leading chapter number: an optional `第`, digits, then either the end, a unit
+/// (`话`/話/`回`/`章`) or a separator. Anything else is an own title that merely
+/// starts with digits (`2020年…`).
+fn parse_acqq_number(s: &str) -> Option<i32> {
+    let s = s.trim();
+    let rest = s.strip_prefix('第').unwrap_or(s);
+    let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+    if digits.is_empty() {
+        return None;
+    }
+    let after = &rest[digits.len()..];
+    let boundary = after.is_empty()
+        || after.starts_with([
+            '话', '話', '回', '章', '节', '節', ' ', '：', ':', '（', '(',
+        ]);
+    if !boundary {
+        return None;
+    }
+    digits.parse::<i32>().ok().filter(|n| *n >= 1)
+}
+
 /// MangaPlus app rows carry `#NNN` names for numbered chapters; anything else
 /// (`ex`) is a bonus row, whose own label lives in the row's `subTitle`.
 pub fn classify_mangaplus_name(name: Option<&str>) -> ShortTitle {
@@ -765,6 +805,23 @@ mod tests {
         assert!(!has_chapter_number_prefix("上架感言"));
         assert!(!has_chapter_number_prefix("12月1日《诡秘之主》新番外发布"));
         assert!(!has_chapter_number_prefix("プロローグ"));
+    }
+
+    #[test]
+    fn classify_acqq_titles() {
+        assert_eq!(classify_acqq_title("01"), ShortTitle::Base(1));
+        assert_eq!(classify_acqq_title("96（上）"), ShortTitle::Part(96, 1));
+        assert_eq!(
+            classify_acqq_title("第190回 魂殿的秘密"),
+            ShortTitle::Base(190)
+        );
+        assert_eq!(classify_acqq_title("296回 十护法"), ShortTitle::Base(296));
+        assert_eq!(classify_acqq_title("第521回 完结篇"), ShortTitle::Base(521));
+        assert_eq!(
+            classify_acqq_title("番外01 初遇（上）"),
+            ShortTitle::Unnumbered
+        );
+        assert_eq!(classify_acqq_title("预告"), ShortTitle::Unnumbered);
     }
 
     #[test]

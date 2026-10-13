@@ -23,7 +23,7 @@ pub struct ChapterMeta {
     /// titles through
     /// [`chapter_title`](crate::services::external::chapter_title) (bilibili,
     /// kuaikan, kakao, ridibooks, mangaplus, comicwalker, mangaup, alphapolis,
-    /// narou, kakuyomu, qidian, tappytoon, webtoons) or `is_kr_bonus_title`
+    /// narou, kakuyomu, qidian, tappytoon, webtoons, acqq) or `is_kr_bonus_title`
     /// (naver); the remaining sources report their plain numbered rows as
     /// `false`.
     pub is_bonus: bool,
@@ -49,8 +49,8 @@ pub struct OfficialMeta {
 /// Every chained source is meta-capable today; the list still guards against a
 /// future arm-less source (such a binding must keep `chapter_key` on the MU key
 /// instead of pointing at rows no fetch ever writes).
-/// `kuaikan`, `kakao`, `mangaplus`, `tappytoon` and `webtoons` gained their arms
-/// after `migrations/028_chapter_ownership.sql`; that migration's `supports_meta`
+/// `kuaikan`, `kakao`, `mangaplus`, `tappytoon`, `webtoons` and `acqq` gained
+/// their arms after `migrations/028_chapter_ownership.sql`; that migration's `supports_meta`
 /// list is a frozen one-time-backfill snapshot, so this runtime list is the
 /// source of truth for `chapter_key` and the resolve walk.
 pub const SOURCES_WITH_META: &[&str] = &[
@@ -69,6 +69,7 @@ pub const SOURCES_WITH_META: &[&str] = &[
     "mangaplus",
     "tappytoon",
     "webtoons",
+    "acqq",
 ];
 
 /// Fetch one source's detail, dispatched by the binding name. Unknown/absent
@@ -114,6 +115,7 @@ pub async fn fetch_source(
         "webtoons" => {
             crate::services::external::official_webtoons::fetch_meta(client, source_id).await
         }
+        "acqq" => crate::services::external::official_acqq::fetch_meta(client, source_id).await,
         _ => Ok(OfficialMeta::default()),
     }
 }
@@ -169,6 +171,28 @@ pub fn next_data_str(html: &str) -> Option<&str> {
     Some(&seg[start..])
 }
 
+/// The largest index `<= idx` that is a char boundary, so a byte window can be
+/// sliced without panicking on a multi-byte character. Parser helpers use it to
+/// bound tag/attribute searches to a small window.
+pub fn floor_boundary(s: &str, idx: usize) -> usize {
+    let mut i = idx.min(s.len());
+    while i > 0 && !s.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
+}
+
+/// `name="value"` of one attribute inside a tag. `<a data-x="1" class="y">`
+/// yields `Some("y")` for `class`. Shared by the HTML sources whose hits live in
+/// tag attributes (webtoons, acqq).
+pub fn attr(tag: &str, name: &str) -> Option<String> {
+    let key = format!("{name}=\"");
+    let start = tag.find(&key)? + key.len();
+    let rest = &tag[start..];
+    let end = rest.find('"')?;
+    Some(rest[..end].to_string())
+}
+
 /// Return the substring strictly between `start` and the next `end` after it.
 /// `None` when either marker is missing.
 pub fn between<'a>(haystack: &'a str, start: &str, end: &str) -> Option<&'a str> {
@@ -186,7 +210,10 @@ pub fn strip_tags(html: &str) -> String {
         match c {
             '<' => in_tag = true,
             '>' => in_tag = false,
-            _ if !in_tag => out.push(c),
+            // Control characters (a NUL breaks the Postgres insert) are dropped;
+            // whitespace keeps its separating effect as a space.
+            _ if !in_tag && !c.is_control() => out.push(c),
+            _ if !in_tag && c.is_whitespace() => out.push(' '),
             _ => {}
         }
     }

@@ -21,8 +21,9 @@ pub struct ResolveOutcome {
 /// expensive sources last). `narou` is intentionally absent: it reuses `syosetu`.
 pub fn official_source_for_media_type(media_type: &str) -> &'static [&'static str] {
     match media_type {
-        // kuaikan is existing/cheap -> first; bilibili is quota-limited -> last.
-        "manhua" => &["kuaikan", "bilibili"],
+        // kuaikan is existing/cheap -> first; bilibili is quota-limited; the
+        // Tencent catalogue (acqq) last.
+        "manhua" => &["kuaikan", "bilibili", "acqq"],
         // kakao/naver existing; daum was dropped: the service merged into
         // Kakao and its gateway API is token-gated (no guest search), so it can
         // never bind; ridibooks and the English-only platforms last.
@@ -49,8 +50,8 @@ pub fn official_source_for_media_type(media_type: &str) -> &'static [&'static st
 ///
 /// The first ten entries mirror the `supports_meta` global ranks of
 /// `migrations/028_chapter_ownership.sql` (bilibili=1 ... qidian=10); kuaikan,
-/// kakao, mangaplus, tappytoon and webtoons gained their fetch arms after that
-/// migration, so they are appended last (in that order). The set must match
+/// kakao, mangaplus, tappytoon, webtoons and acqq gained their fetch arms after
+/// that migration, so they are appended last (in that order). The set must match
 /// `SOURCES_WITH_META` (enforced by `tests/chapter_key.rs`).
 pub const GLOBAL_SOURCE_ORDER: &[&str] = &[
     "bilibili",
@@ -68,6 +69,7 @@ pub const GLOBAL_SOURCE_ORDER: &[&str] = &[
     "mangaplus",
     "tappytoon",
     "webtoons",
+    "acqq",
 ];
 
 /// Network abstraction so tests can inject a fixture-backed searcher.
@@ -122,6 +124,9 @@ impl OfficialSearch for HttpOfficialSearch {
                 }
                 "webtoons" => {
                     crate::services::external::official_webtoons::search(&self.client, query).await
+                }
+                "acqq" => {
+                    crate::services::external::official_acqq::search(&self.client, query).await
                 }
                 "mangaplus" => {
                     let catalog = self.mangaplus.catalog().await?;
@@ -491,7 +496,7 @@ mod tests {
         // bilibili is last in `manhua` (guest quota), others by priority.
         assert_eq!(
             official_source_for_media_type("manhua"),
-            &["kuaikan", "bilibili"][..]
+            &["kuaikan", "bilibili", "acqq"][..]
         );
         assert_eq!(
             official_source_for_media_type("manhwa"),

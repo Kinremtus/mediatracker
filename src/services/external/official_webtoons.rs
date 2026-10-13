@@ -33,6 +33,8 @@ const WALK_BUDGET: Duration = Duration::from_secs(20);
 /// Upper bound on a plausible episode number; anything larger is a broken or
 /// hostile answer and must not inflate the chapter counter.
 const MAX_EPISODE_NO: i64 = 100_000;
+/// How far a tag/attribute search may reach from its anchor.
+const WINDOW: usize = 4096;
 /// Longest stored episode title (a hostile answer must not bloat the DB).
 const MAX_TITLE_CHARS: usize = 512;
 
@@ -70,30 +72,36 @@ pub fn parse_search(html: &str) -> Vec<OfficialHit> {
     while let Some(idx) = html[cursor..].find("_card_item") {
         let at = cursor + idx;
         cursor = at + "_card_item".len();
-        // The tag starts before the class token; take the whole anchor tag.
-        let Some(tag_start) = html[..at].rfind('<') else {
+        // The tag starts before the class token; take the whole anchor tag. The
+        // window keeps a hostile page from stretching the tag across the
+        // document (every hit would otherwise clone it).
+        let lo = official_meta::floor_boundary(html, at.saturating_sub(WINDOW));
+        let Some(rel_start) = html[lo..at].rfind('<') else {
             continue;
         };
+        let tag_start = lo + rel_start;
         // A `>` in between means the token sits outside a tag (hostile or
         // broken HTML): the attributes would come from neighbouring tags.
         if html[tag_start..at].contains('>') {
             continue;
         }
-        let Some(tag_end) = html[at..].find('>') else {
+        let hi = official_meta::floor_boundary(html, at + WINDOW);
+        let Some(rel_end) = html[at..hi].find('>') else {
             continue;
         };
-        let tag = &html[tag_start..at + tag_end];
-        if attr(tag, "data-webtoon-type").as_deref() != Some("WEBTOON") {
+        let tag = &html[tag_start..at + rel_end];
+        if official_meta::attr(tag, "data-webtoon-type").as_deref() != Some("WEBTOON") {
             continue;
         }
-        let Some(id) = attr(tag, "data-title-no") else {
+        let Some(id) = official_meta::attr(tag, "data-title-no") else {
             continue;
         };
         if !official_meta::is_digit_id(&id) || seen.contains(&id) {
             continue;
         }
         // The title belongs to this card: bound the lookup by the anchor end.
-        let Some(anchor_end) = html[cursor..].find("</a>") else {
+        let card_hi = official_meta::floor_boundary(html, cursor + WINDOW);
+        let Some(anchor_end) = html[cursor..card_hi].find("</a>") else {
             continue;
         };
         let card = &html[cursor..cursor + anchor_end];
@@ -102,6 +110,7 @@ pub fn parse_search(html: &str) -> Vec<OfficialHit> {
             continue;
         };
         let title = official_meta::strip_tags(raw);
+        let title: String = title.chars().take(MAX_TITLE_CHARS).collect();
         if title.is_empty() {
             continue;
         }
@@ -109,15 +118,6 @@ pub fn parse_search(html: &str) -> Vec<OfficialHit> {
         hits.push(OfficialHit { id, title });
     }
     hits
-}
-
-/// `name="value"` of one attribute inside a tag.
-fn attr(tag: &str, name: &str) -> Option<String> {
-    let key = format!("{name}=\"");
-    let start = tag.find(&key)? + key.len();
-    let rest = &tag[start..];
-    let end = rest.find('"')?;
-    Some(rest[..end].to_string())
 }
 
 /// Walk the episode API by cursor and map the rows onto the shared chapter

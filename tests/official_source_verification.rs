@@ -443,7 +443,7 @@ async fn raise_only_keeps_higher_count() {
 fn mapping_table() {
     assert_eq!(
         official_source_for_media_type("manhua"),
-        &["kuaikan", "bilibili"][..]
+        &["kuaikan", "bilibili", "acqq"][..]
     );
     assert_eq!(
         official_source_for_media_type("manhwa"),
@@ -757,6 +757,37 @@ async fn bilibili_is_tried_when_kuaikan_has_no_match() {
     let calls = calls.lock().unwrap();
     let order: Vec<&str> = calls.iter().map(|c| c.0.as_str()).collect();
     assert_eq!(order, vec!["kuaikan", "bilibili"]);
+}
+
+/// The third manhua source is reached when the two earlier ones answer nothing.
+#[tokio::test]
+async fn acqq_is_tried_when_kuaikan_and_bilibili_have_no_match() {
+    let ctx = setup().await;
+    let series = SERIES_ID.to_string();
+    let search = FixtureSearch::with_sources(&[
+        ("kuaikan", vec![]),
+        ("bilibili", vec![]),
+        ("acqq", vec![hit("531040", "斗破苍穹")]),
+    ]);
+
+    let outcome = resolve_and_bind(
+        &ctx.pool,
+        &search,
+        "mangaupdates",
+        &series,
+        "manhua",
+        "斗破苍穹",
+        &[],
+    )
+    .await;
+
+    assert_eq!(
+        outcome,
+        Some(ResolveOutcome {
+            source: "acqq".to_string(),
+            source_id: "531040".to_string(),
+        })
+    );
 }
 
 /// A web-novel hit (`novel/`-prefixed id) binds only a `novel` item: the kind
