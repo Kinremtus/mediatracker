@@ -465,8 +465,14 @@ fn mapping_table() {
             "naver"
         ][..]
     );
-    assert!(official_source_for_media_type("comic").is_empty());
-    assert!(official_source_for_media_type("other-comics").is_empty());
+    assert_eq!(
+        official_source_for_media_type("comic"),
+        &["webtoons", "tappytoon"][..]
+    );
+    assert_eq!(
+        official_source_for_media_type("other-comics"),
+        &["webtoons", "tappytoon"][..]
+    );
     assert!(official_source_for_media_type("anime").is_empty());
     assert!(official_source_for_media_type("").is_empty());
 }

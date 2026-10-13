@@ -41,6 +41,9 @@ pub fn official_source_for_media_type(media_type: &str) -> &'static [&'static st
             "kakao",
             "naver",
         ],
+        // Comics and OEL entries (MangaUpdates `OEL`, MangaDex originals): the
+        // licensed English platforms are the official sources there.
+        "comic" | "other-comics" => &["webtoons", "tappytoon"],
         _ => &[],
     }
 }
@@ -522,8 +525,14 @@ mod tests {
 
     #[test]
     fn rejects_non_official_media_types() {
-        assert!(official_source_for_media_type("comic").is_empty());
-        assert!(official_source_for_media_type("other-comics").is_empty());
+        assert_eq!(
+            official_source_for_media_type("comic"),
+            &["webtoons", "tappytoon"][..]
+        );
+        assert_eq!(
+            official_source_for_media_type("other-comics"),
+            &["webtoons", "tappytoon"][..]
+        );
         assert!(official_source_for_media_type("anime").is_empty());
         assert!(official_source_for_media_type("").is_empty());
     }
