@@ -110,6 +110,8 @@ fn search_scripts(source: &str) -> &'static [Script] {
         "tappytoon" => &[Script::Latin],
         // WEBTOON's English site indexes English names.
         "webtoons" => &[Script::Latin],
+        // Wuxiaworld's lite catalogue is English-only.
+        "wuxiaworld" => &[Script::Latin],
         _ => &[],
     }
 }
@@ -278,6 +280,16 @@ mod tests {
             pick_candidate(&["전지적 독자 시점".to_string()], "webtoons"),
             None
         );
+    }
+
+    #[test]
+    fn pick_wuxiaworld_requires_latin() {
+        let candidates = ["Coiling Dragon".to_string(), "盘龙".to_string()];
+        assert_eq!(
+            pick_candidate(&candidates, "wuxiaworld"),
+            Some("Coiling Dragon")
+        );
+        assert_eq!(pick_candidate(&["盘龙".to_string()], "wuxiaworld"), None);
     }
 
     #[test]

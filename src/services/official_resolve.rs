@@ -49,7 +49,8 @@ pub fn official_source_for_media_type(media_type: &str) -> &'static [&'static st
             "alphapolis",
         ],
         // syosetu existing; kakuyomu new JP; qidian CN; ridibooks/alphapolis
-        // KR/JP; kakao/naver added for KR web novels.
+        // KR/JP; kakao/naver added for KR web novels; wuxiaworld last (the
+        // licensed English translations).
         "novel" => &[
             "syosetu",
             "kakuyomu",
@@ -58,6 +59,7 @@ pub fn official_source_for_media_type(media_type: &str) -> &'static [&'static st
             "alphapolis",
             "kakao",
             "naver",
+            "wuxiaworld",
         ],
         // Comics and OEL entries (MangaUpdates `OEL`, MangaDex originals): the
         // licensed English platforms are the official sources there.
@@ -71,10 +73,10 @@ pub fn official_source_for_media_type(media_type: &str) -> &'static [&'static st
 ///
 /// The first ten entries mirror the `supports_meta` global ranks of
 /// `migrations/028_chapter_ownership.sql` (bilibili=1 ... qidian=10); kuaikan,
-/// kakao, mangaplus, tappytoon, webtoons, acqq, comici and naverwebtoon
-/// gained their fetch arms after that migration, so they are appended last
-/// (in that order). The set must match `SOURCES_WITH_META` (enforced by
-/// `tests/chapter_key.rs`).
+/// kakao, mangaplus, tappytoon, webtoons, acqq, comici, naverwebtoon and
+/// wuxiaworld gained their fetch arms after that migration, so they are
+/// appended last (in that order). The set must match `SOURCES_WITH_META`
+/// (enforced by `tests/chapter_key.rs`).
 pub const GLOBAL_SOURCE_ORDER: &[&str] = &[
     "bilibili",
     "naver",
@@ -94,6 +96,7 @@ pub const GLOBAL_SOURCE_ORDER: &[&str] = &[
     "acqq",
     "comici",
     "naverwebtoon",
+    "wuxiaworld",
 ];
 
 /// Network abstraction so tests can inject a fixture-backed searcher.
@@ -157,6 +160,10 @@ impl OfficialSearch for HttpOfficialSearch {
                 }
                 "naverwebtoon" => {
                     crate::services::external::official_naverwebtoon::search(&self.client, query)
+                        .await
+                }
+                "wuxiaworld" => {
+                    crate::services::external::official_wuxiaworld::search(&self.client, query)
                         .await
                 }
                 "mangaplus" => {
@@ -559,7 +566,8 @@ mod tests {
                 "ridibooks",
                 "alphapolis",
                 "kakao",
-                "naver"
+                "naver",
+                "wuxiaworld"
             ][..]
         );
     }

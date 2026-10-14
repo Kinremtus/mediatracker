@@ -529,7 +529,8 @@ fn mapping_table() {
             "ridibooks",
             "alphapolis",
             "kakao",
-            "naver"
+            "naver",
+            "wuxiaworld"
         ][..]
     );
     assert_eq!(
@@ -638,6 +639,62 @@ async fn manhwa_falls_back_to_naverwebtoon() {
         order,
         vec!["kakao", "naverwebtoon"],
         "the paid `naver` store is never searched once naverwebtoon matched"
+    );
+}
+
+/// Wuxiaworld is the last step of the novel chain: the JP/KR/CN sources answer
+/// nothing for the Latin title and the licensed translation binds. The
+/// Hangul-only sources (qidian/kakao/naver) are skipped by the script pick.
+#[tokio::test]
+async fn novel_falls_back_to_wuxiaworld() {
+    let ctx = setup().await;
+    let series = SERIES_ID.to_string();
+    let search = FixtureSearch::with_sources(&[
+        ("syosetu", vec![]),
+        ("kakuyomu", vec![]),
+        ("ridibooks", vec![]),
+        ("alphapolis", vec![]),
+        ("wuxiaworld", vec![hit("coiling-dragon", "Coiling Dragon")]),
+    ]);
+    let calls = search.calls();
+
+    let outcome = resolve_and_bind(
+        &ctx.pool,
+        &search,
+        "mangaupdates",
+        &series,
+        "novel",
+        "Coiling Dragon",
+        &[],
+    )
+    .await;
+
+    assert_eq!(
+        outcome,
+        Some(ResolveOutcome {
+            source: "wuxiaworld".to_string(),
+            source_id: "coiling-dragon".to_string(),
+        })
+    );
+    assert_eq!(
+        get_source_id(&ctx.pool, "mangaupdates", &series, "wuxiaworld")
+            .await
+            .unwrap(),
+        Some("coiling-dragon".to_string())
+    );
+
+    let calls = calls.lock().unwrap();
+    let order: Vec<&str> = calls.iter().map(|c| c.0.as_str()).collect();
+    assert_eq!(
+        order,
+        vec![
+            "syosetu",
+            "kakuyomu",
+            "ridibooks",
+            "alphapolis",
+            "wuxiaworld"
+        ],
+        "the Han-only and Hangul-only sources never see a Latin query"
     );
 }
 

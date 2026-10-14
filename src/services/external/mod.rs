@@ -28,6 +28,7 @@ pub mod official_qidian;
 pub mod official_ridibooks;
 pub mod official_tappytoon;
 pub mod official_webtoons;
+pub mod official_wuxiaworld;
 pub mod openlibrary;
 pub mod rawg;
 pub mod shikimori;

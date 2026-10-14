@@ -212,6 +212,7 @@ fn new_official_sources_are_bindable_and_narou_is_not() {
         "acqq",
         "comici",
         "naverwebtoon",
+        "wuxiaworld",
     ] {
         assert!(
             is_known_source(source),
