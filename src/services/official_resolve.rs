@@ -108,16 +108,75 @@ pub trait OfficialSearch: Send + Sync {
     ) -> Pin<Box<dyn Future<Output = anyhow::Result<Vec<OfficialHit>>> + Send + 'a>>;
 }
 
+/// Search one official source over HTTP (the dispatch behind
+/// [`HttpOfficialSearch`]). A free function so callers that need owned,
+/// `'static` futures — the search-catalog fan-out spawns one task per source —
+/// can call it without borrowing a searcher.
+pub async fn search_source(
+    client: &reqwest::Client,
+    source: &str,
+    query: &str,
+) -> anyhow::Result<Vec<OfficialHit>> {
+    match source {
+        "kuaikan" => crate::services::external::official_kuaikan::search(client, query).await,
+        "kakao" => crate::services::external::official_kakao::search_cached(client, query).await,
+        "naver" => crate::services::external::official_naver::search(client, query).await,
+        "tappytoon" => crate::services::external::official_tappytoon::search(client, query).await,
+        "webtoons" => crate::services::external::official_webtoons::search(client, query).await,
+        "acqq" => crate::services::external::official_acqq::search(client, query).await,
+        "comici" => crate::services::external::official_comici::search(client, query).await,
+        "naverwebtoon" => {
+            crate::services::external::official_naverwebtoon::search(client, query).await
+        }
+        "wuxiaworld" => crate::services::external::official_wuxiaworld::search(client, query).await,
+        "mangaplus" => {
+            // The catalog lives in a process-wide cache, so a per-call
+            // client is cheap.
+            let mangaplus = crate::services::external::official_mangaplus::MangaPlusClient::new();
+            let catalog = mangaplus.catalog().await?;
+            let mut hits: Vec<OfficialHit> = catalog
+                .iter()
+                .filter(|h| official_title::titles_match(&h.title, query))
+                .cloned()
+                .collect();
+            if hits.is_empty() {
+                let q = official_title::normalize_title(query);
+                if !q.is_empty() {
+                    hits = catalog
+                        .iter()
+                        .filter(|h| official_title::normalize_title(&h.title).contains(&q))
+                        .cloned()
+                        .collect();
+                }
+            }
+            Ok(hits)
+        }
+        "comicwalker" => {
+            crate::services::external::official_comicwalker::search(client, query).await
+        }
+        "kakuyomu" => crate::services::external::official_kakuyomu::search(client, query).await,
+        "alphapolis" => crate::services::external::official_alphapolis::search(client, query).await,
+        // Bilibili has a tiny guest quota: use the cached/cooldown path.
+        "bilibili" => {
+            crate::services::external::official_bilibili::search_cached(client, query).await
+        }
+        "daum" => crate::services::external::official_daum::search(client, query).await,
+        "qidian" => crate::services::external::official_qidian::search(client, query).await,
+        "ridibooks" => crate::services::external::official_ridibooks::search(client, query).await,
+        "mangaup" => crate::services::external::official_mangaup::search(client, query).await,
+        _ => Ok(Vec::new()),
+    }
+}
+
+/// HTTP-backed [`OfficialSearch`] for the resolve walk and the admin flows.
 pub struct HttpOfficialSearch {
     client: reqwest::Client,
-    mangaplus: crate::services::external::official_mangaplus::MangaPlusClient,
 }
 
 impl HttpOfficialSearch {
     pub fn new() -> Self {
         Self {
             client: crate::services::external::http_client(),
-            mangaplus: crate::services::external::official_mangaplus::MangaPlusClient::new(),
         }
     }
 }
@@ -134,88 +193,7 @@ impl OfficialSearch for HttpOfficialSearch {
         source: &'a str,
         query: &'a str,
     ) -> Pin<Box<dyn Future<Output = anyhow::Result<Vec<OfficialHit>>> + Send + 'a>> {
-        Box::pin(async move {
-            match source {
-                "kuaikan" => {
-                    crate::services::external::official_kuaikan::search(&self.client, query).await
-                }
-                "kakao" => {
-                    crate::services::external::official_kakao::search_cached(&self.client, query)
-                        .await
-                }
-                "naver" => {
-                    crate::services::external::official_naver::search(&self.client, query).await
-                }
-                "tappytoon" => {
-                    crate::services::external::official_tappytoon::search(&self.client, query).await
-                }
-                "webtoons" => {
-                    crate::services::external::official_webtoons::search(&self.client, query).await
-                }
-                "acqq" => {
-                    crate::services::external::official_acqq::search(&self.client, query).await
-                }
-                "comici" => {
-                    crate::services::external::official_comici::search(&self.client, query).await
-                }
-                "naverwebtoon" => {
-                    crate::services::external::official_naverwebtoon::search(&self.client, query)
-                        .await
-                }
-                "wuxiaworld" => {
-                    crate::services::external::official_wuxiaworld::search(&self.client, query)
-                        .await
-                }
-                "mangaplus" => {
-                    let catalog = self.mangaplus.catalog().await?;
-                    let mut hits: Vec<OfficialHit> = catalog
-                        .iter()
-                        .filter(|h| official_title::titles_match(&h.title, query))
-                        .cloned()
-                        .collect();
-                    if hits.is_empty() {
-                        let q = official_title::normalize_title(query);
-                        if !q.is_empty() {
-                            hits = catalog
-                                .iter()
-                                .filter(|h| official_title::normalize_title(&h.title).contains(&q))
-                                .cloned()
-                                .collect();
-                        }
-                    }
-                    Ok(hits)
-                }
-                "comicwalker" => {
-                    crate::services::external::official_comicwalker::search(&self.client, query)
-                        .await
-                }
-                "kakuyomu" => {
-                    crate::services::external::official_kakuyomu::search(&self.client, query).await
-                }
-                "alphapolis" => {
-                    crate::services::external::official_alphapolis::search(&self.client, query)
-                        .await
-                }
-                // Bilibili has a tiny guest quota: use the cached/cooldown path.
-                "bilibili" => {
-                    crate::services::external::official_bilibili::search_cached(&self.client, query)
-                        .await
-                }
-                "daum" => {
-                    crate::services::external::official_daum::search(&self.client, query).await
-                }
-                "qidian" => {
-                    crate::services::external::official_qidian::search(&self.client, query).await
-                }
-                "ridibooks" => {
-                    crate::services::external::official_ridibooks::search(&self.client, query).await
-                }
-                "mangaup" => {
-                    crate::services::external::official_mangaup::search(&self.client, query).await
-                }
-                _ => Ok(Vec::new()),
-            }
-        })
+        Box::pin(async move { search_source(&self.client, source, query).await })
     }
 }
 

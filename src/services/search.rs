@@ -26,6 +26,9 @@ fn normalize_title(title: &str) -> String {
 }
 
 /// Приоритет провайдера для типа медиа (0 =canonical, 10 = остальные).
+/// Официальные источники типа идут первыми — у них главы из первых рук, и
+/// добавление из выдачи биндится напрямую, без посредника; дальше
+/// посредники: MangaUpdates -> MangaDex -> Jikan(MAL) -> Shikimori -> AniList.
 fn provider_priority(media_type: &str, provider: &str) -> u8 {
     match media_type {
         "anime" => match provider {
@@ -34,18 +37,22 @@ fn provider_priority(media_type: &str, provider: &str) -> u8 {
             "anilist" => 2,
             _ => 10,
         },
-        "manga" | "manhwa" | "manhua" | "novel" | "other-comics" => match provider {
-            "mangaupdates" => 0,
-            "mangadex" => 1,
-            "mal" => 2,
-            "shikimori" => 3,
-            "anilist" => 4,
-            _ => 10,
-        },
-        "comic" => match provider {
-            "comicvine" => 0,
-            _ => 10,
-        },
+        "manga" | "manhwa" | "manhua" | "novel" | "other-comics" | "comic" => {
+            if crate::services::official_resolve::official_source_for_media_type(media_type)
+                .contains(&provider)
+            {
+                return 0;
+            }
+            match provider {
+                "mangaupdates" => 1,
+                "mangadex" => 2,
+                "mal" => 3,
+                "shikimori" => 4,
+                "anilist" => 5,
+                "comicvine" => 6,
+                _ => 10,
+            }
+        }
         "game" => match provider {
             "rawg" => 0,
             "igdb" => 1,
@@ -411,6 +418,17 @@ pub async fn by_media_type(
     }
 }
 
+/// The live search behind the catalog: official sources first, the provider
+/// chains only when the official sources of the type found nothing ("no
+/// intermediaries" whenever an official answer exists).
+pub async fn live_search(state: &AppState, media_type: &str, query: &str) -> Vec<CreateMediaItem> {
+    let official = crate::services::official_search::search(state, media_type, query).await;
+    if !official.is_empty() {
+        return deduplicate_by_title(official);
+    }
+    by_media_type(state, query, media_type).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -539,8 +557,32 @@ mod tests {
     }
 
     #[test]
+    fn provider_priority_officials_first_for_manga_family() {
+        // Every official source of the type outranks the provider chains.
+        for source in crate::services::official_resolve::official_source_for_media_type("manhwa") {
+            assert_eq!(provider_priority("manhwa", source), 0, "{source}");
+        }
+        assert_eq!(provider_priority("manhwa", "mangaupdates"), 1);
+        assert_eq!(provider_priority("manhwa", "mangadex"), 2);
+        assert_eq!(provider_priority("manhwa", "mal"), 3);
+        assert_eq!(provider_priority("manhwa", "shikimori"), 4);
+        assert_eq!(provider_priority("manhwa", "anilist"), 5);
+    }
+
+    #[test]
+    fn deduplicate_prefers_official_over_mangaupdates() {
+        let items = vec![
+            item("mangaupdates", "manhwa", "same"),
+            item("webtoons", "manhwa", "same"),
+        ];
+        let out = deduplicate_by_title(items);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].provider, "webtoons");
+    }
+
+    #[test]
     fn provider_priority_manga_anilist_is_last() {
-        assert_eq!(provider_priority("manga", "anilist"), 4);
+        assert_eq!(provider_priority("manga", "anilist"), 5);
     }
 
     #[test]

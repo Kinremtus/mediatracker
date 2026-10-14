@@ -10,6 +10,7 @@ use crate::app_state::AppState;
 use crate::middleware::CurrentUser;
 use crate::models::media_item::{CreateMediaItem, SearchSuggestion};
 use crate::services::search;
+use crate::services::search_catalog;
 use crate::services::search_families;
 
 const ITEMS_PER_PAGE: usize = 24;
@@ -39,6 +40,9 @@ struct SearchTemplate {
     page: u32,
     total_pages: u32,
     pages: Vec<PageItem>,
+    /// Query without a selected type: the page asks to pick a category
+    /// (search is type-scoped since the catalog rework).
+    needs_type: bool,
 }
 
 #[derive(Deserialize)]
@@ -57,11 +61,23 @@ pub async fn get_search(
 ) -> Html<String> {
     let query = params.q.unwrap_or_default();
     let search_type = params.search_type.unwrap_or_default();
+    // An unknown `?type=` is treated as "none selected": the search is
+    // type-scoped, and a garbage type must not reach the catalog.
+    let search_type = if search_type.is_empty()
+        || super::tracking::get_all_media_types()
+            .iter()
+            .any(|(k, _, _)| *k == search_type)
+    {
+        search_type
+    } else {
+        String::new()
+    };
+    let needs_type = !query.trim().is_empty() && search_type.is_empty();
 
-    let mut all_results = if query.is_empty() {
+    let mut all_results = if query.is_empty() || search_type.is_empty() {
         Vec::new()
     } else {
-        search::by_media_type(&state, &query, &search_type).await
+        load_results(&state, &search_type, &query).await
     };
 
     mark_tracked(&state, user.id, &mut all_results).await;
@@ -112,6 +128,7 @@ pub async fn get_search(
                 current: p == page,
             })
             .collect(),
+        needs_type,
     }
     .render()
     .unwrap_or_else(|e| {
@@ -119,6 +136,23 @@ pub async fn get_search(
         String::from("Internal Server Error")
     })
     .into()
+}
+
+/// The catalog first: a fresh recorded query answers from the DB; a miss runs
+/// the live search (official sources, then the provider chains) and stores the
+/// answer so the next search of the same query is instant. A failed lookup or
+/// store only costs speed — the live answer is served regardless.
+async fn load_results(state: &AppState, media_type: &str, query: &str) -> Vec<CreateMediaItem> {
+    match search_catalog::lookup(&state.db, media_type, query).await {
+        Ok(Some(items)) => return items,
+        Ok(None) => {}
+        Err(e) => tracing::warn!(error = %e, "search catalog lookup failed, going live"),
+    }
+    let items = search::live_search(state, media_type, query).await;
+    if let Err(e) = search_catalog::store(&state.db, media_type, query, &items).await {
+        tracing::warn!(error = %e, "search catalog store failed");
+    }
+    items
 }
 
 #[derive(Deserialize)]
