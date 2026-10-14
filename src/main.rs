@@ -14,7 +14,7 @@ use mediatracker::routes::{
     admin, auth, calendar, health_check, home, media, search, settings, stats, tmdb_episodes,
     tmdb_image, tracking,
 };
-use mediatracker::services::{cleanup, refresh_counts, release_schedule};
+use mediatracker::services::{cleanup, refresh_counts, release_schedule, search_catalog};
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use tower_http::services::ServeDir;
@@ -277,6 +277,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let cleanup_db = state.db.clone();
         tokio::spawn(async move {
             cleanup::run_cleanup_loop(cleanup_db, cleanup_cancel).await;
+        });
+
+        // Search-catalog refresh: every 6h re-run up to 50 stale queries
+        // (24h TTL) through the live search and upsert their answers. Nothing
+        // is ever deleted; its own advisory lock keeps replicas in line.
+        let catalog_cancel = cancel.clone();
+        let catalog_state = state.clone();
+        tokio::spawn(async move {
+            search_catalog::run_refresh_loop(catalog_state, catalog_cancel).await;
         });
     } else {
         info!("REFRESH_LOOP_ENABLED=false: background refresh disabled in this process");

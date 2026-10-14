@@ -166,6 +166,54 @@ async fn store_upserts_and_refreshes_the_query() {
 }
 
 #[tokio::test]
+async fn apply_refresh_upserts_and_always_touches() {
+    let ctx = common::TestContext::new().await;
+    let original = vec![item("webtoons", "1320", "Lore Olympus", "other-comics")];
+    search_catalog::store(&ctx.pool, "other-comics", "Lore Olympus", &original)
+        .await
+        .expect("store");
+
+    // Stale it, then refresh with fresh data: upsert + query fresh again.
+    sqlx::query("UPDATE search_queries SET fetched_at = NOW() - INTERVAL '25 hours'")
+        .execute(&ctx.pool)
+        .await
+        .expect("backdate");
+    let mut fresh = item("webtoons", "1320", "Lore Olympus", "other-comics");
+    fresh.poster_url = Some("https://example.test/refreshed.jpg".to_string());
+    search_catalog::apply_refresh(&ctx.pool, "other-comics", "Lore Olympus", &[fresh])
+        .await
+        .expect("apply refresh");
+    let got = search_catalog::lookup(&ctx.pool, "other-comics", "Lore Olympus")
+        .await
+        .expect("lookup")
+        .expect("the refreshed query answers from the catalog again");
+    assert_eq!(
+        got[0].poster_url.as_deref(),
+        Some("https://example.test/refreshed.jpg")
+    );
+
+    // Stale again, refresh with an EMPTY answer: the data is kept (the catalog
+    // never deletes) and the query is still bumped, so a query whose sources
+    // went silent cannot monopolise the oldest refresh slot.
+    sqlx::query("UPDATE search_queries SET fetched_at = NOW() - INTERVAL '25 hours'")
+        .execute(&ctx.pool)
+        .await
+        .expect("backdate");
+    search_catalog::apply_refresh(&ctx.pool, "other-comics", "Lore Olympus", &[])
+        .await
+        .expect("apply empty refresh");
+    let got = search_catalog::lookup(&ctx.pool, "other-comics", "Lore Olympus")
+        .await
+        .expect("lookup")
+        .expect("the touched query is fresh");
+    assert_eq!(got.len(), 1, "the catalog keeps its last known data");
+    assert_eq!(
+        got[0].poster_url.as_deref(),
+        Some("https://example.test/refreshed.jpg")
+    );
+}
+
+#[tokio::test]
 async fn stale_queries_are_oldest_first_and_bounded() {
     let ctx = common::TestContext::new().await;
     for (query, age_hours) in [("one", 30), ("two", 50), ("three", 40), ("fresh", 1)] {

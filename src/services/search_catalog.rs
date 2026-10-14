@@ -10,15 +10,32 @@
 //! window, so an empty result is simply not written and the next search tries
 //! live again. The refresh worker only sees queries that once had results.
 
-use sqlx::PgPool;
+use std::time::Duration;
 
+use sqlx::PgPool;
+use tokio_util::sync::CancellationToken;
+
+use crate::app_state::AppState;
 use crate::models::media_item::CreateMediaItem;
 use crate::services::official_resolve::official_source_for_media_type;
 use crate::services::official_title::normalize_title;
+use crate::services::release_schedule;
 
 /// How long a recorded query is served from the catalog before the live
 /// sources are consulted again (the refresh worker re-runs stale queries).
 pub const QUERY_TTL_HOURS: i32 = 24;
+
+/// How often the refresh loop wakes up.
+const REFRESH_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
+
+/// Queries refreshed per pass (bounded so a big catalog never fires hundreds
+/// of upstream searches at once).
+const REFRESH_LIMIT: i64 = 50;
+
+/// Advisory-lock key of the catalog refresh: its own key (the counts /
+/// release-schedule cycle uses 42) so the two background passes never starve
+/// each other.
+const CATALOG_LOCK_ID: i64 = 43;
 
 /// Defensive cap on one catalog answer (the grid paginates at 24 per page).
 const CATALOG_LIMIT: i64 = 200;
@@ -189,6 +206,88 @@ pub async fn touch_query(db: &PgPool, media_type: &str, query: &str) -> Result<(
     .execute(db)
     .await
     .map(|_| ())
+}
+
+/// Apply one refreshed answer: upsert the non-empty hits and ALWAYS bump the
+/// query — a query whose sources now answer nothing must not occupy the
+/// oldest refresh slot forever. The catalog itself is never pruned.
+pub async fn apply_refresh(
+    db: &PgPool,
+    media_type: &str,
+    query_text: &str,
+    items: &[CreateMediaItem],
+) -> anyhow::Result<()> {
+    if !items.is_empty() {
+        store(db, media_type, query_text, items).await?;
+    }
+    touch_query(db, media_type, query_text).await?;
+    Ok(())
+}
+
+/// Background refresh of the search catalog: every [`REFRESH_INTERVAL`] the
+/// loop re-runs up to [`REFRESH_LIMIT`] stale queries (older than
+/// [`QUERY_TTL_HOURS`]) through the live search, upserts their answers and
+/// bumps them. Nothing is ever deleted. One replica runs the pass: it is
+/// guarded by its own advisory lock ([`CATALOG_LOCK_ID`]).
+pub async fn run_refresh_loop(state: AppState, cancel: CancellationToken) {
+    let mut interval = tokio::time::interval(REFRESH_INTERVAL);
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    // Consume the immediate first tick: the first pass runs after a full
+    // period (startup already has enough to do).
+    interval.tick().await;
+    loop {
+        tokio::select! {
+            _ = cancel.cancelled() => {
+                tracing::info!("search catalog: refresh loop cancelled");
+                break;
+            }
+            _ = interval.tick() => {
+                let state = state.clone();
+                let db = state.db.clone();
+                let pass = release_schedule::with_advisory_lock(
+                    &db,
+                    CATALOG_LOCK_ID,
+                    move || async move { refresh_stale(&state).await },
+                )
+                .await;
+                match pass {
+                    Ok(Some(count)) => {
+                        tracing::info!(refreshed = count, "search catalog: refresh pass done");
+                    }
+                    Ok(None) => {}
+                    Err(e) => tracing::warn!(error = %e, "search catalog: refresh pass failed"),
+                }
+            }
+        }
+    }
+}
+
+/// One refresh pass over the stale queries (network I/O). Returns how many
+/// queries were processed.
+async fn refresh_stale(state: &AppState) -> anyhow::Result<usize> {
+    let stale = stale_queries(&state.db, REFRESH_LIMIT).await?;
+    if stale.is_empty() {
+        return Ok(0);
+    }
+    tracing::info!(
+        count = stale.len(),
+        "search catalog: refreshing stale queries"
+    );
+    let mut refreshed = 0usize;
+    for query in &stale {
+        let items =
+            crate::services::search::live_search(state, &query.media_type, &query.query_text).await;
+        if let Err(e) = apply_refresh(&state.db, &query.media_type, &query.query_text, &items).await
+        {
+            tracing::warn!(
+                error = %e,
+                query = %query.query_text,
+                "search catalog: refresh apply failed"
+            );
+        }
+        refreshed += 1;
+    }
+    Ok(refreshed)
 }
 
 #[cfg(test)]

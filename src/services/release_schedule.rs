@@ -42,17 +42,33 @@ where
     Fut: Future<Output = Result<T, anyhow::Error>> + Send + 'static,
     T: Send + 'static,
 {
+    with_advisory_lock(pool, REFRESH_LOCK_ID, f).await
+}
+
+/// [`with_refresh_lock`] with an explicit lock key, for background workers
+/// that mutate their own tables (the search-catalog refresh uses its own key
+/// so it never starves behind the counts/release-schedule cycle).
+pub async fn with_advisory_lock<F, Fut, T>(
+    pool: &PgPool,
+    lock_id: i64,
+    f: F,
+) -> Result<Option<T>, anyhow::Error>
+where
+    F: FnOnce() -> Fut + Send + 'static,
+    Fut: Future<Output = Result<T, anyhow::Error>> + Send + 'static,
+    T: Send + 'static,
+{
     let mut conn = pool.acquire().await?;
 
     let (locked,): (bool,) = sqlx::query_as("SELECT pg_try_advisory_lock($1)")
-        .bind(REFRESH_LOCK_ID)
+        .bind(lock_id)
         .fetch_one(&mut *conn)
         .await?;
 
     if !locked {
         tracing::debug!(
-            lock_id = REFRESH_LOCK_ID,
-            "release_schedule: refresh lock held by another instance, skipping"
+            lock_id,
+            "background worker: lock held by another instance, skipping"
         );
         return Ok(None);
     }
@@ -60,20 +76,18 @@ where
     // Contain panics so the unlock below always runs on this connection.
     let result = match tokio::spawn(f()).await {
         Ok(result) => result,
-        Err(join_error) => Err(anyhow::anyhow!(
-            "release_schedule refresh task panicked: {join_error}"
-        )),
+        Err(join_error) => Err(anyhow::anyhow!("background task panicked: {join_error}")),
     };
 
     if let Err(error) = sqlx::query("SELECT pg_advisory_unlock($1)")
-        .bind(REFRESH_LOCK_ID)
+        .bind(lock_id)
         .execute(&mut *conn)
         .await
     {
         tracing::warn!(
             error = %error,
-            lock_id = REFRESH_LOCK_ID,
-            "release_schedule: failed to release refresh lock"
+            lock_id,
+            "background worker: failed to release lock"
         );
     }
 
