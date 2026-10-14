@@ -80,7 +80,7 @@ pub fn parse_search(body: &str) -> Vec<OfficialHit> {
                 .as_str()
                 .map(str::to_string)
                 .or_else(|| id_value.as_number().map(|n| n.to_string()))?;
-            Some(OfficialHit { id, title })
+            Some(OfficialHit::new(id, title))
         })
         .collect()
 }

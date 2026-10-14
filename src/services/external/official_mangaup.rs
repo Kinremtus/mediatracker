@@ -18,7 +18,10 @@ use crate::services::external::chapter_title::{
     EpisodeRow, ShortTitle, classify_mangaup_title, main_count, rows_to_chapters,
 };
 use crate::services::external::official_meta::{self, ChapterMeta, OfficialMeta};
-use crate::services::official_types::OfficialHit;
+use crate::services::official_types::{HitExtra, OfficialHit};
+
+/// Host serving the cover assets (`imageUrl` paths are relative).
+const MANGAUP_ASSET_BASE: &str = "https://global-api.manga-up.com";
 
 const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
                   (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
@@ -163,7 +166,17 @@ pub fn parse_search(html: &str) -> Vec<OfficialHit> {
         };
         let id = num.to_string();
         if !hits.iter().any(|h| h.id == id) {
-            hits.push(OfficialHit { id, title });
+            // The cover path follows `titleName` inside the same answer object.
+            let poster_url = official_meta::json_string_field(seg, "imageUrl")
+                .map(|path| format!("{MANGAUP_ASSET_BASE}{path}"));
+            hits.push(OfficialHit::with_extra(
+                id,
+                title,
+                HitExtra {
+                    poster_url,
+                    ..HitExtra::default()
+                },
+            ));
         }
     }
     hits
@@ -245,6 +258,14 @@ mod tests {
         ids.sort();
         ids.dedup();
         assert_eq!(ids.len(), hits.len());
+        // Rich: the cover follows `titleName` in the same answer object, and
+        // the JSON `\u0026` escape decodes into the URL's `&`.
+        assert_eq!(
+            hits[0].extra.poster_url.as_deref(),
+            Some(
+                "https://global-api.manga-up.com/asset/Qud/en/manga_list/1023.webp?h=AQp2kMW-8Uq5arnwSAIN2w&e=1791212400"
+            )
+        );
         // Empty page degrades.
         assert!(parse_search("<html>no data</html>").is_empty());
     }

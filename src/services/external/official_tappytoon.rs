@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 
 use crate::services::external::chapter_title::{self, RawRow};
 use crate::services::external::official_meta::{self, OfficialMeta};
-use crate::services::official_types::OfficialHit;
+use crate::services::official_types::{HitExtra, OfficialHit};
 
 const SEARCH_BASE: &str = "https://www.tappytoon.com/en/search/all";
 const API_BASE: &str = "https://api-global.tappytoon.com";
@@ -30,6 +30,8 @@ const TOKEN_REFRESH_QUERY: &str = "a";
 const MAX_ROWS: usize = 5000;
 /// Longest stored episode title (a hostile answer must not bloat the DB).
 const MAX_TITLE_CHARS: usize = 512;
+/// Longest stored synopsis taken from a search answer.
+const MAX_DESCRIPTION_CHARS: usize = 2000;
 
 /// Empty meta tagged with this source (non-fatal "nothing to report").
 fn empty_meta() -> OfficialMeta {
@@ -133,13 +135,65 @@ pub fn parse_search(html: &str) -> (Option<String>, Vec<OfficialHit>) {
             if title.is_empty() || !official_meta::is_digit_id(id) {
                 continue;
             }
-            hits.push(OfficialHit {
-                id: id.clone(),
-                title: title.to_string(),
-            });
+            // Rich search-answer fields: the Redux entity carries the cover,
+            // synopsis, authors, genres, state and counters.
+            let author_names = names_of(comic.get("authors"));
+            let extra = HitExtra {
+                poster_url: comic
+                    .get("thumbnailUrl")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string),
+                description: comic
+                    .get("longDescription")
+                    .and_then(|v| v.as_str())
+                    .map(str::trim)
+                    .filter(|d| !d.is_empty())
+                    .map(|d| d.chars().take(MAX_DESCRIPTION_CHARS).collect()),
+                author: (!author_names.is_empty()).then(|| author_names.join(", ")),
+                status: match (
+                    comic.get("isCompleted").and_then(|v| v.as_bool()),
+                    comic.get("isHiatus").and_then(|v| v.as_bool()),
+                ) {
+                    (Some(true), _) => Some("completed".to_string()),
+                    (_, Some(true)) => Some("hiatus".to_string()),
+                    (Some(false), Some(false)) => Some("ongoing".to_string()),
+                    _ => None,
+                },
+                genres: names_of(comic.get("genres")),
+                year: comic
+                    .get("publishedAt")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.get(..4))
+                    .and_then(|y| y.parse().ok()),
+                score: comic.get("averageScore").and_then(|v| v.as_f64()),
+                chapters: comic
+                    .get("totalChaptersCount")
+                    .and_then(|v| v.as_i64())
+                    .and_then(|n| i32::try_from(n).ok()),
+            };
+            hits.push(OfficialHit::with_extra(
+                id.clone(),
+                title.to_string(),
+                extra,
+            ));
         }
     }
     (token, hits)
+}
+
+/// `name` values of a `[{ "name": … }]` array (empty when missing).
+fn names_of(value: Option<&serde_json::Value>) -> Vec<String> {
+    value
+        .and_then(|v| v.as_array())
+        .map(|list| {
+            list.iter()
+                .filter_map(|entry| entry.get("name").and_then(|v| v.as_str()))
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Fetch the full chapter list through the public API. The token is reused from
@@ -293,6 +347,43 @@ mod tests {
         assert_eq!(hits.len(), 2);
         assert!(hits.iter().any(|h| h.title == "Solo Leveling"));
         assert!(hits.iter().all(|h| official_meta::is_digit_id(&h.id)));
+        // Rich search-answer fields from the Redux entity.
+        let solo = hits
+            .iter()
+            .find(|h| h.title == "Solo Leveling")
+            .expect("hit");
+        let extra = &solo.extra;
+        assert!(
+            extra
+                .poster_url
+                .as_deref()
+                .is_some_and(|u| u.contains("tappytoon.com")),
+            "{:?}",
+            extra.poster_url
+        );
+        assert!(
+            extra
+                .author
+                .as_deref()
+                .is_some_and(|a| a.contains("Chugong")),
+            "{:?}",
+            extra.author
+        );
+        assert!(
+            extra.genres.iter().any(|g| g == "Action"),
+            "{:?}",
+            extra.genres
+        );
+        assert_eq!(extra.chapters, Some(201));
+        assert_eq!(extra.year, Some(2020));
+        assert_eq!(extra.status.as_deref(), Some("ongoing"));
+        assert!(
+            extra
+                .description
+                .as_deref()
+                .is_some_and(|d| d.contains("Hunters")),
+            "the synopsis is kept"
+        );
     }
 
     #[test]

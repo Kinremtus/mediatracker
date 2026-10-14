@@ -159,10 +159,7 @@ pub fn parse_search(html: &str) -> Vec<OfficialHit> {
         else {
             continue;
         };
-        hits.push(OfficialHit {
-            id: id.to_string(),
-            title,
-        });
+        hits.push(OfficialHit::new(id.to_string(), title));
     }
     hits
 }

@@ -27,7 +27,7 @@
 
 use crate::services::external::chapter_title::{self, EpisodeRow, classify_jp_title, main_count};
 use crate::services::external::official_meta::{self, ChapterMeta, OfficialMeta};
-use crate::services::official_types::OfficialHit;
+use crate::services::official_types::{HitExtra, OfficialHit};
 
 const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
                   (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
@@ -248,7 +248,7 @@ fn collect_novel_hits(html: &str, hits: &mut Vec<OfficialHit>) {
         }
         let id = format!("novel/{user}/{work}");
         let title = anchor_title(tail);
-        push_hit(hits, id, title);
+        push_hit(hits, id, title, anchor_poster(tail));
     }
 }
 
@@ -284,7 +284,7 @@ fn collect_manga_hits(html: &str, hits: &mut Vec<OfficialHit>) {
         // `after[end..]` starts at the closing quote so `anchor_title` can walk
         // to the tag end and read the anchor body (cover `alt`).
         let title = anchor_title(&after[end..]);
-        push_hit(hits, id, title);
+        push_hit(hits, id, title, anchor_poster(&after[end..]));
     }
 }
 
@@ -316,10 +316,28 @@ fn anchor_title(s: &str) -> String {
 }
 
 /// Dedup by prefixed id; empty titles are dropped.
-fn push_hit(hits: &mut Vec<OfficialHit>, id: String, title: String) {
+fn push_hit(hits: &mut Vec<OfficialHit>, id: String, title: String, poster_url: Option<String>) {
     if !title.is_empty() && !hits.iter().any(|h| h.id == id) {
-        hits.push(OfficialHit { id, title });
+        hits.push(OfficialHit::with_extra(
+            id,
+            title,
+            HitExtra {
+                poster_url,
+                ..HitExtra::default()
+            },
+        ));
     }
+}
+
+/// Cover URL inside the same anchor (`<img src="…"`), if any.
+fn anchor_poster(s: &str) -> Option<String> {
+    let gt = s.find('>')?;
+    let body = &s[gt + 1..];
+    let inner = match body.find("</a>") {
+        Some(close) => &body[..close],
+        None => body,
+    };
+    official_meta::between(inner, "src=\"", "\"").map(str::to_string)
 }
 
 #[cfg(test)]
@@ -411,6 +429,15 @@ mod tests {
         // Concrete rows from both kinds.
         assert!(hits.iter().any(|h| h.id == "novel/381661058/785090081"));
         assert!(hits.iter().any(|h| h.id == "manga/official/977000734"));
+        // The manga banners carry their cover in the same anchor.
+        assert!(
+            hits.iter().any(|h| h
+                .extra
+                .poster_url
+                .as_deref()
+                .is_some_and(|u| u.contains("cdn-image.alphapolis.co.jp"))),
+            "at least one manga hit keeps its cover"
+        );
     }
 
     #[test]

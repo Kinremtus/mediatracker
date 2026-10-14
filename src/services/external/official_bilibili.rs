@@ -154,7 +154,7 @@ fn episode_rows(items: &[serde_json::Value]) -> Vec<ChapterMeta> {
 
 // --- guest search: cache + throttle (Decision #8) --------------------------
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 struct CacheEntry {
     hits: Vec<OfficialHit>,
     inserted: Instant,
@@ -201,7 +201,7 @@ impl ThrottleState {
 }
 
 /// Classified search response body (HTTP is 200 even when rate-limited).
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 enum SearchOutcome {
     Hits(Vec<OfficialHit>),
     /// `code 503` — quota exhausted; caller must cool down.
@@ -396,10 +396,7 @@ pub fn parse_search(json: &str) -> Vec<OfficialHit> {
         };
         let id = id.to_string();
         if !hits.iter().any(|h| h.id == id) {
-            hits.push(OfficialHit {
-                id,
-                title: title.to_string(),
-            });
+            hits.push(OfficialHit::new(id, title.to_string()));
         }
     }
     hits
@@ -628,10 +625,7 @@ mod tests {
     fn positive_cache_is_served_within_ttl() {
         let mut cache = HashMap::new();
         let now = Instant::now();
-        let hits = vec![OfficialHit {
-            id: "1".into(),
-            title: "T".into(),
-        }];
+        let hits = vec![OfficialHit::new("1", "T")];
         cache.insert(
             "q".to_string(),
             CacheEntry {

@@ -257,7 +257,8 @@ pub fn strip_tags(html: &str) -> String {
 
 /// Extract the string value of a JSON-ish key `"key":"value"` without a full
 /// serde parse. Handles the common embedded-JSON case; returns `None` on any
-/// structural surprise. Decodes only `\"` and `\\` (enough for schedule text).
+/// structural surprise. Decodes the standard escapes (`\"`, `\\`, `\/`,
+/// `\n`, `\t`, `\r`, `\b`, `\f`) and `\uXXXX` (surrogate pairs included).
 pub fn json_string_field(body: &str, key: &str) -> Option<String> {
     let needle = format!("\"{key}\"");
     let mut from = 0usize;
@@ -280,7 +281,13 @@ pub fn json_string_field(body: &str, key: &str) -> Option<String> {
                 '\\' => match chars.next() {
                     Some('"') => value.push('"'),
                     Some('\\') => value.push('\\'),
+                    Some('/') => value.push('/'),
                     Some('n') => value.push('\n'),
+                    Some('t') => value.push('\t'),
+                    Some('r') => value.push('\r'),
+                    Some('b') => value.push('\u{0008}'),
+                    Some('f') => value.push('\u{000C}'),
+                    Some('u') => value.push(decode_unicode_escape(&mut chars)?),
                     Some(other) => value.push(other),
                     None => return None,
                 },
@@ -291,6 +298,30 @@ pub fn json_string_field(body: &str, key: &str) -> Option<String> {
         return None;
     }
     None
+}
+
+/// One `\uXXXX` escape (the `\u` is already consumed): four hex digits, plus
+/// the low half of a surrogate pair when the code is a high surrogate.
+fn decode_unicode_escape(chars: &mut std::str::Chars<'_>) -> Option<char> {
+    let mut code = 0u32;
+    for _ in 0..4 {
+        code = code * 16 + chars.next()?.to_digit(16)?;
+    }
+    if (0xD800..=0xDBFF).contains(&code) {
+        // A high surrogate must be followed by the low half of the pair.
+        if chars.next()? != '\\' || chars.next()? != 'u' {
+            return None;
+        }
+        let mut low = 0u32;
+        for _ in 0..4 {
+            low = low * 16 + chars.next()?.to_digit(16)?;
+        }
+        if !(0xDC00..=0xDFFF).contains(&low) {
+            return None;
+        }
+        return char::from_u32(0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00));
+    }
+    char::from_u32(code)
 }
 
 /// Extract the integer value of a JSON-ish key `"key":123` without a full
@@ -392,6 +423,27 @@ mod tests {
             Some("每周四14点更新".to_string())
         );
         assert_eq!(json_string_field(r#"{"a":1}"#, "renewal_time"), None);
+    }
+
+    #[test]
+    fn json_field_decodes_escapes() {
+        // Standard escapes and `\uXXXX` (the mangaup cover URLs carry `\u0026`).
+        assert_eq!(
+            json_string_field(r#"{"url":"/asset/x.webp?h=AbC\u0026e=123"}"#, "url"),
+            Some("/asset/x.webp?h=AbC&e=123".to_string())
+        );
+        assert_eq!(
+            json_string_field(r#"{"t":"\u65e5\u672c"}"#, "t"),
+            Some("日本".to_string())
+        );
+        // A surrogate pair decodes into one astral character.
+        assert_eq!(
+            json_string_field(r#"{"t":"\ud83d\ude00"}"#, "t"),
+            Some("😀".to_string())
+        );
+        // A malformed escape is a structural surprise.
+        assert_eq!(json_string_field(r#"{"t":"\u12"}"#, "t"), None);
+        assert_eq!(json_string_field(r#"{"t":"\ud83d x"}"#, "t"), None);
     }
 
     #[test]

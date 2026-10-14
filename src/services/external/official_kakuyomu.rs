@@ -171,7 +171,7 @@ pub fn parse_search(html: &str) -> Vec<OfficialHit> {
             .map(official_meta::strip_tags)
             .unwrap_or_default();
         if !title.is_empty() && !hits.iter().any(|h| h.id == id) {
-            hits.push(OfficialHit { id, title });
+            hits.push(OfficialHit::new(id, title));
         }
     }
     hits

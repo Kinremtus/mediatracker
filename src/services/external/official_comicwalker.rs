@@ -199,10 +199,7 @@ pub fn parse_search(html: &str) -> Vec<OfficialHit> {
             .or_else(|| official_meta::json_string_field(seg, "workTitle"))
             .unwrap_or_default();
         if !name.is_empty() && !hits.iter().any(|h| h.id == code) {
-            hits.push(OfficialHit {
-                id: code,
-                title: name,
-            });
+            hits.push(OfficialHit::new(code, name));
         }
     }
     hits

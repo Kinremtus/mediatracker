@@ -151,10 +151,7 @@ pub fn parse_search(json: &str) -> Vec<OfficialHit> {
         if title.is_empty() || hits.iter().any(|h| h.id == id) {
             continue;
         }
-        hits.push(OfficialHit {
-            id,
-            title: title.to_string(),
-        });
+        hits.push(OfficialHit::new(id, title.to_string()));
     }
     hits
 }

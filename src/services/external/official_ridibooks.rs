@@ -232,10 +232,7 @@ pub fn parse_search(html: &str) -> Vec<OfficialHit> {
                 continue;
             }
             if !hits.iter().any(|h| h.id == id) {
-                hits.push(OfficialHit {
-                    id,
-                    title: title.to_string(),
-                });
+                hits.push(OfficialHit::new(id, title.to_string()));
             }
         }
     }

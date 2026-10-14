@@ -119,7 +119,7 @@ pub fn parse_search(html: &str) -> Vec<OfficialHit> {
         if title.is_empty() {
             continue;
         }
-        hits.push(OfficialHit { id, title });
+        hits.push(OfficialHit::new(id, title));
     }
     hits
 }

@@ -175,10 +175,7 @@ async fn chapter_count(pool: &sqlx::PgPool, series: &str) -> Option<i32> {
 }
 
 fn hit(id: &str, title: &str) -> OfficialHit {
-    OfficialHit {
-        id: id.to_string(),
-        title: title.to_string(),
-    }
+    OfficialHit::new(id, title)
 }
 
 #[tokio::test]

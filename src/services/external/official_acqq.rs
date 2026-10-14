@@ -104,7 +104,7 @@ pub fn parse_search(html: &str) -> Vec<OfficialHit> {
             continue;
         }
         seen.insert(id.clone());
-        hits.push(OfficialHit { id, title });
+        hits.push(OfficialHit::new(id, title));
     }
     hits
 }

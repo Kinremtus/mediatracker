@@ -25,9 +25,12 @@ use crate::services::external::chapter_title::{
     parse_kr_chapter_number,
 };
 use crate::services::external::official_meta::{self, OfficialMeta};
-use crate::services::official_types::OfficialHit;
+use crate::services::official_types::{HitExtra, OfficialHit};
 
 pub const KAKAO_SEARCH_BASE: &str = "https://bff-page.kakao.com/api/gateway/api/v2/search/series";
+
+/// Image CDN prefix: the search answer's `thumbnail` is a partial `kid` key.
+const KAKAO_IMAGE_BASE: &str = "https://dn-img-page.kakao.com/download/resource?kid=";
 
 const KAKAO_PRODUCT_LIST: &str =
     "https://bff-page.kakao.com/api/gateway/api/v2/content/product/list";
@@ -194,10 +197,37 @@ pub fn parse_search(body: &str) -> Vec<OfficialHit> {
                 .map(str::to_string)
                 .or_else(|| series_id.as_number().map(|n| n.to_string()))?;
             // The id ends up in the product-list query string: digits only.
-            official_meta::is_digit_id(&id).then_some(OfficialHit {
-                id: format!("{prefix}{id}"),
+            if !official_meta::is_digit_id(&id) {
+                return None;
+            }
+            // Rich search-answer fields: the BFF answer carries the cover
+            // (a partial `kid` key for the image CDN), the authors line and
+            // the translated genre.
+            let extra = HitExtra {
+                poster_url: entry
+                    .get("thumbnail")
+                    .and_then(|v| v.as_str())
+                    .filter(|key| !key.is_empty())
+                    .map(|key| format!("{KAKAO_IMAGE_BASE}{key}")),
+                author: entry
+                    .get("authors")
+                    .and_then(|v| v.as_str())
+                    .map(str::trim)
+                    .filter(|authors| !authors.is_empty())
+                    .map(str::to_string),
+                genres: entry
+                    .pointer("/translate_property/sub_category/en")
+                    .and_then(|v| v.as_str())
+                    .or_else(|| entry.get("sub_category").and_then(|v| v.as_str()))
+                    .map(|genre| vec![genre.to_string()])
+                    .unwrap_or_default(),
+                ..HitExtra::default()
+            };
+            Some(OfficialHit::with_extra(
+                format!("{prefix}{id}"),
                 title,
-            })
+                extra,
+            ))
         })
         .collect()
 }
@@ -718,14 +748,7 @@ mod tests {
     fn ttl_cache_expires() {
         let mut cache = TtlCache::new(Duration::from_secs(60));
         let now = Instant::now();
-        cache.put(
-            "k",
-            vec![OfficialHit {
-                id: "1".into(),
-                title: "T".into(),
-            }],
-            now,
-        );
+        cache.put("k", vec![OfficialHit::new("1", "T")], now);
         assert!(cache.get("k", now + Duration::from_secs(30)).is_some());
         assert!(cache.get("k", now + Duration::from_secs(61)).is_none());
         assert!(cache.get("other", now).is_none());

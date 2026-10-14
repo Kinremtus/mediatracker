@@ -29,7 +29,7 @@ use crate::services::external::chapter_title::{
     self, RawRow, is_kr_bonus_title, strip_catalog_markers,
 };
 use crate::services::external::official_meta::{self, ChapterMeta, OfficialMeta};
-use crate::services::official_types::OfficialHit;
+use crate::services::official_types::{HitExtra, OfficialHit};
 
 const SEARCH_BASE: &str = "https://comic.naver.com/api/search/all";
 const LIST_BASE: &str = "https://comic.naver.com/api/article/list";
@@ -55,6 +55,8 @@ const MAX_EPISODE_NO: i64 = 100_000;
 const SEARCH_MAX_HITS: usize = 50;
 /// Longest stored episode title (a hostile answer must not bloat the DB).
 const MAX_TITLE_CHARS: usize = 512;
+/// Longest stored synopsis taken from a search answer.
+const MAX_DESCRIPTION_CHARS: usize = 2000;
 
 /// Empty meta tagged with this source (non-fatal "nothing to report").
 fn empty_meta() -> OfficialMeta {
@@ -111,10 +113,45 @@ pub fn parse_search(json: &str) -> Vec<OfficialHit> {
         if title.is_empty() {
             continue;
         }
-        hits.push(OfficialHit {
+        // Rich search-answer fields: the answer carries the cover, author,
+        // synopsis, serialization state and the episode counter.
+        let extra = HitExtra {
+            poster_url: item
+                .get("thumbnailUrl")
+                .and_then(|v| v.as_str())
+                .map(str::to_string),
+            description: item
+                .get("synopsis")
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|d| !d.is_empty())
+                .map(|d| d.chars().take(MAX_DESCRIPTION_CHARS).collect()),
+            author: item
+                .get("displayAuthor")
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|a| !a.is_empty())
+                .map(str::to_string),
+            status: match (
+                item.get("finished").and_then(|v| v.as_bool()),
+                item.get("rest").and_then(|v| v.as_bool()),
+            ) {
+                (Some(true), _) => Some("completed".to_string()),
+                (_, Some(true)) => Some("hiatus".to_string()),
+                (Some(false), Some(false)) => Some("ongoing".to_string()),
+                _ => None,
+            },
+            chapters: item
+                .get("articleTotalCount")
+                .and_then(|v| v.as_i64())
+                .and_then(|n| i32::try_from(n).ok()),
+            ..HitExtra::default()
+        };
+        hits.push(OfficialHit::with_extra(
             id,
-            title: title.chars().take(MAX_TITLE_CHARS).collect(),
-        });
+            title.chars().take(MAX_TITLE_CHARS).collect::<String>(),
+            extra,
+        ));
     }
     hits
 }
@@ -339,6 +376,20 @@ mod tests {
         assert_eq!(hits[0].title, "여신강림");
         assert_eq!(hits[1].id, "833705");
         assert_eq!(hits[1].title, "귀혼");
+        // Rich search-answer fields.
+        let extra = &hits[0].extra;
+        assert!(
+            extra
+                .poster_url
+                .as_deref()
+                .is_some_and(|u| u.contains("image-comic.pstatic.net")),
+            "{:?}",
+            extra.poster_url
+        );
+        assert_eq!(extra.author.as_deref(), Some("야옹이"));
+        assert_eq!(extra.status.as_deref(), Some("completed"));
+        assert_eq!(extra.chapters, Some(261));
+        assert!(extra.description.as_deref().is_some_and(|d| !d.is_empty()));
     }
 
     #[test]

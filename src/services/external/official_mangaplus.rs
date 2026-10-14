@@ -452,7 +452,7 @@ pub fn parse_catalog(body: &[u8]) -> Vec<OfficialHit> {
             let name = message_field(title, 2)
                 .map(|raw| String::from_utf8_lossy(raw).trim().to_string())
                 .unwrap_or_default();
-            hits.push(OfficialHit { id, title: name });
+            hits.push(OfficialHit::new(id, name));
         }
     }
     hits

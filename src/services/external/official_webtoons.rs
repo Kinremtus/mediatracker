@@ -17,7 +17,7 @@ use std::time::Duration;
 
 use crate::services::external::chapter_title::{self, EpisodeRow, ShortTitle};
 use crate::services::external::official_meta::{self, OfficialMeta};
-use crate::services::official_types::OfficialHit;
+use crate::services::official_types::{HitExtra, OfficialHit};
 
 const SEARCH_BASE: &str = "https://www.webtoons.com/en/search";
 const API_BASE: &str = "https://m.webtoons.com/api/v1/webtoon";
@@ -114,8 +114,21 @@ pub fn parse_search(html: &str) -> Vec<OfficialHit> {
         if title.is_empty() {
             continue;
         }
+        // Rich search-answer fields: the card's poster and author line.
+        let poster_url = official_meta::between(card, "<img src=\"", "\"").map(str::to_string);
+        let author = official_meta::between(card, "<div class=\"author\">", "</div>")
+            .map(official_meta::strip_tags)
+            .filter(|a| !a.is_empty());
         seen.insert(id.clone());
-        hits.push(OfficialHit { id, title });
+        hits.push(OfficialHit::with_extra(
+            id,
+            title,
+            HitExtra {
+                poster_url,
+                author,
+                ..HitExtra::default()
+            },
+        ));
     }
     hits
 }
@@ -273,6 +286,17 @@ mod tests {
         assert!(
             !hits.iter().any(|h| h.id == "1175282"),
             "user-upload entries are not official sources"
+        );
+        // Rich search-answer fields: the card's cover and author line.
+        let orv = hits.iter().find(|h| h.id == "2154").expect("ORV card");
+        assert_eq!(orv.extra.author.as_deref(), Some("singNsong / UMI"));
+        assert!(
+            orv.extra
+                .poster_url
+                .as_deref()
+                .is_some_and(|u| u.starts_with("https://webtoon-phinf.pstatic.net/")),
+            "the card cover is kept: {:?}",
+            orv.extra.poster_url
         );
     }
 

@@ -21,7 +21,7 @@ use chrono::NaiveDate;
 
 use crate::services::external::chapter_title::{self, ComiciTitle, EpisodeRow, RawRow, ShortTitle};
 use crate::services::external::official_meta::{self, ChapterMeta, OfficialMeta};
-use crate::services::official_types::OfficialHit;
+use crate::services::official_types::{HitExtra, OfficialHit};
 
 /// The platform sites, in hit order. One parser, five catalogs: the same JSON
 /// shape on every host.
@@ -48,6 +48,8 @@ const MAX_EPISODES: i64 = 5000;
 const RSS_MAX_ITEMS: i64 = 25;
 /// Longest stored episode title (a hostile answer must not bloat the DB).
 const MAX_TITLE_CHARS: usize = 512;
+/// Longest stored synopsis taken from a search answer.
+const MAX_DESCRIPTION_CHARS: usize = 2000;
 
 /// Empty meta tagged with this source (non-fatal "nothing to report").
 fn empty_meta() -> OfficialMeta {
@@ -159,12 +161,105 @@ pub fn parse_search(json: &str, site: &str) -> Vec<OfficialHit> {
         else {
             continue;
         };
-        hits.push(OfficialHit {
-            id: format!("{site}/{hash}"),
-            title: name.chars().take(MAX_TITLE_CHARS).collect(),
-        });
+        // Rich search-answer fields: the platform's answer carries the cover,
+        // a rich-text description, authors, tags (genres), the serialization
+        // state and the first publish date.
+        let author_names = names_of(item.get("author"));
+        let extra = HitExtra {
+            poster_url: item
+                .pointer("/thumbnailImages/0/url")
+                .or_else(|| item.pointer("/images/0/url"))
+                .and_then(|v| v.as_str())
+                .map(str::to_string),
+            description: item
+                .get("description")
+                .and_then(|v| v.as_str())
+                .and_then(rich_text_plain),
+            author: (!author_names.is_empty()).then(|| author_names.join(", ")),
+            status: item
+                .get("status")
+                .and_then(|v| v.as_str())
+                .and_then(comici_status),
+            genres: names_of(item.get("tag")),
+            year: item
+                .get("publishDate")
+                .and_then(|v| v.as_i64())
+                .and_then(|secs| chrono::DateTime::from_timestamp(secs, 0))
+                .map(|dt| chrono::Datelike::year(&dt) as i16),
+            ..HitExtra::default()
+        };
+        hits.push(OfficialHit::with_extra(
+            format!("{site}/{hash}"),
+            name.chars().take(MAX_TITLE_CHARS).collect::<String>(),
+            extra,
+        ));
     }
     hits
+}
+
+/// `name` values of a `[{ "name": … }]` array (empty when missing).
+fn names_of(value: Option<&serde_json::Value>) -> Vec<String> {
+    value
+        .and_then(|v| v.as_array())
+        .map(|list| {
+            list.iter()
+                .filter_map(|entry| entry.get("name").and_then(|v| v.as_str()))
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The platform's `description` is a JSON string of rich-text nodes
+/// (`[{"type":"paragraph","children":[{"text":"…"}]}]`); collect every `text`
+/// leaf and join the paragraphs. `None` for an empty result.
+fn rich_text_plain(raw: &str) -> Option<String> {
+    let mut parts: Vec<String> = Vec::new();
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(raw) {
+        collect_text(&value, &mut parts);
+    }
+    let text = parts.join(" ").trim().to_string();
+    if text.is_empty() {
+        return None;
+    }
+    Some(text.chars().take(MAX_DESCRIPTION_CHARS).collect())
+}
+
+fn collect_text(value: &serde_json::Value, out: &mut Vec<String>) {
+    match value {
+        serde_json::Value::Object(map) => {
+            if let Some(text) = map.get("text").and_then(|v| v.as_str()) {
+                out.push(text.to_string());
+            }
+            for child in map.values() {
+                collect_text(child, out);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                collect_text(item, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// The platform's serialization state (`連載中`, `完結`, …) onto the shared
+/// `ongoing`/`completed`/`hiatus` vocabulary; an unknown word passes through
+/// trimmed.
+fn comici_status(raw: &str) -> Option<String> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    Some(match raw {
+        "連載中" | "連載" => "ongoing".to_string(),
+        "完結" | "完結済み" => "completed".to_string(),
+        "休載中" | "休載" => "hiatus".to_string(),
+        other => other.to_string(),
+    })
 }
 
 /// Pure parser over `/api/series`: the reported episode count (`numEpisodes`),
@@ -507,6 +602,43 @@ mod tests {
             hits.iter()
                 .any(|h| h.title == "僕の心のヤバイやつ ラブコメディが始まらない"
                     && h.id == "championcross.jp/452b0e17e1bf3")
+        );
+        // Rich search-answer fields from the platform's answer.
+        let spinoff = hits
+            .iter()
+            .find(|h| h.id == "championcross.jp/452b0e17e1bf3")
+            .expect("spinoff");
+        let extra = &spinoff.extra;
+        assert!(
+            extra
+                .poster_url
+                .as_deref()
+                .is_some_and(|u| u.contains("cdn-public.comici.jp")),
+            "{:?}",
+            extra.poster_url
+        );
+        assert!(
+            extra
+                .author
+                .as_deref()
+                .is_some_and(|a| a.contains("桜井のりお")),
+            "{:?}",
+            extra.author
+        );
+        assert_eq!(extra.status.as_deref(), Some("ongoing"));
+        assert!(
+            extra.genres.iter().any(|g| g == "コメディ"),
+            "{:?}",
+            extra.genres
+        );
+        assert_eq!(extra.year, Some(2025));
+        assert!(
+            extra
+                .description
+                .as_deref()
+                .is_some_and(|d| d.contains("桜井のりお先生監修")),
+            "{:?}",
+            extra.description
         );
     }
 

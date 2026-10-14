@@ -19,7 +19,7 @@
 //! as "no official match".
 
 use crate::services::external::official_meta::{self, ChapterMeta, OfficialMeta};
-use crate::services::official_types::OfficialHit;
+use crate::services::official_types::{HitExtra, OfficialHit};
 
 const LITE_BASE: &str = "https://lite.wuxiaworld.com";
 
@@ -41,8 +41,34 @@ const PAGE_BATCH: i64 = 8;
 const SEARCH_MAX_HITS: usize = 50;
 /// Longest stored chapter title (a hostile answer must not bloat the DB).
 const MAX_TITLE_CHARS: usize = 512;
+/// Longest stored synopsis taken from a search answer.
+const MAX_DESCRIPTION_CHARS: usize = 2000;
 /// How far a tag/attribute search may reach from its anchor.
 const WINDOW: usize = 4096;
+
+/// The grid's tag line (`Completed · Fantasy, Xuanhuan`): the serialization
+/// state before the `·`, the genres after it. An unknown state word passes
+/// through lowercased; a line without the separator is all genres.
+fn parse_tag_line(line: &str) -> (Option<String>, Vec<String>) {
+    let (head, tail) = match line.split_once('·') {
+        Some((head, tail)) => (head.trim(), tail.trim()),
+        None => (line.trim(), ""),
+    };
+    let status = match head.to_ascii_lowercase().as_str() {
+        "" => None,
+        "completed" => Some("completed".to_string()),
+        "ongoing" => Some("ongoing".to_string()),
+        "hiatus" => Some("hiatus".to_string()),
+        other => Some(other.to_string()),
+    };
+    let genres = tail
+        .split(',')
+        .map(str::trim)
+        .filter(|g| !g.is_empty())
+        .map(str::to_string)
+        .collect();
+    (status, genres)
+}
 
 /// Empty meta tagged with this source (non-fatal "nothing to report").
 fn empty_meta() -> OfficialMeta {
@@ -99,10 +125,31 @@ pub fn parse_search(html: &str) -> Vec<OfficialHit> {
         if title.is_empty() {
             continue;
         }
-        hits.push(OfficialHit {
-            id: slug.to_string(),
-            title: title.chars().take(MAX_TITLE_CHARS).collect(),
-        });
+        // Rich search-answer fields: the grid cell carries the cover, the
+        // `Completed · Fantasy, Xuanhuan` tag line and the synopsis snippet.
+        let poster_url = official_meta::between(cell, "<img src=\"", "\"").map(str::to_string);
+        let tag_line = official_meta::between(cell, "<p class=\"tag\">", "</p>")
+            .map(official_meta::strip_tags)
+            .filter(|t| !t.is_empty());
+        let (status, genres) = match tag_line.as_deref() {
+            Some(line) => parse_tag_line(line),
+            None => (None, Vec::new()),
+        };
+        let description = official_meta::between(cell, "<p class=\"syn\">", "</p>")
+            .map(official_meta::strip_tags)
+            .filter(|d| !d.is_empty())
+            .map(|d| d.chars().take(MAX_DESCRIPTION_CHARS).collect());
+        hits.push(OfficialHit::with_extra(
+            slug.to_string(),
+            title.chars().take(MAX_TITLE_CHARS).collect::<String>(),
+            HitExtra {
+                poster_url,
+                description,
+                status,
+                genres,
+                ..HitExtra::default()
+            },
+        ));
         if hits.len() >= SEARCH_MAX_HITS {
             break;
         }
@@ -314,6 +361,29 @@ mod tests {
         assert!(
             hits.iter()
                 .any(|h| h.id == "coiling-dragon" && h.title == "Coiling Dragon")
+        );
+        // Rich search-answer fields from the grid cell.
+        let extra = &hits[0].extra;
+        assert!(
+            extra
+                .poster_url
+                .as_deref()
+                .is_some_and(|u| u.contains("cdn.wuxiaworld.com")),
+            "{:?}",
+            extra.poster_url
+        );
+        assert_eq!(extra.status.as_deref(), Some("ongoing"));
+        assert_eq!(
+            extra.genres,
+            vec!["Fantasy".to_string(), "Comedy".to_string()]
+        );
+        assert!(
+            extra
+                .description
+                .as_deref()
+                .is_some_and(|d| d.contains("Zhang Sheng")),
+            "{:?}",
+            extra.description
         );
     }
 

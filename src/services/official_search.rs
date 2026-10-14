@@ -60,14 +60,23 @@ pub async fn search(state: &AppState, media_type: &str, query: &str) -> Vec<Crea
     items
 }
 
-/// One official hit as a search result. Rich fields (poster, description,
-/// author, status, genres, year) land here as the sources expose them.
+/// One official hit as a search result: the id/title plus every rich field
+/// the source's search answer exposed.
 fn hit_to_item(source: &str, media_type: &str, hit: OfficialHit) -> CreateMediaItem {
+    let extra = hit.extra;
     CreateMediaItem {
         provider: source.to_string(),
         external_id: hit.id,
         media_type: media_type.to_string(),
         title: hit.title,
+        poster_url: extra.poster_url,
+        description: extra.description,
+        status: extra.status,
+        genres: extra.genres,
+        year: extra.year,
+        score: extra.score,
+        chapters: extra.chapters,
+        authors: extra.author.into_iter().collect(),
         ..Default::default()
     }
 }
@@ -108,15 +117,36 @@ mod tests {
     }
 
     #[test]
-    fn hit_to_item_carries_source_and_type() {
-        let hit = OfficialHit {
-            id: "1320".to_string(),
-            title: "Lore Olympus".to_string(),
-        };
+    fn hit_to_item_carries_source_type_and_rich_fields() {
+        let hit = OfficialHit::with_extra(
+            "1320",
+            "Lore Olympus",
+            crate::services::official_types::HitExtra {
+                poster_url: Some("https://example.test/1320.jpg".to_string()),
+                description: Some("a retelling".to_string()),
+                author: Some("Rachel Smythe".to_string()),
+                status: Some("ongoing".to_string()),
+                genres: vec!["Fantasy".to_string()],
+                year: Some(2018),
+                score: Some(8.9),
+                chapters: Some(261),
+            },
+        );
         let item = hit_to_item("webtoons", "other-comics", hit);
         assert_eq!(item.provider, "webtoons");
         assert_eq!(item.external_id, "1320");
         assert_eq!(item.media_type, "other-comics");
         assert_eq!(item.title, "Lore Olympus");
+        assert_eq!(
+            item.poster_url.as_deref(),
+            Some("https://example.test/1320.jpg")
+        );
+        assert_eq!(item.description.as_deref(), Some("a retelling"));
+        assert_eq!(item.authors, vec!["Rachel Smythe".to_string()]);
+        assert_eq!(item.status.as_deref(), Some("ongoing"));
+        assert_eq!(item.genres, vec!["Fantasy".to_string()]);
+        assert_eq!(item.year, Some(2018));
+        assert_eq!(item.score, Some(8.9));
+        assert_eq!(item.chapters, Some(261));
     }
 }
