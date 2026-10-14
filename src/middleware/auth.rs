@@ -14,6 +14,8 @@ pub struct CurrentUser {
     pub id: Uuid,
     pub username: String,
     pub role: String,
+    /// Media type preselected in the header search selector; `None` = none.
+    pub default_search_type: Option<String>,
 }
 
 impl<S> FromRequestParts<S> for CurrentUser
@@ -56,6 +58,7 @@ pub async fn auth_middleware(
                         id: user.id,
                         username: user.username,
                         role: user.role,
+                        default_search_type: user.default_search_type,
                     };
                     req.extensions_mut().insert(current_user);
                     next.run(req).await

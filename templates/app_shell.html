@@ -58,24 +58,30 @@
             </button>
             <div class="header-search">
 
-                <!-- Mobile search button (hidden on desktop by Alpine) -->
-                <button class="header-search-btn"
-                        x-show="isMobile"
-                        @click="window.dispatchEvent(new CustomEvent('open-search'))" x-cloak
-                        aria-label="Поиск">
+                <!-- Mobile: jump to the search page (hidden on desktop by Alpine) -->
+                <a class="header-search-btn" x-show="isMobile" x-cloak href="/search" aria-label="Поиск">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
                     </svg>
-                </button>
+                </a>
 
-                <!-- Desktop search trigger (hidden on mobile by Alpine) -->
-                <div class="header-search-bar" x-show="!isMobile"
-                     @click="window.dispatchEvent(new CustomEvent('open-search'))">
-                    <svg class="header-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                    </svg>
-                    <input type="text" placeholder="Поиск аниме, манги, фильмов, игр..." readonly>
-                </div>
+                <!-- Desktop: pick the media type, type the query, submit — the
+                     search page opens for that type (switch types there via the
+                     tabs). The type preselection is the user's setting. -->
+                <form class="header-search-bar" x-show="!isMobile" action="/search" method="get" role="search">
+                    <select name="type" class="header-search-type" aria-label="Тип медиа">
+                        <option value="">Тип…</option>
+                        {% for t in media_types %}
+                        <option value="{{ t.key }}"{% if t.key == default_search_type %} selected{% endif %}>{{ t.icon }} {{ t.label }}</option>
+                        {% endfor %}
+                    </select>
+                    <input type="text" name="q" placeholder="Поиск по названию…" aria-label="Поиск" autocomplete="off">
+                    <button type="submit" class="header-search-submit" aria-label="Найти">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                        </svg>
+                    </button>
+                </form>
             </div>
             <div class="header-actions">
                 <!-- Global add-manually (icon button, 36x36 like theme toggle) -->
@@ -129,60 +135,6 @@
             {% block content %}{% endblock %}
         </div>
     </main>
-
-    <!-- Search overlay (app-shell level — above everything including sidebar) -->
-    <div class="search-overlay" x-data="searchOverlay()" x-show="open" x-cloak @click="closeSearch()" @keydown.escape.window="closeSearch()">
-        <div class="search-overlay-card" @click.stop>
-            <div class="search-overlay-header">
-                <input type="text" x-model="query"
-                       id="quick-search-input"
-                       name="q"
-                       hx-get="/api/search/panel"
-                       hx-trigger="input changed delay:300ms"
-                       hx-target="#quick-search-results"
-                       hx-swap="innerHTML"
-                       @keydown.enter.prevent="submitSearch()"
-                       placeholder="Поиск аниме, манги, фильмов, игр..."
-                       x-ref="overlayInput">
-                <button class="search-overlay-close" @click="closeSearch()">✕</button>
-            </div>
-            <div class="search-overlay-results">
-                <template x-if="!query.length">
-                    <div class="search-dropdown-section">
-                        <div class="search-dropdown-title" x-show="recentMedia.length">
-                            <span>Недавние</span>
-                        </div>
-                        <template x-for="item in recentMedia" :key="item.provider + '-' + item.external_id">
-                            <a href="#" class="search-dropdown-item"
-                               @click.prevent="clickResult(item)">
-                                <img x-show="item.poster_url" :src="item.poster_url"
-                                     class="search-dropdown-poster" alt="">
-                                <div class="search-dropdown-item-body">
-                                    <div class="search-dropdown-item-title" x-text="item.title"></div>
-                                    <div class="search-dropdown-item-meta">
-                                        <span class="search-dropdown-badge" x-text="item.media_type"></span>
-                                        <span x-show="item.year" x-text="item.year"></span>
-                                        <span x-show="item.score" class="search-dropdown-score" x-text="'★ ' + item.score"></span>
-                                    </div>
-                                </div>
-                            </a>
-                        </template>
-                        <div class="search-dropdown-empty" x-show="!recentMedia.length">
-                            Начните вводить запрос для поиска
-                        </div>
-                    </div>
-                </template>
-                <!--
-                    Server-rendered results host: the hx-get on #quick-search-input
-                    fetches GET /api/search/panel and swaps the fragment here. Its item
-                    cards call openMediaDrawer(...); saveRecentMediaFromElement($el);
-                    closeSearch() and are re-bound by the htmx:afterSwap ->
-                    Alpine.initTree listener in static/js/app.js.
-                -->
-                <div id="quick-search-results" x-show="query.length"></div>
-            </div>
-        </div>
-    </div>
 
     <!-- Media Drawer -->
     <div class="media-drawer-overlay" x-show="drawerOpen" @click="drawerOpen = false; document.body.style.overflow = ''" x-cloak></div>

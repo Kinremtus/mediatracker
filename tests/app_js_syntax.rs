@@ -32,7 +32,6 @@ const CHAPTER_LIST_HTML: &str = "templates/partials/_chapter_list.html";
 const EPISODE_LIST_HTML: &str = "templates/partials/_episode_list.html";
 const APP_SHELL_HTML: &str = "templates/app_shell.html";
 const TRACKING_LIST_HTML: &str = "templates/tracking_list.html";
-const QUICK_SEARCH_HTML: &str = "templates/partials/_quick_search_results.html";
 const COMPONENTS_CSS: &str = "static/css/components.css";
 
 /// Walk the source tracking brace/paren/bracket depth and string/
@@ -754,32 +753,33 @@ fn drawer_genres_show_all_and_collapse_when_long() {
 }
 
 #[test]
-fn app_shell_search_panel_is_htmx() {
+fn app_shell_header_search_form_is_type_scoped() {
     let html = read_root(APP_SHELL_HTML);
     for needle in [
-        "hx-get=\"/api/search/panel\"",
-        "hx-target=\"#quick-search-results\"",
-        "hx-swap=\"innerHTML\"",
-        "hx-trigger=\"input changed delay:300ms\"",
-        "id=\"quick-search-results\"",
-        "id=\"quick-search-input\"",
+        "action=\"/search\"",
+        "method=\"get\"",
+        "name=\"type\"",
         "name=\"q\"",
+        "header-search-type",
+        "default_search_type",
     ] {
         assert!(html.contains(needle), "app_shell missing {needle}");
     }
 }
 
 #[test]
-fn app_shell_search_panel_keeps_recent_and_drawer_hooks() {
+fn app_shell_has_no_search_overlay() {
     let html = read_root(APP_SHELL_HTML);
     for needle in [
         "searchOverlay()",
         "class=\"search-overlay\"",
-        "saveRecentMediaFromElement",
-        "clickResult(item)",
-        "@keydown.enter.prevent=\"submitSearch()\"",
+        "quick-search-results",
+        "/api/search/panel",
     ] {
-        assert!(html.contains(needle), "app_shell missing {needle}");
+        assert!(
+            !html.contains(needle),
+            "app_shell still references {needle}"
+        );
     }
 }
 
@@ -790,90 +790,25 @@ fn app_shell_no_inline_search_call() {
 }
 
 #[test]
-fn quick_search_partial_reuses_dropdown_classes() {
-    let html = read_root(QUICK_SEARCH_HTML);
-    for needle in [
-        "search-dropdown-item",
-        "search-dropdown-poster",
-        "search-dropdown-badge",
-        "search-dropdown-score",
-        "search-dropdown-tracked",
-        "search-dropdown-title",
-    ] {
-        assert!(html.contains(needle), "partial missing {needle}");
-    }
-}
-
-#[test]
-fn quick_search_partial_has_sections_and_show_more() {
-    let html = read_root(QUICK_SEARCH_HTML);
-    for needle in [
-        "quick-search-section",
-        "hx-get=\"/api/search/panel\"",
-        "hx-swap=\"outerHTML\"",
-        "closest .quick-search-section",
-        "Показать ещё",
-        "data-type=",
-    ] {
-        assert!(html.contains(needle), "partial missing {needle}");
-    }
-}
-
-#[test]
-fn quick_search_partial_has_family_tabs() {
-    let html = read_root(QUICK_SEARCH_HTML);
-    assert!(html.contains("quick-search-tab"));
-    assert!(html.contains("hx-include=\"#quick-search-input\""));
-    // The tab strip loops over `families`, so every family key is emitted via
-    // this hx-vals fragment instead of appearing as a literal in the template.
-    assert!(html.contains(r#"hx-vals='{"family":"{{ f.key }}"}'"#));
-}
-
-#[test]
-fn quick_search_panel_wider_and_scroll_free() {
-    let css = read_root(COMPONENTS_CSS);
-
-    let card = css
-        .find(".search-overlay-card {")
-        .expect("`.search-overlay-card {` rule present");
-    let card_block = &css[card..];
-    let card_rule = &card_block[..card_block.find('}').expect("closing brace")];
-    assert!(
-        card_rule.contains("max-width: 720px;"),
-        "card not widened:\n{card_rule}"
-    );
-
-    let tabs = css
-        .find(".quick-search-tabs {")
-        .expect("`.quick-search-tabs {` rule present");
-    let tabs_block = &css[tabs..];
-    let tabs_rule = &tabs_block[..tabs_block.find('}').expect("closing brace")];
-    assert!(
-        tabs_rule.contains("flex-wrap: wrap;"),
-        "tabs must wrap:\n{tabs_rule}"
-    );
-    assert!(
-        !tabs_rule.contains("overflow-x: auto;"),
-        "tabs must not scroll horizontally:\n{tabs_rule}"
-    );
-}
-
-#[test]
 fn app_js_no_longer_fetches_suggestions_inline() {
     let src = read_root(APP_JS);
     assert!(!src.contains("api/search/suggestions"));
 }
 
 #[test]
-fn app_js_keeps_recent_media_helpers() {
+fn app_js_has_no_recent_media_or_overlay_helpers() {
     let src = read_root(APP_JS);
     for needle in [
         "function saveRecentMediaFromElement(",
         "function saveRecentMedia(",
-        "function openMediaDrawer(",
+        "function searchOverlay(",
     ] {
-        assert!(src.contains(needle), "app.js missing {needle}");
+        assert!(!src.contains(needle), "app.js still defines {needle}");
     }
+    assert!(
+        src.contains("function openMediaDrawer("),
+        "app.js must keep the drawer opener"
+    );
 }
 
 #[test]
@@ -891,11 +826,9 @@ fn header_icon_btn_has_optical_margin() {
     );
 }
 
-/// The sidebar must not expose a `/search` item anymore: search is reachable
-/// from the header/overlay and `/search` still exists for those entry points.
-/// The check is scoped strictly to the `<aside>...</aside>` block so the
-/// search overlay markup (which legitimately references `/api/search/panel`)
-/// is unaffected.
+/// The sidebar must not expose a `/search` item: search is reachable from
+/// the header form and `/search` still exists for that entry point. The check
+/// is scoped strictly to the `<aside>...</aside>` block.
 #[test]
 fn sidebar_has_no_search_item() {
     let html = read_root(APP_SHELL_HTML);

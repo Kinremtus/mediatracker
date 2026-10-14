@@ -90,7 +90,8 @@ impl PasswordResetService {
     pub async fn validate_token(&self, token: &str) -> Result<User, ResetError> {
         let token_hash = sha256_hex(token);
         let user = sqlx::query_as::<_, User>(
-            "SELECT u.id, u.username, u.email, u.password_hash, u.role, u.created_at, u.updated_at \
+            "SELECT u.id, u.username, u.email, u.password_hash, u.role, u.created_at, u.updated_at, \
+                    u.default_search_type \
              FROM password_reset_tokens t \
              JOIN users u ON u.id = t.user_id \
              WHERE t.token_hash = $1 AND t.expires_at > NOW() AND t.used_at IS NULL",

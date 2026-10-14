@@ -21,6 +21,7 @@ use uuid::Uuid;
 
 fn current_user() -> CurrentUser {
     CurrentUser {
+        default_search_type: None,
         id: Uuid::new_v4(),
         username: "db-failure".to_string(),
         role: "user".to_string(),

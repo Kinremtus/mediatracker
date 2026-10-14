@@ -12,6 +12,8 @@ pub struct User {
     pub role: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// Media type preselected in the header search selector; NULL = none.
+    pub default_search_type: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

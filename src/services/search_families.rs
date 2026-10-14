@@ -1,4 +1,5 @@
-//! Media-family registry for the quick-search panel.
+//! Media-family registry: the calendar's family tabs and the raw-type
+//! metadata used across the search UI.
 //!
 //! Pure data: maps the 14 raw media types to 7 user-facing families and
 //! provides `(icon, label)` metadata for a raw type. Single source of truth

@@ -162,19 +162,6 @@ pub struct CreateMediaItem {
     pub associated_titles: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct SearchSuggestion {
-    pub provider: String,
-    pub external_id: String,
-    pub media_type: String,
-    pub title: String,
-    pub title_english: Option<String>,
-    pub poster_url: Option<String>,
-    pub year: Option<i16>,
-    pub score: Option<f64>,
-    pub is_tracked: bool,
-}
-
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct MediaItemSlim {
     pub provider: String,

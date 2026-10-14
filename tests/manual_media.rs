@@ -40,6 +40,7 @@ async fn seed_user(pool: &PgPool, username: &str) -> Uuid {
 fn current_user(id: Uuid) -> CurrentUser {
     CurrentUser {
         id,
+        default_search_type: None,
         username: "manual-test".to_string(),
         role: "user".to_string(),
     }

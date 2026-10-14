@@ -25,6 +25,7 @@ use uuid::Uuid;
 
 fn current_user() -> CurrentUser {
     CurrentUser {
+        default_search_type: None,
         id: Uuid::new_v4(),
         username: "degradation".to_string(),
         role: "user".to_string(),
@@ -85,17 +86,6 @@ async fn search_page_renders_all_fourteen_type_buttons() {
     );
     assert!(html.contains("🎞"), "animated-movies icon must render");
     assert!(html.contains("🎮"), "game icon must render");
-}
-
-#[tokio::test]
-async fn search_suggestions_render_without_query_or_providers() {
-    let ctx = common::TestContext::new().await;
-    let app = Router::new()
-        .route("/search/suggestions", get(search::get_search_suggestions))
-        .layer(Extension(current_user()))
-        .with_state(ctx.state.clone());
-
-    assert_eq!(get_page(app, "/search/suggestions").await, StatusCode::OK);
 }
 
 #[tokio::test]

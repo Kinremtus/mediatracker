@@ -22,6 +22,7 @@ struct TrackingListTemplate {
     role: String,
     stats: SidebarStats,
     active_page: String,
+    default_search_type: String,
     entries: Vec<TrackingEntryWithMedia>,
     status_label: String,
     current_status: String,
@@ -118,6 +119,7 @@ struct ManualFormTemplate {
     role: String,
     stats: SidebarStats,
     active_page: String,
+    default_search_type: String,
     media_types: Vec<MediaTypeItem>,
     statuses: Vec<StatusItem>,
     flash_message: String,
@@ -298,6 +300,7 @@ pub async fn get_tracking_list(
         role: user.role.clone(),
         stats,
         active_page: "tracking".to_string(),
+        default_search_type: user.default_search_type.clone().unwrap_or_default(),
         entries,
         status_label,
         current_status,
@@ -340,6 +343,7 @@ pub async fn get_manual_form(
         role: user.role,
         stats,
         active_page: "tracking".to_string(),
+        default_search_type: user.default_search_type.clone().unwrap_or_default(),
         media_types,
         statuses,
         metric_fields: MANUAL_METRIC_FIELDS,
@@ -619,11 +623,31 @@ pub async fn post_add_to_tracking(
 
     match state.tracking.add_to_list(user.id, &media, status).await {
         Ok(_) => {
-            // Enrich when ANY official source for this media type is already
-            // bound (bounded, non-fatal - never fails the add).
             let sources = crate::services::official_resolve::official_source_for_media_type(
                 &media.media_type,
             );
+            // A title added straight from an official source is its own
+            // binding: without the `media_source_ids` row the drawer's enrich
+            // would find no source and the chapter list would stay empty.
+            if sources.contains(&media.provider.as_str())
+                && let Err(e) = crate::services::source_ids::set_source_id(
+                    &state.db,
+                    &media.provider,
+                    &media.external_id,
+                    &media.provider,
+                    &media.external_id,
+                )
+                .await
+            {
+                tracing::warn!(
+                    provider = %media.provider,
+                    external_id = %media.external_id,
+                    error = %e,
+                    "official add: binding failed"
+                );
+            }
+            // Enrich when ANY official source for this media type is already
+            // bound (bounded, non-fatal - never fails the add).
             let mut has_binding = false;
             for &source in sources {
                 if let Ok(Some(_)) = crate::services::source_ids::get_source_id(

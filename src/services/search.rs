@@ -74,8 +74,8 @@ fn provider_priority(media_type: &str, provider: &str) -> u8 {
 
 /// Дедупликация по (comparison_key, media_type).
 /// Сортирует по приоритету провайдера для типа, оставляет первый уникальный.
-/// Also used by the quick-search family fan-out, which merges several type
-/// searches that can surface the same hit (type-agnostic providers).
+/// Also used by the live search, which merges the official-source fan-out
+/// whose catalogs can surface the same hit from several sources.
 pub fn deduplicate_by_title(items: Vec<CreateMediaItem>) -> Vec<CreateMediaItem> {
     let mut sorted = items;
     sorted.sort_by_key(|item| provider_priority(&item.media_type, &item.provider));
@@ -372,28 +372,6 @@ pub async fn book(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
     deduplicate_by_title(items)
 }
 
-/// Без выбранного типа — срез по всем категориям (по одному запросу на группу провайдеров).
-pub async fn all_types(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
-    let (anime_r, manga_r, movie_r, series_r, game_r, book_r, comic_r) = tokio::join!(
-        anime(state, query),
-        state.mangaupdates.search(query),
-        movie(state, query),
-        series(state, query),
-        game(state, query),
-        book(state, query),
-        comic(state, query),
-    );
-
-    let mut out = anime_r;
-    extend(&mut out, manga_r, "mangaupdates");
-    out.extend(movie_r);
-    out.extend(series_r);
-    out.extend(game_r);
-    out.extend(book_r);
-    out.extend(comic_r);
-    deduplicate_by_title(out)
-}
-
 pub async fn by_media_type(
     state: &AppState,
     query: &str,
@@ -414,7 +392,9 @@ pub async fn by_media_type(
         "animated-movies" => animated_movies(state, query).await,
         "game" => game(state, query).await,
         "book" => book(state, query).await,
-        _ => all_types(state, query).await,
+        // Unknown/absent type: nothing to search (the /search route
+        // validates the type before it gets here).
+        _ => Vec::new(),
     }
 }
 

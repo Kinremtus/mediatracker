@@ -19,6 +19,8 @@ struct SettingsTemplate {
     email: String,
     stats: SidebarStats,
     active_page: String,
+    media_types: Vec<super::tracking::MediaTypeItem>,
+    default_search_type: String,
     message: Option<String>,
     error: Option<String>,
     email_notifications: bool,
@@ -32,6 +34,21 @@ struct SettingsTemplate {
 pub struct ProfileForm {
     username: String,
     email: String,
+    /// Default media type for the header search selector; empty = none.
+    #[serde(default)]
+    default_search_type: Option<String>,
+}
+
+/// The selectable default search type: a canonical media type or `None`.
+fn valid_search_type(raw: Option<&str>) -> Option<String> {
+    let raw = raw.unwrap_or("").trim();
+    if raw.is_empty() {
+        return None;
+    }
+    super::tracking::get_all_media_types()
+        .iter()
+        .any(|(key, _, _)| *key == raw)
+        .then(|| raw.to_string())
 }
 
 #[derive(Deserialize)]
@@ -44,13 +61,15 @@ pub struct PasswordForm {
 pub async fn get_settings(user: CurrentUser, State(state): State<AppState>) -> Html<String> {
     let stats = get_sidebar_stats(&state, &user).await;
 
-    let user_data = sqlx::query_as::<_, (String, String, Option<String>, bool)>(
-        "SELECT username, email, telegram_chat_id, telegram_notifications_enabled FROM users WHERE id = $1"
+    let user_data = sqlx::query_as::<_, (String, String, Option<String>, bool, Option<String>)>(
+        "SELECT username, email, telegram_chat_id, telegram_notifications_enabled, \
+                default_search_type \
+         FROM users WHERE id = $1",
     )
     .bind(user.id)
     .fetch_one(&state.db)
     .await
-    .unwrap_or((user.username.clone(), String::new(), None, false));
+    .unwrap_or((user.username.clone(), String::new(), None, false, None));
 
     SettingsTemplate {
         username: user_data.0,
@@ -58,6 +77,8 @@ pub async fn get_settings(user: CurrentUser, State(state): State<AppState>) -> H
         email: user_data.1,
         stats,
         active_page: "settings".to_string(),
+        media_types: super::tracking::all_media_type_items(),
+        default_search_type: user_data.4.clone().unwrap_or_default(),
         message: None,
         error: None,
         email_notifications: false,
@@ -79,13 +100,17 @@ pub async fn post_profile(
     State(state): State<AppState>,
     Form(form): Form<ProfileForm>,
 ) -> Response {
-    let result =
-        sqlx::query("UPDATE users SET username = $1, email = $2, updated_at = NOW() WHERE id = $3")
-            .bind(&form.username)
-            .bind(&form.email)
-            .bind(user.id)
-            .execute(&state.db)
-            .await;
+    let default_search_type = valid_search_type(form.default_search_type.as_deref());
+    let result = sqlx::query(
+        "UPDATE users SET username = $1, email = $2, default_search_type = $3, \
+                updated_at = NOW() WHERE id = $4",
+    )
+    .bind(&form.username)
+    .bind(&form.email)
+    .bind(&default_search_type)
+    .bind(user.id)
+    .execute(&state.db)
+    .await;
 
     match result {
         Ok(_) => {
@@ -105,6 +130,8 @@ pub async fn post_profile(
                     email: user_data.1,
                     stats,
                     active_page: "settings".to_string(),
+                    media_types: super::tracking::all_media_type_items(),
+                    default_search_type: default_search_type.clone().unwrap_or_default(),
                     message: Some("Профиль обновлён".to_string()),
                     error: None,
                     email_notifications: false,
@@ -130,6 +157,8 @@ pub async fn post_profile(
                     email: String::new(),
                     stats,
                     active_page: "settings".to_string(),
+                    media_types: super::tracking::all_media_type_items(),
+                    default_search_type: user.default_search_type.clone().unwrap_or_default(),
                     message: None,
                     error: Some(format!("Ошибка: {}", e)),
                     email_notifications: false,
@@ -180,6 +209,8 @@ pub async fn post_password(
                 email: String::new(),
                 stats,
                 active_page: "settings".to_string(),
+                media_types: super::tracking::all_media_type_items(),
+                default_search_type: user.default_search_type.clone().unwrap_or_default(),
                 message: None,
                 error: Some("Новые пароли не совпадают".to_string()),
                 email_notifications: false,
@@ -206,6 +237,8 @@ pub async fn post_password(
                 email: String::new(),
                 stats,
                 active_page: "settings".to_string(),
+                media_types: super::tracking::all_media_type_items(),
+                default_search_type: user.default_search_type.clone().unwrap_or_default(),
                 message: None,
                 error: Some("Пароль должен быть не менее 6 символов".to_string()),
                 email_notifications: false,
@@ -251,6 +284,8 @@ pub async fn post_password(
                     email: String::new(),
                     stats,
                     active_page: "settings".to_string(),
+                    media_types: super::tracking::all_media_type_items(),
+                    default_search_type: user.default_search_type.clone().unwrap_or_default(),
                     message: None,
                     error: Some("Ошибка проверки пароля".to_string()),
                     email_notifications: false,
@@ -281,6 +316,8 @@ pub async fn post_password(
                 email: String::new(),
                 stats,
                 active_page: "settings".to_string(),
+                media_types: super::tracking::all_media_type_items(),
+                default_search_type: user.default_search_type.clone().unwrap_or_default(),
                 message: None,
                 error: Some("Текущий пароль неверен".to_string()),
                 email_notifications: false,
@@ -312,6 +349,8 @@ pub async fn post_password(
                     email: String::new(),
                     stats,
                     active_page: "settings".to_string(),
+                    media_types: super::tracking::all_media_type_items(),
+                    default_search_type: user.default_search_type.clone().unwrap_or_default(),
                     message: None,
                     error: Some("Ошибка хеширования пароля".to_string()),
                     email_notifications: false,
@@ -348,6 +387,8 @@ pub async fn post_password(
                     email: String::new(),
                     stats,
                     active_page: "settings".to_string(),
+                    media_types: super::tracking::all_media_type_items(),
+                    default_search_type: user.default_search_type.clone().unwrap_or_default(),
                     message: Some("Пароль успешно изменён".to_string()),
                     error: None,
                     email_notifications: false,
@@ -373,6 +414,8 @@ pub async fn post_password(
                     email: String::new(),
                     stats,
                     active_page: "settings".to_string(),
+                    media_types: super::tracking::all_media_type_items(),
+                    default_search_type: user.default_search_type.clone().unwrap_or_default(),
                     message: None,
                     error: Some(format!("Ошибка: {}", e)),
                     email_notifications: false,
@@ -464,13 +507,17 @@ pub async fn htmx_update_profile(
     State(state): State<AppState>,
     Form(form): Form<ProfileForm>,
 ) -> Response {
-    let result =
-        sqlx::query("UPDATE users SET username = $1, email = $2, updated_at = NOW() WHERE id = $3")
-            .bind(&form.username)
-            .bind(&form.email)
-            .bind(user.id)
-            .execute(&state.db)
-            .await;
+    let default_search_type = valid_search_type(form.default_search_type.as_deref());
+    let result = sqlx::query(
+        "UPDATE users SET username = $1, email = $2, default_search_type = $3, \
+                updated_at = NOW() WHERE id = $4",
+    )
+    .bind(&form.username)
+    .bind(&form.email)
+    .bind(&default_search_type)
+    .bind(user.id)
+    .execute(&state.db)
+    .await;
 
     match result {
         Ok(_) => {

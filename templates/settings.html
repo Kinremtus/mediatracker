@@ -29,6 +29,15 @@
                 <label class="settings-label">Email</label>
                 <input type="email" name="email" value="{{ email }}" class="settings-input" required>
             </div>
+            <div class="settings-field">
+                <label class="settings-label">Тип медиа по умолчанию для поиска</label>
+                <select name="default_search_type" class="settings-input">
+                    <option value="">— не выбран —</option>
+                    {% for t in media_types %}
+                    <option value="{{ t.key }}"{% if t.key == default_search_type %} selected{% endif %}>{{ t.icon }} {{ t.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
             <button type="submit" class="btn btn-primary">Сохранить</button>
         </form>
     </div>

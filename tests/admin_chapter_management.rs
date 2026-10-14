@@ -35,6 +35,7 @@ async fn seed_user(pool: &sqlx::PgPool) -> Uuid {
 fn current_user(id: Uuid) -> CurrentUser {
     CurrentUser {
         id,
+        default_search_type: None,
         username: "admin_chapters_test".to_string(),
         role: "admin".to_string(),
     }
