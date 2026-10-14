@@ -252,7 +252,8 @@ pub fn classify_jp_title(raw: &str) -> ShortTitle {
 /// Japanese side-content markers (substring match, same trade-off as the KR
 /// list): a rare main episode that mentions one is folded into bonuses rather
 /// than lost. Shared kanji markers (`序章`/`幕間`/`終章`/`間話`/`閑話`) also
-/// cover Chinese titles.
+/// cover Chinese titles; `休載` is the hiatus-notice row the comici sites
+/// publish in the episode list (`5/22休載イラスト`).
 pub fn is_jp_bonus_title(title: &str) -> bool {
     [
         "プロローグ",
@@ -265,6 +266,7 @@ pub fn is_jp_bonus_title(title: &str) -> bool {
         "おまけ",
         "特典",
         "限定",
+        "休載",
         "幕間",
         "幕间",
         "序章",
@@ -364,6 +366,22 @@ fn parse_jp_number(s: &str) -> Option<(i32, &str)> {
     Some((value, tail))
 }
 
+/// `N話` / `N回` with an optional own-title tail (`1話`, `12回 総集編`): the
+/// unit-less Japanese counter the Takecomic site uses. `0話` is a prologue
+/// (`None`), exactly like [`parse_jp_number`].
+fn parse_plain_jp_number(s: &str) -> Option<(i32, &str)> {
+    let digits: String = s.chars().take_while(char::is_ascii_digit).collect();
+    if digits.is_empty() || digits.len() > 4 {
+        return None;
+    }
+    let after = &s[digits.len()..];
+    let rest = after
+        .strip_prefix('話')
+        .or_else(|| after.strip_prefix('回'))?;
+    let value: i32 = digits.parse().ok()?;
+    (value >= 1).then_some((value, rest))
+}
+
 /// Split-part index for the text after `第N話`: `-M` dash (`第9話-1`), `前編`
 /// (10) / `後編` (20), plus a circled sub-part number (`①` -> 1). `None` for a
 /// plain chapter.
@@ -397,6 +415,51 @@ fn circled_number(s: &str) -> Option<i32> {
     })
 }
 
+/// The site's Latin counters: `Karte.1`, `Score.01`, `SPARE.157`, `RIDE.793.5`.
+/// A leading word of ASCII letters (up to 15, `-` allowed), a dot, the number,
+/// then a boundary that is not an ASCII alphanumeric (end, space, punctuation
+/// or the title's own Japanese text). `Word.NN.M` is a fractional release
+/// (`RIDE.793.5` -> 79305), exactly like the `49.5` specials elsewhere.
+fn parse_word_number(s: &str) -> Option<ShortTitle> {
+    let bytes = s.as_bytes();
+    let mut word_end = 0usize;
+    while word_end < bytes.len()
+        && (bytes[word_end].is_ascii_alphabetic() || bytes[word_end] == b'-')
+    {
+        word_end += 1;
+    }
+    if word_end == 0 || word_end > 15 {
+        return None;
+    }
+    let rest = s[word_end..].strip_prefix('.')?;
+    let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+    if digits.is_empty() || digits.len() > 4 {
+        return None;
+    }
+    let value: i32 = digits.parse().ok()?;
+    if value < 1 {
+        return None;
+    }
+    let after = &rest[digits.len()..];
+    if let Some(fraction) = after.strip_prefix('.') {
+        let frac_digits: String = fraction.chars().take_while(char::is_ascii_digit).collect();
+        let Ok(frac) = frac_digits.parse::<i32>() else {
+            return None;
+        };
+        return (1..=99)
+            .contains(&frac)
+            .then_some(ShortTitle::Fractional(value * 100 + frac));
+    }
+    if after
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_alphanumeric())
+    {
+        return None;
+    }
+    Some(ShortTitle::Base(value))
+}
+
 /// Manga UP! episode titles: `Chapter N` and `Chapter N.M` split parts;
 /// anything else (`Final`, `Special`, `Prologue`, `Bonus`, `Side Story`, …)
 /// is unnumbered bonus content. A subtitle after the number is ignored.
@@ -420,6 +483,56 @@ pub fn classify_mangaup_title(raw: &str) -> ShortTitle {
         };
     }
     ShortTitle::Base(n)
+}
+
+/// One comici-platform episode title reduced to how it maps onto the chapter
+/// sequence. The platform's five publisher sites (Champion Cross, Takecomic,
+/// PASH! neo, Young Champion Web, Big Comics) mix numbered, marker and
+/// numberless labels in one catalog, so a plain numberless label must be told
+/// apart from an explicit bonus marker: the caller numbers the former by
+/// position and files the latter into the bonus section.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ComiciTitle {
+    /// A real chapter number: `第N話`/`第N回`, `N話`, or the site's Latin
+    /// counter (`Karte.1`, `Score.01`, `RIDE.793.5`).
+    Number(ShortTitle),
+    /// An explicit side-content marker (`番外編`, `休載`, `プロローグ`, …).
+    Bonus,
+    /// No number and no marker: a volume-scoped label (`10巻－第1歩`) or a
+    /// text-only title. The caller numbers such rows by position.
+    Plain,
+}
+
+/// Classify one comici-platform episode title. A numbered title wins over a
+/// marker (`第5話 幕間` is chapter 5), exactly like [`classify_jp_title`].
+pub fn classify_comici_title(raw: &str) -> ComiciTitle {
+    let s = raw.trim();
+    if has_chapter_number_prefix(s) {
+        return match classify_jp_title(s) {
+            ShortTitle::Unnumbered => ComiciTitle::Bonus,
+            kind => ComiciTitle::Number(kind),
+        };
+    }
+    // A zero-numbered prologue (`第0話`) parses as no number above; on this
+    // platform it is side content, not a position-numbered row.
+    if s.starts_with('第') && (s.contains('話') || s.contains('回')) {
+        return ComiciTitle::Bonus;
+    }
+    if let Some(kind) = parse_word_number(s) {
+        return ComiciTitle::Number(kind);
+    }
+    if let Some((n, rest)) = parse_plain_jp_number(s) {
+        return ComiciTitle::Number(with_part(ShortTitle::Base(n), jp_part_index(rest)));
+    }
+    if is_jp_bonus_title(s) {
+        return ComiciTitle::Bonus;
+    }
+    match classify_number(s) {
+        kind @ (ShortTitle::Base(_) | ShortTitle::Part(..) | ShortTitle::Fractional(_)) => {
+            ComiciTitle::Number(kind)
+        }
+        ShortTitle::Unnumbered => ComiciTitle::Plain,
+    }
 }
 
 /// Apply a stripped part marker to a plain base number: `(Base(n), Some(p))`
@@ -992,6 +1105,75 @@ mod tests {
             assert_eq!(c(raw), ShortTitle::Unnumbered, "{raw:?}");
         }
         assert_eq!(c("Chapter 0"), ShortTitle::Unnumbered);
+    }
+
+    #[test]
+    fn classify_comici_numbered_shapes() {
+        let c = classify_comici_title;
+        // 第N話/第N回 (Champion Cross, Big Comics, PASH! neo), own title kept.
+        assert_eq!(c("第1話"), ComiciTitle::Number(ShortTitle::Base(1)));
+        assert_eq!(
+            c("第25話 向かうべき理由"),
+            ComiciTitle::Number(ShortTitle::Base(25))
+        );
+        assert_eq!(
+            c("第16話後編"),
+            ComiciTitle::Number(ShortTitle::Part(16, 20))
+        );
+        assert_eq!(c("第9話-1"), ComiciTitle::Number(ShortTitle::Part(9, 1)));
+        // Plain unit counters (Takecomic).
+        assert_eq!(c("1話"), ComiciTitle::Number(ShortTitle::Base(1)));
+        assert_eq!(c("74話"), ComiciTitle::Number(ShortTitle::Base(74)));
+        assert_eq!(c("12回 総集編"), ComiciTitle::Number(ShortTitle::Base(12)));
+        // The Latin counters (Karte/Score/RIDE/SPARE), leading zeros folded.
+        assert_eq!(
+            c("Karte.1 僕は奪われた"),
+            ComiciTitle::Number(ShortTitle::Base(1))
+        );
+        assert_eq!(
+            c("Score.01　市川香菜と陣宗太"),
+            ComiciTitle::Number(ShortTitle::Base(1))
+        );
+        assert_eq!(c("RIDE.881"), ComiciTitle::Number(ShortTitle::Base(881)));
+        assert_eq!(
+            c("SPARE.157 六溝山レース1『巻島参戦』"),
+            ComiciTitle::Number(ShortTitle::Base(157))
+        );
+        // Fractional releases stay fractional (bonus rows downstream).
+        assert_eq!(
+            c("RIDE.793.5"),
+            ComiciTitle::Number(ShortTitle::Fractional(79305))
+        );
+        // A numbered title wins over a marker inside its own text.
+        assert_eq!(c("第5話 幕間"), ComiciTitle::Number(ShortTitle::Base(5)));
+    }
+
+    #[test]
+    fn classify_comici_markers_and_plain_rows() {
+        let c = classify_comici_title;
+        // Explicit side content.
+        for raw in [
+            "番外編01",
+            "特別編",
+            "プロローグ",
+            "第0話",
+            "5/22休載イラスト",
+            "休載のお知らせ",
+        ] {
+            assert_eq!(c(raw), ComiciTitle::Bonus, "{raw:?}");
+        }
+        // Numberless labels the caller must number by position.
+        for raw in [
+            "10巻－第1歩 格別な場所",
+            "1ミャオ",
+            "season1-1",
+            "最終話",
+            "3月96日",
+            "映画『OUT』公開カウントダウンレポート第2弾：丹沢敦司",
+            "",
+        ] {
+            assert_eq!(c(raw), ComiciTitle::Plain, "{raw:?}");
+        }
     }
 
     #[test]

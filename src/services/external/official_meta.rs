@@ -49,10 +49,11 @@ pub struct OfficialMeta {
 /// Every chained source is meta-capable today; the list still guards against a
 /// future arm-less source (such a binding must keep `chapter_key` on the MU key
 /// instead of pointing at rows no fetch ever writes).
-/// `kuaikan`, `kakao`, `mangaplus`, `tappytoon`, `webtoons` and `acqq` gained
-/// their arms after `migrations/028_chapter_ownership.sql`; that migration's `supports_meta`
-/// list is a frozen one-time-backfill snapshot, so this runtime list is the
-/// source of truth for `chapter_key` and the resolve walk.
+/// `kuaikan`, `kakao`, `mangaplus`, `tappytoon`, `webtoons`, `acqq` and
+/// `comici` gained their arms after `migrations/028_chapter_ownership.sql`;
+/// that migration's `supports_meta` list is a frozen one-time-backfill
+/// snapshot, so this runtime list is the source of truth for `chapter_key`
+/// and the resolve walk.
 pub const SOURCES_WITH_META: &[&str] = &[
     "bilibili",
     "naver",
@@ -70,6 +71,7 @@ pub const SOURCES_WITH_META: &[&str] = &[
     "tappytoon",
     "webtoons",
     "acqq",
+    "comici",
 ];
 
 /// Fetch one source's detail, dispatched by the binding name. Unknown/absent
@@ -116,6 +118,7 @@ pub async fn fetch_source(
             crate::services::external::official_webtoons::fetch_meta(client, source_id).await
         }
         "acqq" => crate::services::external::official_acqq::fetch_meta(client, source_id).await,
+        "comici" => crate::services::external::official_comici::fetch_meta(client, source_id).await,
         _ => Ok(OfficialMeta::default()),
     }
 }

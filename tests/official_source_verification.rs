@@ -400,6 +400,60 @@ async fn manga_maps_to_mangaplus() {
     );
 }
 
+/// The comici platform (five publisher sites under one source) is the fourth
+/// step of the manga chain; its hit id carries the site and binds as-is.
+#[tokio::test]
+async fn manga_falls_back_to_comici() {
+    let ctx = setup().await;
+    let series = SERIES_ID.to_string();
+    let search = FixtureSearch::with_sources(&[
+        ("mangaplus", vec![]),
+        ("comicwalker", vec![]),
+        ("mangaup", vec![]),
+        (
+            "comici",
+            vec![hit(
+                "championcross.jp/452b0e17e1bf3",
+                "僕の心のヤバイやつ ラブコメディが始まらない",
+            )],
+        ),
+    ]);
+    let calls = search.calls();
+
+    let outcome = resolve_and_bind(
+        &ctx.pool,
+        &search,
+        "mangaupdates",
+        &series,
+        "manga",
+        "僕の心のヤバイやつ ラブコメディが始まらない",
+        &[],
+    )
+    .await;
+
+    assert_eq!(
+        outcome,
+        Some(ResolveOutcome {
+            source: "comici".to_string(),
+            source_id: "championcross.jp/452b0e17e1bf3".to_string(),
+        })
+    );
+    assert_eq!(
+        get_source_id(&ctx.pool, "mangaupdates", &series, "comici")
+            .await
+            .unwrap(),
+        Some("championcross.jp/452b0e17e1bf3".to_string())
+    );
+
+    let calls = calls.lock().unwrap();
+    let order: Vec<&str> = calls.iter().map(|c| c.0.as_str()).collect();
+    assert_eq!(
+        order,
+        vec!["mangaplus", "comicwalker", "mangaup", "comici"],
+        "the walk stops at the first exact match"
+    );
+}
+
 #[tokio::test]
 async fn raise_only_keeps_higher_count() {
     let ctx = setup().await;
@@ -451,7 +505,13 @@ fn mapping_table() {
     );
     assert_eq!(
         official_source_for_media_type("manga"),
-        &["mangaplus", "comicwalker", "mangaup", "alphapolis"][..]
+        &[
+            "mangaplus",
+            "comicwalker",
+            "mangaup",
+            "comici",
+            "alphapolis"
+        ][..]
     );
     assert_eq!(
         official_source_for_media_type("novel"),

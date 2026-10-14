@@ -101,7 +101,7 @@ fn search_scripts(source: &str) -> &'static [Script] {
         // JP catalogs must be searched with the Japanese title first:
         // alphapolis answers 404 for Latin queries and the others index their
         // native names.
-        "comicwalker" | "mangaup" | "alphapolis" | "kakuyomu" | "syosetu" => {
+        "comicwalker" | "mangaup" | "alphapolis" | "kakuyomu" | "syosetu" | "comici" => {
             &[Script::Japanese, Script::Han, Script::Latin, Script::Other]
         }
         // The global app indexes English names but also serves JP titles.
@@ -345,6 +345,7 @@ mod tests {
             "mangaup",
             "kakuyomu",
             "syosetu",
+            "comici",
         ] {
             assert_eq!(
                 pick_candidate(&candidates, source),

@@ -12,6 +12,7 @@ pub mod nuxt_payload;
 pub mod official_acqq;
 pub mod official_alphapolis;
 pub mod official_bilibili;
+pub mod official_comici;
 pub mod official_comicwalker;
 pub mod official_daum;
 pub mod official_kakao;
