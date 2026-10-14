@@ -401,10 +401,9 @@ pub async fn get_media_drawer_content(
             // used to render the stale MU badge because only the chapters API
             // (loaded async, after the drawer) created the binding. A bound
             // title short-circuits inside `resolve_and_bind` without I/O.
-            if is_chapter_type(&item.media_type)
-                && provider == "mangaupdates"
-                && !item.title.trim().is_empty()
-            {
+            // Every chapter-type provider gets a chance: a MangaDex or
+            // ComicVine item can be licensed on WEBTOON just like an MU one.
+            if is_chapter_type(&item.media_type) && !item.title.trim().is_empty() {
                 let _ = crate::services::official_resolve::resolve_and_bind(
                     &state.db,
                     &crate::services::official_resolve::HttpOfficialSearch::new(),
