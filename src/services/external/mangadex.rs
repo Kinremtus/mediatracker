@@ -192,10 +192,26 @@ impl MangaDexService {
     }
 }
 
+/// MangaDex knows the original language, so the app's type follows it: Korean
+/// works are manhwa, Chinese (incl. `zh-hk`) manhua, and English-language
+/// originals (OEL) land on the `other-comics` shelf. Every other non-Japanese
+/// origin is filed there too, matching the MangaUpdates taxonomy; only `ja`
+/// (and an absent value) stays a manga.
+fn media_type_for(original_language: Option<&str>) -> String {
+    match original_language {
+        Some("ko") => "manhwa",
+        Some("zh") | Some("zh-hk") => "manhua",
+        Some(lang) if lang != "ja" => "other-comics",
+        _ => "manga",
+    }
+    .to_string()
+}
+
 /// Map a raw MangaDex manga entity into the normalized provider item.
 ///
-/// `media_type` is always `"manga"` here; the unified search layer normalizes
-/// it further once the series is inspected (manga/manhwa/manhua/...).
+/// `media_type` follows the series' original language (see [`media_type_for`]);
+/// the unified search layer keeps it for MangaDex instead of overwriting it
+/// with the tab's type.
 fn map_manga(r: &MangaDexSearchResult) -> CreateMediaItem {
     let id = r.id.clone();
     let attrs = &r.attributes;
@@ -244,7 +260,7 @@ fn map_manga(r: &MangaDexSearchResult) -> CreateMediaItem {
     CreateMediaItem {
         provider: "mangadex".to_string(),
         external_id: id,
-        media_type: "manga".to_string(),
+        media_type: media_type_for(attrs.original_language.as_deref()),
         title: title.clone(),
         poster_url,
         description,
@@ -307,6 +323,9 @@ pub struct MangaDexMangaAttributes {
     pub status: Option<String>,
     #[serde(default)]
     pub year: Option<i32>,
+    /// `ja`/`ko`/`zh`/`en`/… — decides the app's media type for the series.
+    #[serde(rename = "originalLanguage", default)]
+    pub original_language: Option<String>,
     #[serde(rename = "lastChapter", default)]
     pub last_chapter: Option<String>,
     #[serde(rename = "lastVolume", default)]
@@ -451,6 +470,18 @@ mod tests {
     }
 
     #[test]
+    fn media_type_follows_the_original_language() {
+        assert_eq!(media_type_for(Some("ko")), "manhwa");
+        assert_eq!(media_type_for(Some("zh")), "manhua");
+        assert_eq!(media_type_for(Some("zh-hk")), "manhua");
+        assert_eq!(media_type_for(Some("en")), "other-comics");
+        assert_eq!(media_type_for(Some("fr")), "other-comics");
+        assert_eq!(media_type_for(Some("id")), "other-comics");
+        assert_eq!(media_type_for(Some("ja")), "manga");
+        assert_eq!(media_type_for(None), "manga");
+    }
+
+    #[test]
     fn map_manga_builds_item_from_search_hit() {
         let json = r#"{
             "id": "801513ba-a712-498c-8f57-cae55b38cc92",
@@ -461,6 +492,7 @@ mod tests {
                 "description": {"en": "A long time ago, the dragon retired."},
                 "status": "completed",
                 "year": 2015,
+                "originalLanguage": "ko",
                 "lastChapter": "12.5",
                 "lastVolume": "3"
             },
@@ -475,7 +507,7 @@ mod tests {
 
         assert_eq!(item.provider, "mangadex");
         assert_eq!(item.external_id, "801513ba-a712-498c-8f57-cae55b38cc92");
-        assert_eq!(item.media_type, "manga");
+        assert_eq!(item.media_type, "manhwa");
         assert_eq!(item.title, "Goodbye, Dragon Life");
         assert_eq!(
             item.poster_url.as_deref(),

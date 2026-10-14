@@ -67,7 +67,9 @@ fn provider_priority(media_type: &str, provider: &str) -> u8 {
 
 /// Дедупликация по (comparison_key, media_type).
 /// Сортирует по приоритету провайдера для типа, оставляет первый уникальный.
-fn deduplicate_by_title(items: Vec<CreateMediaItem>) -> Vec<CreateMediaItem> {
+/// Also used by the quick-search family fan-out, which merges several type
+/// searches that can surface the same hit (type-agnostic providers).
+pub fn deduplicate_by_title(items: Vec<CreateMediaItem>) -> Vec<CreateMediaItem> {
     let mut sorted = items;
     sorted.sort_by_key(|item| provider_priority(&item.media_type, &item.provider));
 
@@ -96,11 +98,21 @@ async fn first_non_empty(attempts: Vec<(&'static str, SearchFuture<'_>)>) -> Vec
     Vec::new()
 }
 
-/// Переписать media_type на запрошенный, сохранив provider/external_id.
+/// Normalize a provider's results onto the tab's type. Providers that know the
+/// real type keep it: MangaUpdates maps its own `OEL`/`Manhwa`/… shelf,
+/// MangaDex derives the type from the original language and Shikimori maps its
+/// `kind`. The remaining providers are too coarse or untrusted to keep (MAL
+/// always answers `manga`, AniList echoes the query), so the tab's type wins
+/// there.
 fn normalize_media_type(items: Vec<CreateMediaItem>, requested: &str) -> Vec<CreateMediaItem> {
     let mut items = items;
     for item in &mut items {
-        item.media_type = requested.to_string();
+        if !matches!(
+            item.provider.as_str(),
+            "mangaupdates" | "mangadex" | "shikimori"
+        ) {
+            item.media_type = requested.to_string();
+        }
     }
     items
 }
@@ -478,12 +490,22 @@ mod tests {
     }
 
     #[test]
-    fn normalize_media_type_overrides() {
-        let items = vec![item("mangadex", "manga", "one")];
+    fn normalize_media_type_overrides_agnostic_only() {
+        // A coarse provider takes the tab's type...
+        let items = vec![item("mal", "manga", "one")];
         let out = normalize_media_type(items, "manhwa");
         assert_eq!(out[0].media_type, "manhwa");
-        assert_eq!(out[0].provider, "mangadex");
-        assert_eq!(out[0].external_id, "");
+
+        // ...while the type-aware ones keep their own.
+        for (provider, own) in [
+            ("mangadex", "other-comics"),
+            ("mangaupdates", "novel"),
+            ("shikimori", "manhwa"),
+        ] {
+            let items = vec![item(provider, own, "two")];
+            let out = normalize_media_type(items, "manhwa");
+            assert_eq!(out[0].media_type, own, "{provider} keeps its own type");
+        }
     }
 
     #[test]

@@ -283,7 +283,7 @@ pub async fn get_search_panel(
         });
     }
 
-    let mut all_items: Vec<CreateMediaItem> = if active_family.is_empty() {
+    let all_items: Vec<CreateMediaItem> = if active_family.is_empty() {
         // "Все" is a real tab: one call covering 7 providers, grouped inline.
         search::all_types(&state, &query).await
     } else {
@@ -311,6 +311,11 @@ pub async fn get_search_panel(
             None => Vec::new(),
         }
     };
+
+    // The family fan-out runs one search per type and merges them; providers
+    // without a type of their own (MAL, AniList) answer the same hit several
+    // times, so the merged list is deduped before it is grouped into sections.
+    let mut all_items = search::deduplicate_by_title(all_items);
 
     mark_tracked(&state, user.id, &mut all_items).await;
     let sections = group_sections(all_items, limit);
