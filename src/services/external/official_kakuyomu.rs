@@ -144,7 +144,12 @@ pub async fn search(client: &reqwest::Client, title: &str) -> anyhow::Result<Vec
         .error_for_status()?
         .text()
         .await?;
-    Ok(parse_search(&html))
+    // The answer can carry fuzzy matches and, for a query without results,
+    // recommendations: keep only the titles that match the query.
+    Ok(crate::services::official_title::filter_hits_by_query(
+        parse_search(&html),
+        title,
+    ))
 }
 
 /// Pure search parser: every `/works/<digits>` link whose neighbourhood holds

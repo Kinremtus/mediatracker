@@ -128,7 +128,12 @@ pub async fn search(client: &reqwest::Client, title: &str) -> anyhow::Result<Vec
         .await?
         .error_for_status()?;
     let html = official_meta::body_capped(resp, official_meta::MAX_DETAIL_BYTES).await?;
-    Ok(parse_search(&html))
+    // A query without matches falls back to recommended books: keep only the
+    // hits whose title matches the query.
+    Ok(crate::services::official_title::filter_hits_by_query(
+        parse_search(&html),
+        title,
+    ))
 }
 
 /// Book hits: `data-bid="{id}"` + title from `<h2>…<mark>title</mark>…</h2>`

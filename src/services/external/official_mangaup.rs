@@ -142,7 +142,13 @@ pub async fn search(client: &reqwest::Client, title: &str) -> anyhow::Result<Vec
         official_meta::MAX_DETAIL_BYTES,
     )
     .await?;
-    Ok(parse_search(&html))
+    // The search page is a static catalogue (`__N_SSG`, the query is ignored
+    // server-side): keep only the titles that match the query, or every search
+    // would store the whole 450-title catalogue.
+    Ok(crate::services::official_title::filter_hits_by_query(
+        parse_search(&html),
+        title,
+    ))
 }
 
 /// Raw scan over the `__NEXT_DATA__` JSON for `"titleId": <number>` +
@@ -265,6 +271,18 @@ mod tests {
             Some(
                 "https://global-api.manga-up.com/asset/Qud/en/manga_list/1023.webp?h=AQp2kMW-8Uq5arnwSAIN2w&e=1791212400"
             )
+        );
+        // The query filter keeps the exact hit out of the 448-title catalogue.
+        let filtered = crate::services::official_title::filter_hits_by_query(
+            parse_search(html),
+            "25 Years in a Dungeon: A Suspicious Man Returns as a Dungeon Streamer!",
+        );
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].id, "1023");
+        // A query nothing matches yields no hits instead of the catalogue.
+        assert!(
+            crate::services::official_title::filter_hits_by_query(parse_search(html), "zzzqwerty")
+                .is_empty()
         );
         // Empty page degrades.
         assert!(parse_search("<html>no data</html>").is_empty());

@@ -150,6 +150,34 @@ pub fn titles_match(a: &str, b: &str) -> bool {
     normalize_title(strip_media_suffix(a)) == normalize_title(strip_media_suffix(b))
 }
 
+/// Keep the hits whose title matches the query: the exact normalized matches
+/// when there are any, otherwise the normalized-substring matches. Sources
+/// whose search page ignores the query or falls back to a generic listing
+/// (mangaup's static catalogue, qidian's "no match" recommendations,
+/// kakuyomu's fuzzy matches) use this so the search catalog never stores
+/// unrelated filler. The exact step preserves the resolve walk's semantics:
+/// an exact hit is never hidden behind substring noise.
+pub fn filter_hits_by_query(
+    hits: Vec<crate::services::official_types::OfficialHit>,
+    query: &str,
+) -> Vec<crate::services::official_types::OfficialHit> {
+    let exact: Vec<_> = hits
+        .iter()
+        .filter(|h| titles_match(&h.title, query))
+        .cloned()
+        .collect();
+    if !exact.is_empty() {
+        return exact;
+    }
+    let q = normalize_title(query);
+    if q.is_empty() {
+        return Vec::new();
+    }
+    hits.into_iter()
+        .filter(|h| normalize_title(&h.title).contains(&q))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -387,6 +415,26 @@ mod tests {
     #[test]
     fn titles_match_ignores_case_and_punct() {
         assert!(titles_match("One Piece", "one-piece"));
+    }
+
+    #[test]
+    fn filter_hits_keeps_exact_then_contains() {
+        use crate::services::official_types::OfficialHit;
+        let hits = vec![
+            OfficialHit::new("1", "Solo Leveling"),
+            OfficialHit::new("2", "Solo Leveling: Ragnarok"),
+            OfficialHit::new("3", "Unrelated Title"),
+        ];
+        // An exact match exists: only it survives (no substring noise).
+        let filtered = filter_hits_by_query(hits.clone(), "Solo Leveling");
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].id, "1");
+        // No exact match: substring matches survive.
+        let filtered = filter_hits_by_query(hits.clone(), "solo");
+        assert_eq!(filtered.len(), 2);
+        // Nothing matches (the generic-listing case) or the query is empty.
+        assert!(filter_hits_by_query(hits.clone(), "zzz").is_empty());
+        assert!(filter_hits_by_query(hits, "!!!").is_empty());
     }
 
     #[test]
