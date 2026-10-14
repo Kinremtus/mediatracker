@@ -91,7 +91,7 @@ fn search_scripts(source: &str) -> &'static [Script] {
         // CN catalogs are Han-only.
         "kuaikan" | "bilibili" | "qidian" | "acqq" => &[Script::Han],
         // KR catalogs are Hangul-only; ridibooks also indexes Latin/JP rows.
-        "kakao" | "naver" | "daum" => &[Script::Hangul],
+        "kakao" | "naver" | "daum" | "naverwebtoon" => &[Script::Hangul],
         "ridibooks" => &[
             Script::Hangul,
             Script::Latin,
@@ -222,6 +222,12 @@ mod tests {
         let candidates = ["One Piece".to_string(), "원피스".to_string()];
         assert_eq!(pick_candidate(&candidates, "naver"), Some("원피스"));
         assert_eq!(pick_candidate(&["One Piece".to_string()], "naver"), None);
+        // The KR webtoon platform shares the Hangul-only rule.
+        assert_eq!(pick_candidate(&candidates, "naverwebtoon"), Some("원피스"));
+        assert_eq!(
+            pick_candidate(&["One Piece".to_string()], "naverwebtoon"),
+            None
+        );
     }
 
     #[test]

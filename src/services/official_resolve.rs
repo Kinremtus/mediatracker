@@ -26,8 +26,16 @@ pub fn official_source_for_media_type(media_type: &str) -> &'static [&'static st
         "manhua" => &["kuaikan", "bilibili", "acqq"],
         // kakao/naver existing; daum was dropped: the service merged into
         // Kakao and its gateway API is token-gated (no guest search), so it can
-        // never bind; ridibooks and the English-only platforms last.
-        "manhwa" => &["kakao", "naver", "ridibooks", "tappytoon", "webtoons"],
+        // never bind; naverwebtoon covers the free KR originals on
+        // comic.naver.com; ridibooks and the English-only platforms last.
+        "manhwa" => &[
+            "kakao",
+            "naver",
+            "naverwebtoon",
+            "ridibooks",
+            "tappytoon",
+            "webtoons",
+        ],
         // mangaplus existing; comicwalker/mangaup new; comici covers the
         // comici-platform publisher sites (Champion Cross, Takecomic, PASH!
         // neo, Young Champion Web, Big Comics); alphapolis last.
@@ -61,9 +69,10 @@ pub fn official_source_for_media_type(media_type: &str) -> &'static [&'static st
 ///
 /// The first ten entries mirror the `supports_meta` global ranks of
 /// `migrations/028_chapter_ownership.sql` (bilibili=1 ... qidian=10); kuaikan,
-/// kakao, mangaplus, tappytoon, webtoons, acqq and comici gained their fetch
-/// arms after that migration, so they are appended last (in that order). The
-/// set must match `SOURCES_WITH_META` (enforced by `tests/chapter_key.rs`).
+/// kakao, mangaplus, tappytoon, webtoons, acqq, comici and naverwebtoon
+/// gained their fetch arms after that migration, so they are appended last
+/// (in that order). The set must match `SOURCES_WITH_META` (enforced by
+/// `tests/chapter_key.rs`).
 pub const GLOBAL_SOURCE_ORDER: &[&str] = &[
     "bilibili",
     "naver",
@@ -82,6 +91,7 @@ pub const GLOBAL_SOURCE_ORDER: &[&str] = &[
     "webtoons",
     "acqq",
     "comici",
+    "naverwebtoon",
 ];
 
 /// Network abstraction so tests can inject a fixture-backed searcher.
@@ -142,6 +152,10 @@ impl OfficialSearch for HttpOfficialSearch {
                 }
                 "comici" => {
                     crate::services::external::official_comici::search(&self.client, query).await
+                }
+                "naverwebtoon" => {
+                    crate::services::external::official_naverwebtoon::search(&self.client, query)
+                        .await
                 }
                 "mangaplus" => {
                     let catalog = self.mangaplus.catalog().await?;
@@ -515,7 +529,14 @@ mod tests {
         );
         assert_eq!(
             official_source_for_media_type("manhwa"),
-            &["kakao", "naver", "ridibooks", "tappytoon", "webtoons"][..]
+            &[
+                "kakao",
+                "naver",
+                "naverwebtoon",
+                "ridibooks",
+                "tappytoon",
+                "webtoons"
+            ][..]
         );
         assert_eq!(
             official_source_for_media_type("manga"),

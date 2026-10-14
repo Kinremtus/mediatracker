@@ -501,7 +501,14 @@ fn mapping_table() {
     );
     assert_eq!(
         official_source_for_media_type("manhwa"),
-        &["kakao", "naver", "ridibooks", "tappytoon", "webtoons"][..]
+        &[
+            "kakao",
+            "naver",
+            "naverwebtoon",
+            "ridibooks",
+            "tappytoon",
+            "webtoons"
+        ][..]
     );
     assert_eq!(
         official_source_for_media_type("manga"),
@@ -583,6 +590,49 @@ async fn manhwa_falls_back_to_naver() {
     assert_eq!(calls.len(), 2, "kakao first, then naver");
     assert_eq!(calls[0].0, "kakao");
     assert_eq!(calls[1].0, "naver");
+}
+
+/// The KR webtoon platform is the third step of the manhwa chain: kakao and
+/// naver answer nothing, comic.naver.com's hit binds with its bare titleId.
+#[tokio::test]
+async fn manhwa_falls_back_to_naverwebtoon() {
+    let ctx = setup().await;
+    let series = SERIES_ID.to_string();
+    let search = FixtureSearch::with_sources(&[
+        ("kakao", vec![]),
+        ("naver", vec![]),
+        ("naverwebtoon", vec![hit("703846", "여신강림")]),
+    ]);
+    let calls = search.calls();
+
+    let outcome = resolve_and_bind(
+        &ctx.pool,
+        &search,
+        "mangaupdates",
+        &series,
+        "manhwa",
+        "여신강림",
+        &[],
+    )
+    .await;
+
+    assert_eq!(
+        outcome,
+        Some(ResolveOutcome {
+            source: "naverwebtoon".to_string(),
+            source_id: "703846".to_string(),
+        })
+    );
+    assert_eq!(
+        get_source_id(&ctx.pool, "mangaupdates", &series, "naverwebtoon")
+            .await
+            .unwrap(),
+        Some("703846".to_string())
+    );
+
+    let calls = calls.lock().unwrap();
+    let order: Vec<&str> = calls.iter().map(|c| c.0.as_str()).collect();
+    assert_eq!(order, vec!["kakao", "naver", "naverwebtoon"]);
 }
 
 #[tokio::test]
@@ -677,8 +727,9 @@ async fn no_match_anywhere_binds_nothing() {
     assert_eq!(outcome, None);
     assert_eq!(
         calls.lock().unwrap().len(),
-        3,
-        "the three Hangul-capable manhwa sources were tried once (tappytoon and webtoons are English-only)"
+        4,
+        "kakao, naver, naverwebtoon and ridibooks all accept the Hangul query \
+         (tappytoon and webtoons are English-only)"
     );
     assert_eq!(
         get_source_id(&ctx.pool, "mangaupdates", &series, "naver")

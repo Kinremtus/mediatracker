@@ -23,6 +23,7 @@ pub mod official_mangaup;
 pub mod official_meta;
 pub mod official_narou;
 pub mod official_naver;
+pub mod official_naverwebtoon;
 pub mod official_qidian;
 pub mod official_ridibooks;
 pub mod official_tappytoon;
