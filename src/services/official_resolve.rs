@@ -26,12 +26,14 @@ pub fn official_source_for_media_type(media_type: &str) -> &'static [&'static st
         "manhua" => &["kuaikan", "bilibili", "acqq"],
         // kakao/naver existing; daum was dropped: the service merged into
         // Kakao and its gateway API is token-gated (no guest search), so it can
-        // never bind; naverwebtoon covers the free KR originals on
-        // comic.naver.com; ridibooks and the English-only platforms last.
+        // never bind; naverwebtoon (the free comic.naver.com originals) comes
+        // before the paid `naver` store: almost every Naver original is on
+        // both, and the free platform is where readers tick episodes;
+        // ridibooks and the English-only platforms last.
         "manhwa" => &[
             "kakao",
-            "naver",
             "naverwebtoon",
+            "naver",
             "ridibooks",
             "tappytoon",
             "webtoons",
@@ -531,8 +533,8 @@ mod tests {
             official_source_for_media_type("manhwa"),
             &[
                 "kakao",
-                "naver",
                 "naverwebtoon",
+                "naver",
                 "ridibooks",
                 "tappytoon",
                 "webtoons"

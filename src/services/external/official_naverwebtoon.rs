@@ -11,16 +11,23 @@
 //!   episode subtitle and its service date; `pageInfo.totalPages` bounds the
 //!   walk and `totalCount` proves it complete.
 //!
-//! Episode numbers are kept verbatim (the `no` a reader sees in the episode
-//! URL), exactly like WEBTOON's `episodeNo`; side content (`예고편`, `외전`,
-//! `후기`, …) is classified through the shared KR marker list into bonuses.
+//! Episode numbers are assigned by position over the oldest-first walk (like
+//! the other numberless sources): the platform's `no` is the episode id in
+//! `detail?no=` URLs, and specials (`휴재 특별편`, `예고편`) consume ids, so it
+//! drifts from the chapter numbers the titles carry (`222화` sat at `no` 227
+//! on a live series). Positional numbering keeps the tracker aligned with the
+//! chapter numbers readers and MangaUpdates use; side content (`예고편`,
+//! `외전`, `후기`, …) is classified through the shared KR marker list into
+//! bonuses and never consumes a number.
 //!
 //! All failures are non-fatal: the caller treats an empty result (or an `Err`)
 //! as "no official match".
 
 use chrono::NaiveDate;
 
-use crate::services::external::chapter_title::{self, is_kr_bonus_title, strip_catalog_markers};
+use crate::services::external::chapter_title::{
+    self, RawRow, is_kr_bonus_title, strip_catalog_markers,
+};
 use crate::services::external::official_meta::{self, ChapterMeta, OfficialMeta};
 use crate::services::official_types::OfficialHit;
 
@@ -131,10 +138,13 @@ pub struct ArticlePage {
     pub total_pages: i64,
 }
 
-/// One episode row before numbering: the platform's episode number, the
-/// subtitle, its service date, and whether the subtitle marks side content.
+/// One episode row before numbering: the platform's episode id, the subtitle,
+/// its service date, and whether the subtitle marks side content.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArticleRow {
+    /// The episode id used in `detail?no=` URLs. Kept for provenance and for
+    /// the range check; the chapter number itself is positional (specials
+    /// consume ids, so `no` drifts from the chapter numbers).
     pub no: i64,
     pub title: String,
     pub release_date: Option<NaiveDate>,
@@ -202,23 +212,20 @@ fn parse_service_date(raw: &str) -> Option<NaiveDate> {
     NaiveDate::from_ymd_opt(2000 + yy, month, day)
 }
 
-/// Number the rows: the platform's own episode number (`no`) on main rows,
-/// `0` for side content (bonus rows carry their label downstream). The walk
-/// order is oldest-first (`sort=ASC`), so the rows read chronologically.
+/// Number the rows by position, oldest-first: main rows take `1..N` (a bonus
+/// never consumes a number), side content keeps `0` and gets its label
+/// downstream. The platform's `no` is NOT the number — specials consume ids,
+/// so it drifts from the chapter numbers the titles carry.
 pub fn chapters_from_rows(rows: Vec<ArticleRow>) -> Vec<ChapterMeta> {
-    rows.into_iter()
-        .map(|row| ChapterMeta {
-            number_x100: if row.is_bonus {
-                0
-            } else {
-                (row.no * 100) as i32
-            },
+    let raw: Vec<RawRow> = rows
+        .into_iter()
+        .map(|row| RawRow {
             title: Some(row.title),
             release_date: row.release_date,
             is_bonus: row.is_bonus,
-            label: None,
         })
-        .collect()
+        .collect();
+    chapter_title::positional_rows(raw)
 }
 
 /// Walk the episode list oldest-first and map it onto the shared chapter
@@ -405,7 +412,8 @@ mod tests {
     }
 
     #[test]
-    fn chapters_keep_source_numbers_and_zero_the_bonus() {
+    fn chapters_number_by_position_and_zero_the_bonus() {
+        // Page 12 of a 261-episode series: 8 main rows, then the 외전 run.
         let page = parse_page(SIDES_FIXTURE).expect("fixture parses");
         let chapters = chapters_from_rows(page.rows);
         let mains: Vec<i32> = chapters
@@ -413,14 +421,66 @@ mod tests {
             .filter(|c| !c.is_bonus)
             .map(|c| c.number_x100)
             .collect();
-        assert_eq!(mains, (221..=228).map(|n| n * 100).collect::<Vec<_>>());
+        // `chapters_from_rows` numbers the whole walk; this page alone yields
+        // page-local positions 1..8.
+        assert_eq!(mains, (1..=8).map(|n| n * 100).collect::<Vec<_>>());
         assert!(
             chapters
                 .iter()
                 .filter(|c| c.is_bonus)
                 .all(|c| c.number_x100 == 0)
         );
-        assert_eq!(chapter_title::main_count(&chapters), 228);
+        assert_eq!(chapter_title::main_count(&chapters), 8);
+    }
+
+    #[test]
+    fn positional_numbering_skips_specials() {
+        // The platform's `no` drifts: specials (`휴재 특별편`, `예고편`) consume
+        // ids, so the chapter number must come from the position, not from `no`.
+        let rows = vec![
+            ArticleRow {
+                no: 1,
+                title: "예고편".to_string(),
+                release_date: None,
+                is_bonus: true,
+            },
+            ArticleRow {
+                no: 2,
+                title: "1화".to_string(),
+                release_date: None,
+                is_bonus: false,
+            },
+            ArticleRow {
+                no: 3,
+                title: "2화".to_string(),
+                release_date: None,
+                is_bonus: false,
+            },
+            ArticleRow {
+                no: 4,
+                title: "휴재 특별편 1".to_string(),
+                release_date: None,
+                is_bonus: true,
+            },
+            ArticleRow {
+                no: 5,
+                title: "3화".to_string(),
+                release_date: None,
+                is_bonus: false,
+            },
+        ];
+        let chapters = chapters_from_rows(rows);
+        let mains: Vec<i32> = chapters
+            .iter()
+            .filter(|c| !c.is_bonus)
+            .map(|c| c.number_x100)
+            .collect();
+        assert_eq!(
+            mains,
+            vec![100, 200, 300],
+            "specials never consume a number"
+        );
+        assert_eq!(chapter_title::main_count(&chapters), 3);
     }
 
     #[test]

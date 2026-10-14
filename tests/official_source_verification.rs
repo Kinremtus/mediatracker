@@ -503,8 +503,8 @@ fn mapping_table() {
         official_source_for_media_type("manhwa"),
         &[
             "kakao",
-            "naver",
             "naverwebtoon",
+            "naver",
             "ridibooks",
             "tappytoon",
             "webtoons"
@@ -587,13 +587,15 @@ async fn manhwa_falls_back_to_naver() {
     );
 
     let calls = calls.lock().unwrap();
-    assert_eq!(calls.len(), 2, "kakao first, then naver");
+    assert_eq!(calls.len(), 3, "kakao, then naverwebtoon, then naver");
     assert_eq!(calls[0].0, "kakao");
-    assert_eq!(calls[1].0, "naver");
+    assert_eq!(calls[1].0, "naverwebtoon");
+    assert_eq!(calls[2].0, "naver");
 }
 
-/// The KR webtoon platform is the third step of the manhwa chain: kakao and
-/// naver answer nothing, comic.naver.com's hit binds with its bare titleId.
+/// The KR webtoon platform is the second step of the manhwa chain: kakao
+/// answers nothing, comic.naver.com's hit binds with its bare titleId and the
+/// paid `naver` store is never searched.
 #[tokio::test]
 async fn manhwa_falls_back_to_naverwebtoon() {
     let ctx = setup().await;
@@ -632,7 +634,11 @@ async fn manhwa_falls_back_to_naverwebtoon() {
 
     let calls = calls.lock().unwrap();
     let order: Vec<&str> = calls.iter().map(|c| c.0.as_str()).collect();
-    assert_eq!(order, vec!["kakao", "naver", "naverwebtoon"]);
+    assert_eq!(
+        order,
+        vec!["kakao", "naverwebtoon"],
+        "the paid `naver` store is never searched once naverwebtoon matched"
+    );
 }
 
 #[tokio::test]
@@ -665,8 +671,12 @@ async fn kakao_error_falls_through_to_naver() {
         })
     );
     let calls = calls.lock().unwrap();
-    assert_eq!(calls.len(), 2, "a failed kakao must not block naver");
-    assert_eq!(calls[1].0, "naver");
+    assert_eq!(
+        calls.len(),
+        3,
+        "a failed kakao must not block the later sources"
+    );
+    assert_eq!(calls[2].0, "naver");
 }
 
 #[tokio::test]
@@ -728,7 +738,7 @@ async fn no_match_anywhere_binds_nothing() {
     assert_eq!(
         calls.lock().unwrap().len(),
         4,
-        "kakao, naver, naverwebtoon and ridibooks all accept the Hangul query \
+        "kakao, naverwebtoon, naver and ridibooks all accept the Hangul query \
          (tappytoon and webtoons are English-only)"
     );
     assert_eq!(
