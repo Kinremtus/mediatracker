@@ -173,7 +173,7 @@ async fn drawer_renders_an_official_preview_from_the_catalog() {
         "external_id": "1320",
         "media_type": "other-comics",
         "title": "Lore Olympus",
-        "poster_url": "/src-image?url=https%3A%2F%2Fwebtoon-phinf.pstatic.net%2F1320.jpg",
+        "poster_url": "/src-image/webtoon-phinf.pstatic.net/1320.jpg",
         "description": "A retelling of the Greek myth.",
         "authors": ["Rachel Smythe"],
         "status": "ongoing",
@@ -186,7 +186,7 @@ async fn drawer_renders_an_official_preview_from_the_catalog() {
             (provider, external_id, media_type, title, title_norm, poster_url, year, score, \
              is_official, payload, last_query, fetched_at) \
          VALUES ('webtoons', '1320', 'other-comics', 'Lore Olympus', 'loreolympus', \
-                 '/src-image?url=x', 2018, NULL, TRUE, $1, 'loreolympus', NOW())",
+                 '/src-image/webtoon-phinf.pstatic.net/1320.jpg', 2018, NULL, TRUE, $1, 'loreolympus', NOW())",
     )
     .bind(&payload)
     .execute(&ctx.pool)
@@ -233,7 +233,54 @@ async fn drawer_renders_an_official_preview_from_the_catalog() {
     );
     assert!(html.contains("Lore Olympus"), "the catalog title renders");
     assert!(
-        html.contains("/src-image?url="),
+        html.contains("/src-image/"),
         "the proxied cover renders in the drawer"
+    );
+
+    // The chapter list endpoint keys an official item under itself: without the
+    // fix it looked up a MangaUpdates twin and answered "Главы не загружены".
+    sqlx::query(
+        "INSERT INTO series_chapters \
+            (provider, external_id, chapter_number, title_en, is_bonus, origin) \
+         VALUES ('webtoons', '1320', 77700, 'Seeded Chapter', FALSE, 'official_webtoons') \
+         ON CONFLICT DO NOTHING",
+    )
+    .execute(&ctx.pool)
+    .await
+    .expect("seed chapter");
+
+    let app = Router::new()
+        .route(
+            "/api/manga/{provider}/{external_id}/chapters",
+            axum::routing::get(mediatracker::routes::media::get_chapters),
+        )
+        .layer(Extension(CurrentUser {
+            id: user_id,
+            username: "official-add-test".to_string(),
+            role: "user".to_string(),
+            default_search_type: None,
+        }))
+        .with_state(ctx.state.clone());
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/manga/webtoons/1320/chapters?media_type=other-comics")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    let html = String::from_utf8_lossy(&body);
+    assert!(
+        !html.contains("Главы не загружены"),
+        "the chapter list must render from the item's own key"
+    );
+    assert!(
+        html.contains("Seeded Chapter"),
+        "the seeded chapter renders"
     );
 }

@@ -1046,14 +1046,19 @@ pub async fn get_chapters(
     Path((provider, external_id)): Path<(String, String)>,
     Query(query): Query<ChaptersQuery>,
 ) -> impl IntoResponse {
-    // For mangaupdates the storage key is (provider, external_id) as-is.
-    // For other sources we'd need a lookup — for now handle mangaupdates directly.
-    let (mu_provider, mu_id) = match provider.as_str() {
-        "mangaupdates" => ("mangaupdates".to_string(), external_id.clone()),
-        _ => {
-            // Attempt to find the mangaupdates series_id via media_items.
-            let lookup: Option<(String, String)> = sqlx::query_as(
-                r#"
+    // The storage key: an item whose provider IS a meta-capable source keys
+    // under itself (`chapter_key` returns `(provider, external_id)` for every
+    // non-MU provider) — an official-source preview has no `media_items` row
+    // and no MU twin to look up. Only a provider without official meta
+    // (MangaDex, ComicVine, …) falls back to its MangaUpdates twin by title.
+    let (mu_provider, mu_id) = if provider == "mangaupdates"
+        || crate::services::external::official_meta::SOURCES_WITH_META.contains(&provider.as_str())
+    {
+        (provider.clone(), external_id.clone())
+    } else {
+        // Attempt to find the mangaupdates series_id via media_items.
+        let lookup: Option<(String, String)> = sqlx::query_as(
+            r#"
                 SELECT provider, external_id FROM media_items
                 WHERE id IN (
                     SELECT mi2.id FROM media_items mi2
@@ -1064,16 +1069,15 @@ pub async fn get_chapters(
                     LIMIT 1
                 )
                 "#,
-            )
-            .bind(&provider)
-            .bind(&external_id)
-            .fetch_optional(&state.db)
-            .await
-            .unwrap_or(None);
-            match lookup {
-                Some((p, eid)) => (p, eid),
-                None => ("mangaupdates".to_string(), external_id.clone()),
-            }
+        )
+        .bind(&provider)
+        .bind(&external_id)
+        .fetch_optional(&state.db)
+        .await
+        .unwrap_or(None);
+        match lookup {
+            Some((p, eid)) => (p, eid),
+            None => ("mangaupdates".to_string(), external_id.clone()),
         }
     };
 
@@ -1120,7 +1124,7 @@ pub async fn get_chapters(
         // there is no local row, fetch MangaUpdates details once and share it
         // with the skeleton build below instead of querying twice.
         let has_local_title = matches!(&local, Some((_, title, _)) if !title.is_empty());
-        if !has_local_title {
+        if !has_local_title && mu_provider == "mangaupdates" {
             details = crate::services::external::mangaupdates::MangaUpdatesService::new()
                 .get_details(&mu_id)
                 .await
@@ -1215,6 +1219,7 @@ pub async fn get_chapters(
 
     // If empty, try to fetch the latest_chapter from MangaUpdates and build skeleton.
     if existing.is_empty()
+        && mu_provider == "mangaupdates"
         && let Ok(series_id_num) = mu_id.parse::<i64>()
     {
         if details.is_none() {
