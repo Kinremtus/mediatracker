@@ -214,6 +214,32 @@ async fn apply_refresh_upserts_and_always_touches() {
 }
 
 #[tokio::test]
+async fn find_item_returns_the_stored_payload() {
+    let ctx = common::TestContext::new().await;
+    let items = vec![item("webtoons", "1320", "Lore Olympus", "other-comics")];
+    search_catalog::store(&ctx.pool, "other-comics", "Lore Olympus", &items)
+        .await
+        .expect("store");
+
+    let found = search_catalog::find_item(&ctx.pool, "webtoons", "1320")
+        .await
+        .expect("find")
+        .expect("row exists");
+    assert_eq!(found.title, "Lore Olympus");
+    assert_eq!(found.media_type, "other-comics");
+    assert_eq!(
+        found.poster_url.as_deref(),
+        Some("https://example.test/1320.jpg")
+    );
+    assert!(
+        search_catalog::find_item(&ctx.pool, "webtoons", "9999")
+            .await
+            .expect("find")
+            .is_none()
+    );
+}
+
+#[tokio::test]
 async fn stale_queries_are_oldest_first_and_bounded() {
     let ctx = common::TestContext::new().await;
     for (query, age_hours) in [("one", 30), ("two", 50), ("three", 40), ("fresh", 1)] {

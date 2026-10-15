@@ -158,3 +158,82 @@ fn official_chain_membership_is_the_gate() {
     assert!(!official_source_for_media_type("manga").contains(&"webtoons"));
     assert_eq!(StatusCode::SEE_OTHER.as_u16(), 303);
 }
+
+/// The drawer renders an untracked official preview from the search catalog:
+/// official sources have no details provider, and without the catalog fallback
+/// the drawer answered "Not found".
+#[tokio::test]
+async fn drawer_renders_an_official_preview_from_the_catalog() {
+    let ctx = common::TestContext::new().await;
+    let user_id = seed_user(&ctx.pool, "official-add-test").await;
+
+    // The card data the live search stored, with a proxied cover.
+    let payload = serde_json::json!({
+        "provider": "webtoons",
+        "external_id": "1320",
+        "media_type": "other-comics",
+        "title": "Lore Olympus",
+        "poster_url": "/src-image?url=https%3A%2F%2Fwebtoon-phinf.pstatic.net%2F1320.jpg",
+        "description": "A retelling of the Greek myth.",
+        "authors": ["Rachel Smythe"],
+        "status": "ongoing",
+        "genres": ["Fantasy"],
+        "year": 2018,
+        "chapters": 261,
+    });
+    sqlx::query(
+        "INSERT INTO search_catalog \
+            (provider, external_id, media_type, title, title_norm, poster_url, year, score, \
+             is_official, payload, last_query, fetched_at) \
+         VALUES ('webtoons', '1320', 'other-comics', 'Lore Olympus', 'loreolympus', \
+                 '/src-image?url=x', 2018, NULL, TRUE, $1, 'loreolympus', NOW())",
+    )
+    .bind(&payload)
+    .execute(&ctx.pool)
+    .await
+    .expect("seed catalog row");
+    // Pre-seed the self-binding so the inline resolve short-circuits offline.
+    mediatracker::services::source_ids::set_source_id(
+        &ctx.pool, "webtoons", "1320", "webtoons", "1320",
+    )
+    .await
+    .expect("seed binding");
+
+    let app = Router::new()
+        .route(
+            "/api/media/{provider}/{external_id}",
+            axum::routing::get(mediatracker::routes::media::get_media_drawer_content),
+        )
+        .layer(Extension(CurrentUser {
+            id: user_id,
+            username: "official-add-test".to_string(),
+            role: "user".to_string(),
+            default_search_type: None,
+        }))
+        .with_state(ctx.state.clone());
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/media/webtoons/1320?media_type=other-comics")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    let html = String::from_utf8_lossy(&body);
+    assert!(
+        !html.contains("Not found"),
+        "the drawer must find the preview"
+    );
+    assert!(html.contains("Lore Olympus"), "the catalog title renders");
+    assert!(
+        html.contains("/src-image?url="),
+        "the proxied cover renders in the drawer"
+    );
+}

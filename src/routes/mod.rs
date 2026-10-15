@@ -33,6 +33,7 @@ pub mod media;
 pub mod progress;
 pub mod search;
 pub mod settings;
+pub mod source_image;
 pub mod stats;
 pub mod tmdb_episodes;
 pub mod tmdb_image;

@@ -69,7 +69,11 @@ fn hit_to_item(source: &str, media_type: &str, hit: OfficialHit) -> CreateMediaI
         external_id: hit.id,
         media_type: media_type.to_string(),
         title: hit.title,
-        poster_url: extra.poster_url,
+        // Some publisher CDNs refuse hotlinks: the cover goes through the
+        // `/src-image` proxy (see `services::source_images`).
+        poster_url: extra
+            .poster_url
+            .map(|url| crate::services::source_images::proxied(&url)),
         description: extra.description,
         status: extra.status,
         genres: extra.genres,

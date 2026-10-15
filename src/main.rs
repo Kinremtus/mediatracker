@@ -11,8 +11,8 @@ use mediatracker::middleware::auth_middleware;
 use mediatracker::middleware::rate_limit::{RateLimiter, rate_limit_middleware};
 use mediatracker::middleware::security_headers::security_headers_middleware;
 use mediatracker::routes::{
-    admin, auth, calendar, health_check, home, media, search, settings, stats, tmdb_episodes,
-    tmdb_image, tracking,
+    admin, auth, calendar, health_check, home, media, search, settings, source_image, stats,
+    tmdb_episodes, tmdb_image, tracking,
 };
 use mediatracker::services::{cleanup, refresh_counts, release_schedule, search_catalog};
 use std::time::Duration;
@@ -84,6 +84,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Public routes
     let public_routes = Router::new()
         .route("/tmdb-image/{*path}", get(tmdb_image::get_tmdb_image))
+        .route(
+            "/src-image/{host}/{*path}",
+            get(source_image::get_source_image),
+        )
         .route("/login", get(auth::get_login))
         .route("/register", get(auth::get_register))
         .route("/forgot-password", get(auth::get_forgot_password))

@@ -197,6 +197,24 @@ async fn resolve_card_data(
             None
         });
 
+    // Official sources have no details provider: their card data lives in the
+    // search catalog (the payload of the live search that produced the card).
+    // A tracked item keeps its stored row; an untracked preview renders from
+    // the catalog — without this the drawer answered "Not found".
+    let official = crate::services::official_resolve::official_source_for_media_type(media_type);
+    if official.contains(&provider) {
+        if let Some(item) = local {
+            return Some((item.into(), Fallback::Fresh));
+        }
+        let catalog = crate::services::search_catalog::find_item(&state.db, provider, external_id)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!(provider, external_id, error = %e, "media: catalog lookup failed");
+                None
+            });
+        return catalog.map(|item| (item, Fallback::Fresh));
+    }
+
     let clients = ProviderClients::from_state(state);
     match Provider::from_name(&clients, provider) {
         None => local.map(|m| (m.into(), Fallback::Fresh)),

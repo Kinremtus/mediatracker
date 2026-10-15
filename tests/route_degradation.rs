@@ -89,6 +89,36 @@ async fn search_page_renders_all_fourteen_type_buttons() {
 }
 
 #[tokio::test]
+async fn source_image_proxy_rejects_foreign_hosts_without_fetching() {
+    let ctx = common::TestContext::new().await;
+    let app = Router::new()
+        .route(
+            "/src-image/{host}/{*path}",
+            get(mediatracker::routes::source_image::get_source_image),
+        )
+        .with_state(ctx.state.clone());
+
+    for uri in [
+        "/src-image/evil.example/cover.jpg",
+        "/src-image/localhost/cover.jpg",
+        "/src-image/webtoon-phinf.pstatic.net.evil.example/cover.jpg",
+    ] {
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(uri)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST, "{uri}");
+    }
+}
+
+#[tokio::test]
 async fn calendar_page_renders_empty_month_without_network() {
     let ctx = common::TestContext::new().await;
 

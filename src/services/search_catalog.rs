@@ -99,6 +99,24 @@ pub async fn lookup(
     Ok(Some(items))
 }
 
+/// One catalog row as a `CreateMediaItem`. The drawer renders official-source
+/// previews from here: those providers have no details endpoint, so the
+/// search-answer payload is the only card data there is.
+pub async fn find_item(
+    db: &PgPool,
+    provider: &str,
+    external_id: &str,
+) -> Result<Option<CreateMediaItem>, sqlx::Error> {
+    let row: Option<(serde_json::Value,)> = sqlx::query_as(
+        "SELECT payload FROM search_catalog WHERE provider = $1 AND external_id = $2",
+    )
+    .bind(provider)
+    .bind(external_id)
+    .fetch_optional(db)
+    .await?;
+    Ok(row.and_then(|(payload,)| serde_json::from_value(payload).ok()))
+}
+
 /// Persist one live answer: upsert every hit and record the query as fresh.
 /// An empty answer is not recorded (see the module docs). A failed row is
 /// logged and skipped — the catalog must not lose the whole answer because one

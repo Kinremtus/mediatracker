@@ -22,6 +22,7 @@ pub mod search;
 pub mod search_catalog;
 pub mod search_families;
 pub mod source_ids;
+pub mod source_images;
 pub mod stats;
 pub mod tmdb_episodes;
 pub mod tracking;
