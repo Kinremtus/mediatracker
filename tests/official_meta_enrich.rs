@@ -8,7 +8,8 @@ use std::sync::{Arc, Mutex};
 
 use chrono::NaiveDate;
 use mediatracker::services::chapter_meta_enrich::{
-    MetaFetcher, apply_meta, enrich_official_meta_for_key, enrich_official_meta_with,
+    MetaFetcher, apply_meta, enrich_official_meta_for_key, enrich_official_meta_for_key_with,
+    enrich_official_meta_with,
 };
 use mediatracker::services::external::official_meta::{ChapterMeta, MetaFuture, OfficialMeta};
 
@@ -933,6 +934,104 @@ async fn duplicate_number_bonus_keeps_its_number_as_label() {
         vec![(-100, Some("2".to_string()))],
         "the duplicate keeps its original number as the display label"
     );
+}
+
+/// A meta applied within the TTL window is not fetched again: the drawer's
+/// per-open enrich short-circuits without touching the source.
+#[tokio::test]
+async fn fresh_meta_skips_the_source_walk() {
+    let ctx = common::TestContext::new().await;
+    bind(&ctx, SOURCE, SOURCE_ID).await;
+
+    // First pass applies the official rows.
+    let fetcher = FixtureMetaFetcher::new(meta(Some("Official"), None, None));
+    let written = enrich_official_meta_for_key_with(
+        &ctx.pool,
+        PROVIDER,
+        EXTERNAL_ID,
+        Some("manhua"),
+        &fetcher,
+        false,
+    )
+    .await
+    .expect("first enrich");
+    assert!(written > 0, "the first pass writes the official rows");
+    assert_eq!(fetcher.seen().len(), 1);
+
+    // A second, gated pass inside the TTL must not touch the source.
+    let second = FixtureMetaFetcher::new(meta(Some("Updated"), None, None));
+    let written = enrich_official_meta_for_key_with(
+        &ctx.pool,
+        PROVIDER,
+        EXTERNAL_ID,
+        Some("manhua"),
+        &second,
+        false,
+    )
+    .await
+    .expect("second enrich");
+    assert_eq!(written, 0, "a fresh meta writes nothing");
+    assert!(
+        second.seen().is_empty(),
+        "a fresh meta must not be re-fetched"
+    );
+}
+
+/// Past the TTL the gated pass fetches again; `force` (the refresh worker and
+/// the manual bind) always walks, even inside the window.
+#[tokio::test]
+async fn stale_meta_refetches_and_force_bypasses_the_gate() {
+    let ctx = common::TestContext::new().await;
+    bind(&ctx, SOURCE, SOURCE_ID).await;
+    let fetcher = FixtureMetaFetcher::new(meta(Some("Official"), None, None));
+    enrich_official_meta_for_key_with(
+        &ctx.pool,
+        PROVIDER,
+        EXTERNAL_ID,
+        Some("manhua"),
+        &fetcher,
+        false,
+    )
+    .await
+    .expect("first enrich");
+
+    // Backdate past the TTL: the next gated pass fetches again.
+    sqlx::query(
+        "UPDATE series_chapters SET fetched_at = NOW() - INTERVAL '13 hours' \
+         WHERE origin = $1",
+    )
+    .bind(SOURCE)
+    .execute(&ctx.pool)
+    .await
+    .expect("backdate");
+    let stale = FixtureMetaFetcher::new(meta(Some("Stale refetch"), None, None));
+    let written = enrich_official_meta_for_key_with(
+        &ctx.pool,
+        PROVIDER,
+        EXTERNAL_ID,
+        Some("manhua"),
+        &stale,
+        false,
+    )
+    .await
+    .expect("stale enrich");
+    assert!(written > 0, "a stale meta is re-fetched and re-applied");
+    assert_eq!(stale.seen().len(), 1);
+
+    // Force ignores the (now fresh) window.
+    let forced = FixtureMetaFetcher::new(meta(Some("Forced"), None, None));
+    let written = enrich_official_meta_for_key_with(
+        &ctx.pool,
+        PROVIDER,
+        EXTERNAL_ID,
+        Some("manhua"),
+        &forced,
+        true,
+    )
+    .await
+    .expect("forced enrich");
+    assert!(written > 0, "force always walks the chain");
+    assert_eq!(forced.seen().len(), 1);
 }
 
 /// Offline chain fetcher: returns a canned `OfficialMeta` and records which

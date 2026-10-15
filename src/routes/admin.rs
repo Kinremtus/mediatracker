@@ -769,7 +769,7 @@ pub async fn post_chapter_refresh(
                 &mt,
             )
             .await;
-            let _ = crate::services::chapter_meta_enrich::enrich_official_meta_for_key(
+            let _ = crate::services::chapter_meta_enrich::enrich_official_meta_for_key_force(
                 &state.db,
                 &form.provider,
                 &form.external_id,

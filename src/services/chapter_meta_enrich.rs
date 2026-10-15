@@ -417,21 +417,11 @@ impl MetaFetcher for reqwest::Client {
     }
 }
 
-/// Resolve the highest-priority bound source for `media_type`, fetch its detail
-/// and apply it. No binding -> no network. Errors -> silent no-op. An empty
-/// answer is skipped (debug log) so the next bound source is still tried.
-pub async fn enrich_official_meta(
-    db: &PgPool,
-    provider: &str,
-    external_id: &str,
-    media_type: &str,
-) -> anyhow::Result<usize> {
-    let client = crate::services::external::http_client();
-    enrich_official_meta_with(db, provider, external_id, media_type, &client).await
-}
-
-/// [`enrich_official_meta`] with an injectable fetcher, so tests can exercise
-/// the chain without a network round-trip.
+/// The chain core with an injectable fetcher: resolve the highest-priority
+/// bound source for `media_type`, fetch its detail and apply it. No binding ->
+/// no network. Errors -> silent no-op. An empty answer is skipped (debug log)
+/// so the next bound source is still tried. Ungated — callers that want the
+/// freshness gate go through [`enrich_official_meta_for_key`].
 pub async fn enrich_official_meta_with(
     db: &PgPool,
     provider: &str,
@@ -471,16 +461,76 @@ pub async fn enrich_official_meta_with(
     Ok(0)
 }
 
+/// How long an applied official meta is trusted before the drawer re-fetches
+/// its source. The refresh worker and the manual bind bypass the gate
+/// ([`enrich_official_meta_for_key_force`]), so a tracked title still re-walks
+/// at least twice a day while every drawer open inside the window is instant.
+pub const META_TTL_HOURS: i32 = 12;
+
+/// True when the resolved key already carries official rows applied recently:
+/// the drawer skips the whole chain walk for them. A failed check counts as
+/// "not fresh" (fetch), which is always safe.
+async fn official_meta_is_fresh(db: &PgPool, provider: &str, external_id: &str) -> bool {
+    let (ch_provider, ch_id) = chapter_key(db, provider, external_id).await;
+    sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM series_chapters \
+         WHERE provider = $1 AND external_id = $2 AND origin <> 'mu' \
+           AND fetched_at > NOW() - make_interval(hours => $3))",
+    )
+    .bind(&ch_provider)
+    .bind(&ch_id)
+    .bind(META_TTL_HOURS)
+    .fetch_one(db)
+    .await
+    .unwrap_or(false)
+}
+
 /// Convenience wrapper for callers that only have a db + key. `media_type`
 /// carries the drawer's hint: `Some(mt)` enriches immediately (drawer preview,
 /// no `media_items` row yet); `None` discovers the type from `media_items` and
-/// a missing row stays a no-op.
+/// a missing row stays a no-op. Freshness-gated: a meta applied within
+/// [`META_TTL_HOURS`] short-circuits without any network I/O.
 pub async fn enrich_official_meta_for_key(
     db: &PgPool,
     provider: &str,
     external_id: &str,
     media_type: Option<&str>,
 ) -> anyhow::Result<usize> {
+    let client = crate::services::external::http_client();
+    enrich_official_meta_for_key_with(db, provider, external_id, media_type, &client, false).await
+}
+
+/// [`enrich_official_meta_for_key`] without the freshness gate: the refresh
+/// worker and the manual bind always re-walk the bound source.
+pub async fn enrich_official_meta_for_key_force(
+    db: &PgPool,
+    provider: &str,
+    external_id: &str,
+    media_type: Option<&str>,
+) -> anyhow::Result<usize> {
+    let client = crate::services::external::http_client();
+    enrich_official_meta_for_key_with(db, provider, external_id, media_type, &client, true).await
+}
+
+/// The key-based chain with an injectable fetcher and an explicit gate switch,
+/// so tests can prove that a fresh meta is not fetched again.
+pub async fn enrich_official_meta_for_key_with(
+    db: &PgPool,
+    provider: &str,
+    external_id: &str,
+    media_type: Option<&str>,
+    fetcher: &dyn MetaFetcher,
+    force: bool,
+) -> anyhow::Result<usize> {
+    if !force && official_meta_is_fresh(db, provider, external_id).await {
+        tracing::debug!(
+            provider,
+            external_id,
+            ttl_hours = META_TTL_HOURS,
+            "official_meta: fresh, skipping the source walk"
+        );
+        return Ok(0);
+    }
     let media_type = match media_type {
         Some(mt) => mt.to_string(),
         None => {
@@ -505,7 +555,7 @@ pub async fn enrich_official_meta_for_key(
             }
         }
     };
-    enrich_official_meta(db, provider, external_id, &media_type).await
+    enrich_official_meta_with(db, provider, external_id, &media_type, fetcher).await
 }
 
 #[cfg(test)]
