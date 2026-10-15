@@ -322,7 +322,7 @@ pub fn has_chapter_number_prefix(raw: &str) -> bool {
 pub fn is_cn_bonus_title(title: &str) -> bool {
     [
         "番外", "外传", "外傳", "序章", "楔子", "后记", "后記", "尾声", "尾聲", "公告", "上架",
-        "感言", "请假", "請假",
+        "感言", "请假", "請假", "预告",
     ]
     .iter()
     .any(|marker| title.contains(marker))

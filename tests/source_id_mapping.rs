@@ -215,6 +215,7 @@ fn new_official_sources_are_bindable_and_narou_is_not() {
         "wuxiaworld",
         "bomtoon",
         "toomics",
+        "manmanapp",
     ] {
         assert!(
             is_known_source(source),

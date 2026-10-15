@@ -494,7 +494,7 @@ async fn raise_only_keeps_higher_count() {
 fn mapping_table() {
     assert_eq!(
         official_source_for_media_type("manhua"),
-        &["kuaikan", "bilibili", "acqq"][..]
+        &["kuaikan", "bilibili", "acqq", "manmanapp"][..]
     );
     assert_eq!(
         official_source_for_media_type("manhwa"),
