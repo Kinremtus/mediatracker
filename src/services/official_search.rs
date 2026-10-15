@@ -93,14 +93,18 @@ mod tests {
     fn gated_sources_respect_scripts_and_chains() {
         // A Latin query: Hangul-only and Han-only catalogs are skipped.
         let latin = gated_sources("manhwa", "Lore Olympus");
-        assert_eq!(latin, vec!["ridibooks", "tappytoon", "webtoons"]);
+        assert_eq!(latin, vec!["ridibooks", "tappytoon", "webtoons", "toomics"]);
         assert!(!latin.contains(&"kakao"));
         assert!(!latin.contains(&"naverwebtoon"));
         assert!(!latin.contains(&"naver"));
+        assert!(!latin.contains(&"bomtoon"));
 
         // A Hangul query: the KR catalogs answer, the English ones don't.
         let hangul = gated_sources("manhwa", "여신강림");
-        assert_eq!(hangul, vec!["kakao", "naverwebtoon", "naver", "ridibooks"]);
+        assert_eq!(
+            hangul,
+            vec!["kakao", "naverwebtoon", "naver", "ridibooks", "bomtoon"]
+        );
 
         // A JP query reaches every JP-first catalog of the chain.
         let jp = gated_sources("manga", "僕の心のヤバイやつ");

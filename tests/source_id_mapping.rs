@@ -213,6 +213,8 @@ fn new_official_sources_are_bindable_and_narou_is_not() {
         "comici",
         "naverwebtoon",
         "wuxiaworld",
+        "bomtoon",
+        "toomics",
     ] {
         assert!(
             is_known_source(source),

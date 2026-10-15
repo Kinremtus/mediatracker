@@ -91,7 +91,7 @@ fn search_scripts(source: &str) -> &'static [Script] {
         // CN catalogs are Han-only.
         "kuaikan" | "bilibili" | "qidian" | "acqq" => &[Script::Han],
         // KR catalogs are Hangul-only; ridibooks also indexes Latin/JP rows.
-        "kakao" | "naver" | "daum" | "naverwebtoon" => &[Script::Hangul],
+        "kakao" | "naver" | "daum" | "naverwebtoon" | "bomtoon" => &[Script::Hangul],
         "ridibooks" => &[
             Script::Hangul,
             Script::Latin,
@@ -112,6 +112,8 @@ fn search_scripts(source: &str) -> &'static [Script] {
         "webtoons" => &[Script::Latin],
         // Wuxiaworld's lite catalogue is English-only.
         "wuxiaworld" => &[Script::Latin],
+        // Toomics' English catalogue indexes translated titles.
+        "toomics" => &[Script::Latin],
         _ => &[],
     }
 }

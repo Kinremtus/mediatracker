@@ -74,6 +74,8 @@ pub const SOURCES_WITH_META: &[&str] = &[
     "comici",
     "naverwebtoon",
     "wuxiaworld",
+    "bomtoon",
+    "toomics",
 ];
 
 /// Fetch one source's detail, dispatched by the binding name. Unknown/absent
@@ -126,6 +128,12 @@ pub async fn fetch_source(
         }
         "wuxiaworld" => {
             crate::services::external::official_wuxiaworld::fetch_meta(client, source_id).await
+        }
+        "bomtoon" => {
+            crate::services::external::official_bomtoon::fetch_meta(client, source_id).await
+        }
+        "toomics" => {
+            crate::services::external::official_toomics::fetch_meta(client, source_id).await
         }
         _ => Ok(OfficialMeta::default()),
     }

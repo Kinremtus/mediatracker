@@ -504,7 +504,9 @@ fn mapping_table() {
             "naver",
             "ridibooks",
             "tappytoon",
-            "webtoons"
+            "webtoons",
+            "bomtoon",
+            "toomics"
         ][..]
     );
     assert_eq!(
@@ -791,9 +793,9 @@ async fn no_match_anywhere_binds_nothing() {
     assert_eq!(outcome, None);
     assert_eq!(
         calls.lock().unwrap().len(),
-        4,
-        "kakao, naverwebtoon, naver and ridibooks all accept the Hangul query \
-         (tappytoon and webtoons are English-only)"
+        5,
+        "kakao, naverwebtoon, naver, ridibooks and bomtoon all accept the \
+         Hangul query (tappytoon, webtoons and toomics are English-only)"
     );
     assert_eq!(
         get_source_id(&ctx.pool, "mangaupdates", &series, "naver")
