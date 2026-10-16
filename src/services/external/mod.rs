@@ -28,6 +28,7 @@ pub mod official_naver;
 pub mod official_naverwebtoon;
 pub mod official_qidian;
 pub mod official_ridibooks;
+pub mod official_sundaywebry;
 pub mod official_tappytoon;
 pub mod official_toomics;
 pub mod official_webtoons;

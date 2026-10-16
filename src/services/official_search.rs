@@ -115,7 +115,8 @@ mod tests {
                 "comicwalker",
                 "mangaup",
                 "comici",
-                "alphapolis"
+                "alphapolis",
+                "sundaywebry"
             ]
         );
 

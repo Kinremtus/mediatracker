@@ -221,6 +221,7 @@ fn sources_with_meta_matches_fetch_source_arms() {
         "bomtoon",
         "toomics",
         "manmanapp",
+        "sundaywebry",
     ];
 
     let mut arms: Vec<&str> = FETCH_SOURCE_ARMS.to_vec();
@@ -272,7 +273,8 @@ fn global_source_order_mirrors_migration_028_ranks() {
             "wuxiaworld",
             "bomtoon",
             "toomics",
-            "manmanapp"
+            "manmanapp",
+            "sundaywebry"
         ]
     );
 }

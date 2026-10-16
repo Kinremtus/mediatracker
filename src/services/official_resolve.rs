@@ -49,6 +49,7 @@ pub fn official_source_for_media_type(media_type: &str) -> &'static [&'static st
             "mangaup",
             "comici",
             "alphapolis",
+            "sundaywebry",
         ],
         // syosetu existing; kakuyomu new JP; qidian CN; ridibooks/alphapolis
         // KR/JP; kakao/naver added for KR web novels; wuxiaworld last (the
@@ -102,6 +103,7 @@ pub const GLOBAL_SOURCE_ORDER: &[&str] = &[
     "bomtoon",
     "toomics",
     "manmanapp",
+    "sundaywebry",
 ];
 
 /// Network abstraction so tests can inject a fixture-backed searcher.
@@ -137,6 +139,9 @@ pub async fn search_source(
         "bomtoon" => crate::services::external::official_bomtoon::search(client, query).await,
         "toomics" => crate::services::external::official_toomics::search(client, query).await,
         "manmanapp" => crate::services::external::official_manmanapp::search(client, query).await,
+        "sundaywebry" => {
+            crate::services::external::official_sundaywebry::search(client, query).await
+        }
         "mangaplus" => {
             // The catalog lives in a process-wide cache, so a per-call
             // client is cheap.
@@ -542,7 +547,8 @@ mod tests {
                 "comicwalker",
                 "mangaup",
                 "comici",
-                "alphapolis"
+                "alphapolis",
+                "sundaywebry"
             ][..]
         );
         assert_eq!(
