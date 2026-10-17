@@ -16,6 +16,7 @@ pub mod official_bomtoon;
 pub mod official_comici;
 pub mod official_comicwalker;
 pub mod official_daum;
+pub mod official_jinjiang;
 pub mod official_kakao;
 pub mod official_kakuyomu;
 pub mod official_kuaikan;

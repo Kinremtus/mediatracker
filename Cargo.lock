@@ -1732,6 +1732,7 @@ dependencies = [
  "chrono",
  "clap",
  "dotenvy",
+ "encoding_rs",
  "envy",
  "hex",
  "metrics 0.23.1",

@@ -89,7 +89,7 @@ pub fn detect_script(s: &str) -> Script {
 fn search_scripts(source: &str) -> &'static [Script] {
     match source {
         // CN catalogs are Han-only.
-        "kuaikan" | "bilibili" | "qidian" | "acqq" | "manmanapp" => &[Script::Han],
+        "kuaikan" | "bilibili" | "qidian" | "acqq" | "manmanapp" | "jinjiang" => &[Script::Han],
         // KR catalogs are Hangul-only; ridibooks also indexes Latin/JP rows.
         "kakao" | "naver" | "daum" | "naverwebtoon" | "bomtoon" => &[Script::Hangul],
         "ridibooks" => &[

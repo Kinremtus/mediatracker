@@ -531,7 +531,8 @@ fn mapping_table() {
             "alphapolis",
             "kakao",
             "naver",
-            "wuxiaworld"
+            "wuxiaworld",
+            "jinjiang"
         ][..]
     );
     assert_eq!(

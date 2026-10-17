@@ -64,6 +64,7 @@ pub fn official_source_for_media_type(media_type: &str) -> &'static [&'static st
             "kakao",
             "naver",
             "wuxiaworld",
+            "jinjiang",
         ],
         // Comics and OEL entries (MangaUpdates `OEL`, MangaDex originals): the
         // licensed English platforms are the official sources there.
@@ -106,6 +107,7 @@ pub const GLOBAL_SOURCE_ORDER: &[&str] = &[
     "manmanapp",
     "sundaywebry",
     "yanmaga",
+    "jinjiang",
 ];
 
 /// Network abstraction so tests can inject a fixture-backed searcher.
@@ -145,6 +147,7 @@ pub async fn search_source(
             crate::services::external::official_sundaywebry::search(client, query).await
         }
         "yanmaga" => crate::services::external::official_yanmaga::search(client, query).await,
+        "jinjiang" => crate::services::external::official_jinjiang::search(client, query).await,
         "mangaplus" => {
             // The catalog lives in a process-wide cache, so a per-call
             // client is cheap.
@@ -565,7 +568,8 @@ mod tests {
                 "alphapolis",
                 "kakao",
                 "naver",
-                "wuxiaworld"
+                "wuxiaworld",
+                "jinjiang"
             ][..]
         );
     }

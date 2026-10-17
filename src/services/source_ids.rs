@@ -36,6 +36,7 @@ pub const KNOWN_SOURCES: &[&str] = &[
     "manmanapp",
     "sundaywebry",
     "yanmaga",
+    "jinjiang",
 ];
 
 /// True when `source` is a whitelisted bindable source.
@@ -169,6 +170,7 @@ mod tests {
             "manmanapp",
             "sundaywebry",
             "yanmaga",
+            "jinjiang",
         ] {
             assert!(is_known_source(source), "{source} must be known");
             assert!(
