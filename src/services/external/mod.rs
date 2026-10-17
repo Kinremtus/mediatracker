@@ -23,6 +23,7 @@ pub mod official_kuaikan;
 pub mod official_mangaplus;
 pub mod official_mangaup;
 pub mod official_manmanapp;
+pub mod official_manta;
 pub mod official_meta;
 pub mod official_narou;
 pub mod official_naver;

@@ -113,8 +113,8 @@ fn search_scripts(source: &str) -> &'static [Script] {
         "webtoons" => &[Script::Latin],
         // Wuxiaworld's lite catalogue is English-only.
         "wuxiaworld" => &[Script::Latin],
-        // Toomics' English catalogue indexes translated titles.
-        "toomics" => &[Script::Latin],
+        // Toomics and Manta index translated titles.
+        "toomics" | "manta" => &[Script::Latin],
         _ => &[],
     }
 }

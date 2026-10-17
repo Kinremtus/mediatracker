@@ -39,6 +39,7 @@ pub fn official_source_for_media_type(media_type: &str) -> &'static [&'static st
             "webtoons",
             "bomtoon",
             "toomics",
+            "manta",
         ],
         // mangaplus existing; comicwalker/mangaup new; comici covers the
         // comici-platform publisher sites (Champion Cross, Takecomic, PASH!
@@ -108,6 +109,7 @@ pub const GLOBAL_SOURCE_ORDER: &[&str] = &[
     "sundaywebry",
     "yanmaga",
     "jinjiang",
+    "manta",
 ];
 
 /// Network abstraction so tests can inject a fixture-backed searcher.
@@ -148,6 +150,7 @@ pub async fn search_source(
         }
         "yanmaga" => crate::services::external::official_yanmaga::search(client, query).await,
         "jinjiang" => crate::services::external::official_jinjiang::search(client, query).await,
+        "manta" => crate::services::external::official_manta::search(client, query).await,
         "mangaplus" => {
             // The catalog lives in a process-wide cache, so a per-call
             // client is cheap.
@@ -543,7 +546,8 @@ mod tests {
                 "tappytoon",
                 "webtoons",
                 "bomtoon",
-                "toomics"
+                "toomics",
+                "manta"
             ][..]
         );
         assert_eq!(

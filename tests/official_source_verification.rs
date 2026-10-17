@@ -506,7 +506,8 @@ fn mapping_table() {
             "tappytoon",
             "webtoons",
             "bomtoon",
-            "toomics"
+            "toomics",
+            "manta"
         ][..]
     );
     assert_eq!(

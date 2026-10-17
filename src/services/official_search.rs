@@ -93,7 +93,10 @@ mod tests {
     fn gated_sources_respect_scripts_and_chains() {
         // A Latin query: Hangul-only and Han-only catalogs are skipped.
         let latin = gated_sources("manhwa", "Lore Olympus");
-        assert_eq!(latin, vec!["ridibooks", "tappytoon", "webtoons", "toomics"]);
+        assert_eq!(
+            latin,
+            vec!["ridibooks", "tappytoon", "webtoons", "toomics", "manta"]
+        );
         assert!(!latin.contains(&"kakao"));
         assert!(!latin.contains(&"naverwebtoon"));
         assert!(!latin.contains(&"naver"));
