@@ -409,9 +409,11 @@ fn jp_part_index(rest: &str) -> Option<i32> {
 fn circled_number(s: &str) -> Option<i32> {
     s.chars().find_map(|c| {
         let v = c as u32;
+        // `then` (lazy): `then_some` would evaluate the subtraction eagerly
+        // and underflow on every char below U+2460 (e.g. ASCII).
         (0x2460..=0x2473)
             .contains(&v)
-            .then_some((v - 0x2460 + 1) as i32)
+            .then(|| (v - 0x2460 + 1) as i32)
     })
 }
 
@@ -795,6 +797,16 @@ pub fn main_count(chapters: &[ChapterMeta]) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn circled_number_survives_ascii() {
+        // Regression: `then_some` evaluated the subtraction eagerly and
+        // panicked (debug overflow) on any char below U+2460.
+        assert_eq!(circled_number("ABC"), None);
+        assert_eq!(circled_number("第１話"), None);
+        assert_eq!(circled_number("①"), Some(1));
+        assert_eq!(circled_number("x②"), Some(2));
+    }
 
     #[test]
     fn classify_plain_cn_parts_ranges_and_specials() {

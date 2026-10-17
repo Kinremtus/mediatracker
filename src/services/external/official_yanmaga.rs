@@ -135,25 +135,67 @@ pub struct YanmagaEpisode {
     pub release_date: Option<NaiveDate>,
 }
 
-/// Pure parser over the series page: `mod-episode-thumbnail` blocks with the
-/// `mod-episode-title` line and the `mod-episode-date` (`2026/02/09`).
+/// Pure parser over an episode list: the `/episodes` page injects its items
+/// as JS string literals (`data-episode-title=\"…\"`), the series page
+/// renders them plainly — unescape first, then scan the
+/// `data-episode-title` blocks with their `mod-episode-date`
+/// (`2026/02/09`).
 pub fn parse_episodes(html: &str) -> Vec<YanmagaEpisode> {
+    let text = unescape_js(html);
     let mut rows = Vec::new();
     let mut cursor = 0usize;
-    while let Some(relative) = html[cursor..].find("mod-episode-thumbnail") {
-        let at = cursor + relative;
-        let hi = official_meta::floor_boundary(html, at + WINDOW);
-        let Some(end_rel) = html[at..hi].find("</a>") else {
+    while let Some(relative) = text[cursor..].find("data-episode-title=\"") {
+        let at = cursor + relative + "data-episode-title=\"".len();
+        let hi = official_meta::floor_boundary(&text, at + WINDOW);
+        let Some(end_rel) = text[at..hi].find("\"") else {
             break;
         };
-        let block = &html[at..at + end_rel];
-        cursor = at + end_rel + "</a>".len();
-        let Some(title) = official_meta::between(block, "class=\"mod-episode-title\">", "</p>")
-            .map(official_meta::strip_tags)
-            .filter(|t| !t.is_empty())
-        else {
+        let title = &text[at..at + end_rel];
+        let block_end = text[at..hi]
+            .find("data-episode-title=\"")
+            .map(|next| at + next)
+            .unwrap_or(hi);
+        let block = &text[at..block_end];
+        cursor = at + end_rel;
+        let title = official_meta::strip_tags(title);
+        let title = title.trim();
+        if title.is_empty() {
             continue;
+        }
+        let release_date = official_meta::between(block, "class=\"mod-episode-date\">", "</time>")
+            .and_then(|raw| NaiveDate::parse_from_str(raw.trim(), "%Y/%m/%d").ok());
+        rows.push(YanmagaEpisode {
+            title: title.chars().take(MAX_TITLE_CHARS).collect(),
+            release_date,
+        });
+        if rows.len() >= EPISODE_CAP {
+            break;
+        }
+    }
+    if !rows.is_empty() {
+        return rows;
+    }
+    // Fallback: the series page's window renders plain `mod-episode-title`
+    // paragraphs instead of the data attribute.
+    let marker = "class=\"mod-episode-title\">";
+    let mut cursor = 0usize;
+    while let Some(relative) = text[cursor..].find(marker) {
+        let at = cursor + relative + marker.len();
+        let hi = official_meta::floor_boundary(&text, at + WINDOW);
+        let Some(end_rel) = text[at..hi].find("</p>") else {
+            break;
         };
+        let title = official_meta::strip_tags(&text[at..at + end_rel]);
+        let block_end = text[at..hi]
+            .find(marker)
+            .map(|next| at + next)
+            .unwrap_or(hi);
+        let block = &text[at..block_end];
+        cursor = at + end_rel;
+        let title = title.trim();
+        if title.is_empty() {
+            continue;
+        }
         let release_date = official_meta::between(block, "class=\"mod-episode-date\">", "</time>")
             .and_then(|raw| NaiveDate::parse_from_str(raw.trim(), "%Y/%m/%d").ok());
         rows.push(YanmagaEpisode {
@@ -165,6 +207,47 @@ pub fn parse_episodes(html: &str) -> Vec<YanmagaEpisode> {
         }
     }
     rows
+}
+
+/// Unescape the JS string escapes the `/episodes` page injects (`\"`, `\n`,
+/// `\/`, `\uXXXX`).
+fn unescape_js(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    let mut chars = raw.chars();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('"') => out.push('"'),
+            Some('\\') => out.push('\\'),
+            Some('/') => out.push('/'),
+            Some('n') => out.push('\n'),
+            Some('u') => {
+                let mut code = 0u32;
+                let mut ok = true;
+                for _ in 0..4 {
+                    match chars.next().and_then(|d| d.to_digit(16)) {
+                        Some(v) => code = code * 16 + v,
+                        None => {
+                            ok = false;
+                            break;
+                        }
+                    }
+                }
+                if ok && let Some(ch) = char::from_u32(code) {
+                    out.push(ch);
+                }
+            }
+            Some(other) => {
+                out.push('\\');
+                out.push(other);
+            }
+            None => out.push('\\'),
+        }
+    }
+    out
 }
 
 /// Number the rows: the `第N話` counter from the title (shared JP classifier);
@@ -186,15 +269,16 @@ pub async fn fetch_meta(client: &reqwest::Client, source_id: &str) -> anyhow::Re
     if !is_slug_id(source_id) {
         return Ok(empty_meta());
     }
-    let url = url::Url::parse(&format!("{COMICS_BASE}/{source_id}"))?;
+    // The series page shows only a window (first + latest); the full list
+    // lives on `/comics/{slug}/episodes` (oldest first).
+    let mut url = url::Url::parse(&format!("{COMICS_BASE}/{source_id}/episodes"))?;
+    url.query_pairs_mut().append_pair("sort", "older");
     let html = get_text(client, url).await?;
-    // The series page shows only a window (first + latest) when more episodes
-    // exist — the full list lives on `/comics/{slug}/episodes` behind a
-    // JS-injected markup. A partial list must not reach `apply_meta` (its
-    // orphan cleanup would drop rows and the counter would lie), so windowed
-    // series are skipped until the full-list walk lands.
+    // Even there a "もっと見る" button would mean the list is chunked: a
+    // partial answer must not reach `apply_meta` (its orphan cleanup would
+    // drop rows and the counter would lie).
     if html.contains("mod-episode-more-button") {
-        anyhow::bail!("yanmaga: episode list is windowed (more episodes exist)");
+        anyhow::bail!("yanmaga: episode list is chunked (more episodes exist)");
     }
     let rows = parse_episodes(&html);
     if rows.is_empty() {
