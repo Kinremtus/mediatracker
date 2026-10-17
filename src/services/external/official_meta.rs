@@ -78,6 +78,7 @@ pub const SOURCES_WITH_META: &[&str] = &[
     "toomics",
     "manmanapp",
     "sundaywebry",
+    "yanmaga",
 ];
 
 /// Fetch one source's detail, dispatched by the binding name. Unknown/absent
@@ -142,6 +143,9 @@ pub async fn fetch_source(
         }
         "sundaywebry" => {
             crate::services::external::official_sundaywebry::fetch_meta(client, source_id).await
+        }
+        "yanmaga" => {
+            crate::services::external::official_yanmaga::fetch_meta(client, source_id).await
         }
         _ => Ok(OfficialMeta::default()),
     }

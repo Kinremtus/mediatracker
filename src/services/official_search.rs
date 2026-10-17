@@ -116,7 +116,8 @@ mod tests {
                 "mangaup",
                 "comici",
                 "alphapolis",
-                "sundaywebry"
+                "sundaywebry",
+                "yanmaga"
             ]
         );
 

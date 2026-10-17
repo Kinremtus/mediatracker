@@ -102,7 +102,9 @@ fn search_scripts(source: &str) -> &'static [Script] {
         // alphapolis answers 404 for Latin queries and the others index their
         // native names.
         "comicwalker" | "mangaup" | "alphapolis" | "kakuyomu" | "syosetu" | "comici"
-        | "sundaywebry" => &[Script::Japanese, Script::Han, Script::Latin, Script::Other],
+        | "sundaywebry" | "yanmaga" => {
+            &[Script::Japanese, Script::Han, Script::Latin, Script::Other]
+        }
         // The global app indexes English names but also serves JP titles.
         "mangaplus" => &[Script::Latin, Script::Japanese, Script::Other],
         // Tappytoon's catalogue is English-only.

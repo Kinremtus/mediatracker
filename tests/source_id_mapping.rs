@@ -217,6 +217,7 @@ fn new_official_sources_are_bindable_and_narou_is_not() {
         "toomics",
         "manmanapp",
         "sundaywebry",
+        "yanmaga",
     ] {
         assert!(
             is_known_source(source),

@@ -33,6 +33,7 @@ pub mod official_tappytoon;
 pub mod official_toomics;
 pub mod official_webtoons;
 pub mod official_wuxiaworld;
+pub mod official_yanmaga;
 pub mod openlibrary;
 pub mod rawg;
 pub mod shikimori;

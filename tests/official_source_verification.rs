@@ -517,7 +517,8 @@ fn mapping_table() {
             "mangaup",
             "comici",
             "alphapolis",
-            "sundaywebry"
+            "sundaywebry",
+            "yanmaga"
         ][..]
     );
     assert_eq!(
