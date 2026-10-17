@@ -23,7 +23,7 @@ pub fn official_source_for_media_type(media_type: &str) -> &'static [&'static st
     match media_type {
         // kuaikan is existing/cheap -> first; bilibili is quota-limited; the
         // Tencent catalogue (acqq) last.
-        "manhua" => &["kuaikan", "bilibili", "acqq", "manmanapp"],
+        "manhua" => &["kuaikan", "bilibili", "acqq", "manmanapp", "kanman"],
         // kakao/naver existing; daum was dropped: the service merged into
         // Kakao and its gateway API is token-gated (no guest search), so it can
         // never bind; naverwebtoon (the free comic.naver.com originals) comes
@@ -110,6 +110,7 @@ pub const GLOBAL_SOURCE_ORDER: &[&str] = &[
     "yanmaga",
     "jinjiang",
     "manta",
+    "kanman",
 ];
 
 /// Network abstraction so tests can inject a fixture-backed searcher.
@@ -151,6 +152,7 @@ pub async fn search_source(
         "yanmaga" => crate::services::external::official_yanmaga::search(client, query).await,
         "jinjiang" => crate::services::external::official_jinjiang::search(client, query).await,
         "manta" => crate::services::external::official_manta::search(client, query).await,
+        "kanman" => crate::services::external::official_kanman::search(client, query).await,
         "mangaplus" => {
             // The catalog lives in a process-wide cache, so a per-call
             // client is cheap.
@@ -534,7 +536,7 @@ mod tests {
         // bilibili before the guest-quota-free acqq/manmanapp additions.
         assert_eq!(
             official_source_for_media_type("manhua"),
-            &["kuaikan", "bilibili", "acqq", "manmanapp"][..]
+            &["kuaikan", "bilibili", "acqq", "manmanapp", "kanman"][..]
         );
         assert_eq!(
             official_source_for_media_type("manhwa"),

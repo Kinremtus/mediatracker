@@ -19,6 +19,7 @@ pub mod official_daum;
 pub mod official_jinjiang;
 pub mod official_kakao;
 pub mod official_kakuyomu;
+pub mod official_kanman;
 pub mod official_kuaikan;
 pub mod official_mangaplus;
 pub mod official_mangaup;

@@ -220,6 +220,7 @@ fn new_official_sources_are_bindable_and_narou_is_not() {
         "yanmaga",
         "jinjiang",
         "manta",
+        "kanman",
     ] {
         assert!(
             is_known_source(source),
