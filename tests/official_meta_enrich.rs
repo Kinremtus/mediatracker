@@ -1034,6 +1034,69 @@ async fn stale_meta_refetches_and_force_bypasses_the_gate() {
     assert_eq!(forced.seen().len(), 1);
 }
 
+/// A fruitless walk is remembered: the next gated pass inside the TTL skips
+/// the whole chain instead of re-walking up to nine sources on every drawer
+/// open (the negative cache). A successful apply clears the marker.
+#[tokio::test]
+async fn fruitless_walk_is_not_repeated_within_the_ttl() {
+    let ctx = common::TestContext::new().await;
+    bind(&ctx, SOURCE, SOURCE_ID).await;
+
+    // The source answers with an empty meta: not useful -> the chain ends
+    // with zero rows and records the attempt.
+    let first = FixtureMetaFetcher::new(OfficialMeta::default());
+    let written = enrich_official_meta_for_key_with(
+        &ctx.pool,
+        PROVIDER,
+        EXTERNAL_ID,
+        Some("manhua"),
+        &first,
+        false,
+    )
+    .await
+    .expect("first enrich");
+    assert_eq!(written, 0, "an empty answer writes nothing");
+    assert_eq!(first.seen().len(), 1, "the first pass walks the chain");
+
+    // Second gated pass inside the TTL: the marker short-circuits the walk.
+    let second = FixtureMetaFetcher::new(OfficialMeta::default());
+    let written = enrich_official_meta_for_key_with(
+        &ctx.pool,
+        PROVIDER,
+        EXTERNAL_ID,
+        Some("manhua"),
+        &second,
+        false,
+    )
+    .await
+    .expect("second enrich");
+    assert_eq!(written, 0);
+    assert!(
+        second.seen().is_empty(),
+        "a recent fruitless walk must not be repeated"
+    );
+
+    // Force (the refresh worker / manual bind) always walks, and a successful
+    // apply clears the marker.
+    let third = FixtureMetaFetcher::new(meta(Some("Official"), None, None));
+    let written = enrich_official_meta_for_key_with(
+        &ctx.pool,
+        PROVIDER,
+        EXTERNAL_ID,
+        Some("manhua"),
+        &third,
+        true,
+    )
+    .await
+    .expect("forced enrich");
+    assert!(written > 0, "force walks past the marker");
+    let markers: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM official_meta_attempts")
+        .fetch_one(&ctx.pool)
+        .await
+        .expect("count markers");
+    assert_eq!(markers, 0, "a successful apply clears the negative marker");
+}
+
 /// Offline chain fetcher: returns a canned `OfficialMeta` and records which
 /// source ids the chain asked for (no network).
 struct FixtureMetaFetcher {

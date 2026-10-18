@@ -114,6 +114,48 @@ async fn cleanup_prunes_expired_rows_and_keeps_live_ones() {
 }
 
 #[tokio::test]
+async fn cleanup_prunes_idle_search_rows_only() {
+    let ctx = common::TestContext::new().await;
+
+    // An idle query past retention and a fresh one, each with a catalog row.
+    for (query, days) in [("idle-query", 200), ("fresh-query", 1)] {
+        sqlx::query(
+            "INSERT INTO search_queries (query_norm, media_type, query_text, fetched_at) \
+             VALUES ($1, 'manga', $1, NOW() - make_interval(days => $2))",
+        )
+        .bind(query)
+        .bind(days)
+        .execute(&ctx.pool)
+        .await
+        .expect("insert search query");
+        sqlx::query(
+            "INSERT INTO search_catalog \
+                 (provider, external_id, media_type, title, title_norm, payload, last_query, fetched_at) \
+             VALUES ('mangaupdates', $1, 'manga', 'Title', 'title', '{}'::jsonb, $1, \
+                     NOW() - make_interval(days => $2))",
+        )
+        .bind(query)
+        .bind(days)
+        .execute(&ctx.pool)
+        .await
+        .expect("insert catalog row");
+    }
+
+    let stats = run_cleanup_once(&ctx.pool).await;
+    assert_eq!(stats.search_queries, 1, "only the idle query is pruned");
+    assert_eq!(
+        stats.search_catalog, 1,
+        "only the idle catalog row is pruned"
+    );
+
+    let left: Vec<String> = sqlx::query_scalar("SELECT external_id FROM search_catalog")
+        .fetch_all(&ctx.pool)
+        .await
+        .expect("read catalog");
+    assert_eq!(left, vec!["fresh-query".to_string()]);
+}
+
+#[tokio::test]
 async fn cleanup_reports_zero_when_nothing_to_prune() {
     let ctx = common::TestContext::new().await;
     let stats = run_cleanup_once(&ctx.pool).await;

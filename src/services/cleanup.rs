@@ -1,6 +1,8 @@
 //! Periodic retention sweeps for tables that would otherwise grow forever:
 //! expired sessions, spent/expired password-reset tokens, old
-//! notification-log rows, and release-schedule entries that already aired.
+//! notification-log rows, release-schedule entries that already aired,
+//! fruitless official-meta attempts, and idle search queries (with the
+//! catalog rows no remaining query references).
 //!
 //! The notification log doubles as the idempotency key for episode
 //! notifications, so rows are kept for a generous window before deletion.
@@ -22,6 +24,16 @@ const NOTIFICATION_RETENTION_DAYS: i32 = 90;
 /// release_schedule rows whose air date is older than this are deleted.
 const RELEASE_SCHEDULE_RETENTION_DAYS: i32 = 30;
 
+/// official_meta_attempts rows older than this are deleted: the marker only
+/// matters for the 12-hour freshness gate.
+const OFFICIAL_ATTEMPT_RETENTION_DAYS: i32 = 30;
+
+/// search_queries idle for longer than this are pruned, and with them the
+/// catalog rows no remaining query references. The catalog deliberately keeps
+/// last-known data for anything still being searched (migration 030); only
+/// the cold tail expires.
+const SEARCH_RETENTION_DAYS: i32 = 180;
+
 /// Number of rows removed by one cleanup pass.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CleanupStats {
@@ -29,6 +41,9 @@ pub struct CleanupStats {
     pub reset_tokens: u64,
     pub notifications: u64,
     pub release_schedule: u64,
+    pub official_attempts: u64,
+    pub search_catalog: u64,
+    pub search_queries: u64,
 }
 
 /// Delete expired sessions, spent reset tokens, and old notification rows.
@@ -85,6 +100,49 @@ pub async fn run_cleanup_once(db: &PgPool) -> CleanupStats {
         Err(error) => warn!(error = %error, "cleanup: failed to delete release schedule rows"),
     }
 
+    match sqlx::query(
+        "DELETE FROM official_meta_attempts \
+         WHERE attempted_at < NOW() - make_interval(days => $1)",
+    )
+    .bind(OFFICIAL_ATTEMPT_RETENTION_DAYS)
+    .execute(db)
+    .await
+    {
+        Ok(result) => stats.official_attempts = result.rows_affected(),
+        Err(error) => warn!(error = %error, "cleanup: failed to delete official-meta attempts"),
+    }
+
+    // Search retention, in order: first the catalog rows whose query is gone
+    // or itself idle, then the idle queries. `last_query` stores the
+    // normalized query; a row survives while ANY type still references the
+    // query inside the retention window (the catalog keeps last-known data
+    // for anything still being searched — see migration 030).
+    match sqlx::query(
+        "DELETE FROM search_catalog c \
+         WHERE c.fetched_at < NOW() - make_interval(days => $1) \
+           AND NOT EXISTS (SELECT 1 FROM search_queries q \
+                           WHERE q.query_norm = c.last_query \
+                             AND q.fetched_at >= NOW() - make_interval(days => $1))",
+    )
+    .bind(SEARCH_RETENTION_DAYS)
+    .execute(db)
+    .await
+    {
+        Ok(result) => stats.search_catalog = result.rows_affected(),
+        Err(error) => warn!(error = %error, "cleanup: failed to delete idle catalog rows"),
+    }
+
+    match sqlx::query(
+        "DELETE FROM search_queries WHERE fetched_at < NOW() - make_interval(days => $1)",
+    )
+    .bind(SEARCH_RETENTION_DAYS)
+    .execute(db)
+    .await
+    {
+        Ok(result) => stats.search_queries = result.rows_affected(),
+        Err(error) => warn!(error = %error, "cleanup: failed to delete idle search queries"),
+    }
+
     stats
 }
 
@@ -101,6 +159,9 @@ pub async fn run_cleanup_loop(db: PgPool, cancel: CancellationToken) {
             reset_tokens = stats.reset_tokens,
             notifications = stats.notifications,
             release_schedule = stats.release_schedule,
+            official_attempts = stats.official_attempts,
+            search_catalog = stats.search_catalog,
+            search_queries = stats.search_queries,
             "cleanup pass finished"
         );
 

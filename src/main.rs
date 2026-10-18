@@ -74,12 +74,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or(10);
     let rate_limiter = RateLimiter::new(rate_limit_per_min, Duration::from_secs(60));
 
+    // The search and drawer paths fan out to up to nine official sources per
+    // open: a separate, more generous per-IP limiter keeps one client from
+    // burning provider quotas (and the box) for everyone.
+    let search_rate_limit_per_min: u32 = std::env::var("SEARCH_RATE_LIMIT_PER_MIN")
+        .ok()
+        .and_then(|v| v.trim().parse().ok())
+        .unwrap_or(30);
+    let search_limiter = RateLimiter::new(search_rate_limit_per_min, Duration::from_secs(60));
+
     let auth_post_routes = Router::new()
         .route("/login", post(auth::post_login))
         .route("/register", post(auth::post_register))
         .route("/forgot-password", post(auth::post_forgot_password))
         .route("/reset-password", post(auth::post_reset_password))
         .route_layer(from_fn_with_state(rate_limiter, rate_limit_middleware));
+
+    // Expensive fan-out routes share the search limiter; everything else keeps
+    // the plain auth-protected path.
+    let search_routes = Router::new()
+        .route("/search", get(search::get_search))
+        .route(
+            "/api/media/{provider}/{external_id}",
+            get(media::get_media_drawer_content),
+        )
+        .route(
+            "/api/manga/{provider}/{external_id}/chapters",
+            get(media::get_chapters),
+        )
+        .route_layer(from_fn_with_state(search_limiter, rate_limit_middleware));
 
     // Public routes
     let public_routes = Router::new()
@@ -98,14 +121,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let protected_routes = Router::new()
         .route("/", get(home::get_home))
         .route("/logout", axum::routing::post(home::post_logout))
-        .route("/search", get(search::get_search))
+        .merge(search_routes)
         .route(
             "/media/{provider}/{external_id}",
             get(media::get_media_detail),
-        )
-        .route(
-            "/api/media/{provider}/{external_id}",
-            get(media::get_media_drawer_content),
         )
         .route(
             "/api/anime/{provider}/{external_id}/episodes",
@@ -114,10 +133,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route(
             "/api/anime/{provider}/{external_id}/episodes/{n}/watched",
             axum::routing::post(media::set_episode_watched),
-        )
-        .route(
-            "/api/manga/{provider}/{external_id}/chapters",
-            get(media::get_chapters),
         )
         .route(
             "/api/manga/{provider}/{external_id}/chapters/{n}/read",
@@ -368,6 +383,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(public_routes)
         .merge(protected_routes)
         .nest_service("/static", ServeDir::new("static"))
+        // Last-resort bound on any handler (below Cloudflare's 100 s): a stuck
+        // upstream chain must not pin a worker past the client's patience.
+        .layer(tower_http::timeout::TimeoutLayer::with_status_code(
+            axum::http::StatusCode::REQUEST_TIMEOUT,
+            Duration::from_secs(90),
+        ))
         .layer(from_fn(metrics::metrics_middleware))
         .layer(from_fn(security_headers_middleware))
         .with_state(state);

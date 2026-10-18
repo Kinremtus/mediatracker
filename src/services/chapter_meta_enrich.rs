@@ -274,6 +274,14 @@ pub async fn apply_meta(
         }
     }
 
+    // A successful apply clears the negative-cache marker: the gate must look
+    // at the fresh positive rows, not at an older fruitless attempt.
+    sqlx::query("DELETE FROM official_meta_attempts WHERE provider = $1 AND external_id = $2")
+        .bind(&ch_provider)
+        .bind(&ch_id)
+        .execute(&mut *tx)
+        .await?;
+
     tx.commit().await?;
     // `raised` is what was actually written to `media_items.chapters`
     // (`None` = raise-only declined it), `official_count` is what the source
@@ -458,6 +466,20 @@ pub async fn enrich_official_meta_with(
         // stays quiet and only the chain's control flow is left here.
         return apply_meta(db, provider, external_id, source, &meta).await;
     }
+    // The walk found nothing useful: remember the attempt so the gated
+    // callers skip the whole chain for the next TTL window instead of
+    // re-walking up to nine sources on every drawer open. `apply_meta` (and
+    // every force refresh) clears the marker on the next successful apply.
+    let (ch_provider, ch_id) = chapter_key(db, provider, external_id).await;
+    let _ = sqlx::query(
+        "INSERT INTO official_meta_attempts (provider, external_id, attempted_at) \
+         VALUES ($1, $2, NOW()) \
+         ON CONFLICT (provider, external_id) DO UPDATE SET attempted_at = NOW()",
+    )
+    .bind(&ch_provider)
+    .bind(&ch_id)
+    .execute(db)
+    .await;
     Ok(0)
 }
 
@@ -467,15 +489,31 @@ pub async fn enrich_official_meta_with(
 /// at least twice a day while every drawer open inside the window is instant.
 pub const META_TTL_HOURS: i32 = 12;
 
-/// True when the resolved key already carries official rows applied recently:
-/// the drawer skips the whole chain walk for them. A failed check counts as
-/// "not fresh" (fetch), which is always safe.
+/// True when the resolved key already carries official rows applied recently
+/// (the drawer skips the whole chain walk for them), or when the last walk was
+/// fruitless and recent (the negative cache: without it, a title with no
+/// official match re-walked every source on every drawer open). A failed check
+/// counts as "not fresh" (fetch), which is always safe.
 async fn official_meta_is_fresh(db: &PgPool, provider: &str, external_id: &str) -> bool {
     let (ch_provider, ch_id) = chapter_key(db, provider, external_id).await;
-    sqlx::query_scalar(
+    let applied: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM series_chapters \
          WHERE provider = $1 AND external_id = $2 AND origin <> 'mu' \
            AND fetched_at > NOW() - make_interval(hours => $3))",
+    )
+    .bind(&ch_provider)
+    .bind(&ch_id)
+    .bind(META_TTL_HOURS)
+    .fetch_one(db)
+    .await
+    .unwrap_or(false);
+    if applied {
+        return true;
+    }
+    sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM official_meta_attempts \
+         WHERE provider = $1 AND external_id = $2 \
+           AND attempted_at > NOW() - make_interval(hours => $3))",
     )
     .bind(&ch_provider)
     .bind(&ch_id)
