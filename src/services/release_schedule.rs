@@ -680,7 +680,9 @@ impl ReleaseScheduleService {
             // currently watching. DISTINCT collapses rows duplicated when the
             // same title is tracked through both MAL and Shikimori. Dedup
             // across passes is still enforced by the atomic claim below, whose
-            // key stays (user, provider, external_id, episode_number).
+            // key is (user, provider, external_id, season_number,
+            // episode_number) — the season must be part of it, because TMDB
+            // series restart episode numbering every season.
             let recent: Vec<(String, String, i32, i32, String)> = sqlx::query_as(
                 r#"
                 SELECT DISTINCT
@@ -705,17 +707,21 @@ impl ReleaseScheduleService {
 
             for (provider, title, season, episode, external_id) in &recent {
                 // Atomic claim: only the first writer of the unique
-                // (user, provider, external_id, episode) row proceeds to send.
+                // (user, provider, external_id, season, episode) row proceeds
+                // to send.
                 let claimed = sqlx::query(
                     r#"
-                    INSERT INTO notification_log (user_id, provider, external_id, episode_number)
-                    VALUES ($1, $2, $3, $4)
-                    ON CONFLICT (user_id, provider, external_id, episode_number) DO NOTHING
+                    INSERT INTO notification_log
+                        (user_id, provider, external_id, season_number, episode_number)
+                    VALUES ($1, $2, $3, $4, $5)
+                    ON CONFLICT (user_id, provider, external_id, season_number, episode_number)
+                    DO NOTHING
                     "#,
                 )
                 .bind(user_id)
                 .bind(provider)
                 .bind(external_id)
+                .bind(season)
                 .bind(episode)
                 .execute(&self.db)
                 .await?
@@ -733,11 +739,12 @@ impl ReleaseScheduleService {
                     // Release the claim so the next cycle retries instead of
                     // silently dropping the notification forever.
                     let _ = sqlx::query(
-                        "DELETE FROM notification_log WHERE user_id = $1 AND provider = $2 AND external_id = $3 AND episode_number = $4",
+                        "DELETE FROM notification_log WHERE user_id = $1 AND provider = $2 AND external_id = $3 AND season_number = $4 AND episode_number = $5",
                     )
                     .bind(user_id)
                     .bind(provider)
                     .bind(external_id)
+                    .bind(season)
                     .bind(episode)
                     .execute(&self.db)
                     .await;

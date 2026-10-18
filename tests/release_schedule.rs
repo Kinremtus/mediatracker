@@ -199,6 +199,50 @@ async fn notify_new_episodes_claims_notification_atomically() {
     assert_eq!(count, 1, "exactly one notification_log row expected");
 }
 
+#[tokio::test]
+async fn notify_new_episodes_distinguishes_seasons() {
+    let ctx = common::TestContext::new().await;
+    let user = create_user(&ctx, Some("123456")).await;
+    track_media(&ctx, user, "in_progress").await;
+
+    // Season 1 episode 5 aired an hour ago: inside the notification window.
+    insert_release(&ctx, Utc::now() - Duration::hours(1), 5, 1).await;
+
+    let addr = spawn_stub_telegram();
+    let notifier =
+        TelegramNotifier::with_base_url("test-token".to_string(), format!("http://{addr}"));
+    let service = ReleaseScheduleService::new(ctx.pool.clone());
+
+    let first = service
+        .notify_new_episodes(&notifier)
+        .await
+        .expect("season 1 pass");
+    assert_eq!(first, 1, "season 1 episode 5 notifies");
+
+    // Season 2 restarts the numbering: S2E5 must not be swallowed by the
+    // season-less dedup key (the old key treated it as an already-sent S1E5).
+    insert_release(&ctx, Utc::now() - Duration::hours(1), 5, 2).await;
+
+    let second = service
+        .notify_new_episodes(&notifier)
+        .await
+        .expect("season 2 pass");
+    assert_eq!(second, 1, "season 2 episode 5 notifies on its own key");
+
+    let rows: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM notification_log \
+         WHERE user_id = $1 AND provider = $2 AND external_id = $3 AND episode_number = 5",
+    )
+    .bind(user)
+    .bind(PROVIDER)
+    .bind(EXTERNAL_ID)
+    .fetch_one(&ctx.pool)
+    .await
+    .expect("count season rows");
+
+    assert_eq!(rows, 2, "one claim per season, not one per episode number");
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn track_media_item(
     ctx: &common::TestContext,
