@@ -14,6 +14,7 @@ use axum::{
 };
 
 use crate::app_state::AppState;
+use crate::services::image_proxy;
 use crate::services::source_images;
 
 /// Hard cap on one proxied image (covers are a few hundred KiB).
@@ -30,9 +31,9 @@ pub async fn get_source_image(
     Path((host, path)): Path<(String, String)>,
     OriginalUri(uri): OriginalUri,
 ) -> Response {
-    let Some(referer) = source_images::referer_for(&host) else {
+    if source_images::referer_for(&host).is_none() {
         return (StatusCode::BAD_REQUEST, "image host not allowed").into_response();
-    };
+    }
     // Rebuild the upstream URL; the query string rides along untouched.
     let mut url = format!("https://{host}/{path}");
     if let Some(query) = uri.query() {
@@ -41,18 +42,30 @@ pub async fn get_source_image(
     }
     let fallback_content_type = guess_content_type(&path);
 
-    let response = state
-        .http_client
-        .get(&url)
-        .header(reqwest::header::REFERER, referer)
-        .header(reqwest::header::USER_AGENT, UA)
-        .send()
-        .await;
-
-    let response = match response {
-        Ok(response) => response,
-        Err(e) => {
+    // Follow redirects manually: every hop must stay on an allowlisted host
+    // (the no-redirect client guarantees reqwest never follows one itself),
+    // and each hop gets the Referer its host expects.
+    let response = match image_proxy::fetch_checked(&state.image_client, &url, |target| {
+        source_images::referer_for(target).map(|referer| {
+            vec![
+                (reqwest::header::REFERER, referer.to_string()),
+                (reqwest::header::USER_AGENT, UA.to_string()),
+            ]
+        })
+    })
+    .await
+    {
+        image_proxy::ImageFetch::Response(response) => response,
+        image_proxy::ImageFetch::Request(e) => {
             tracing::debug!(host, error = %e, "source image fetch failed");
+            return (StatusCode::BAD_GATEWAY, "image fetch failed").into_response();
+        }
+        image_proxy::ImageFetch::Rejected => {
+            tracing::warn!(host, "source image redirect left the allowlist");
+            return (StatusCode::BAD_GATEWAY, "image fetch failed").into_response();
+        }
+        image_proxy::ImageFetch::TooManyHops => {
+            tracing::warn!(host, "source image redirect chain too long");
             return (StatusCode::BAD_GATEWAY, "image fetch failed").into_response();
         }
     };

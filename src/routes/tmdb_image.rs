@@ -5,6 +5,7 @@ use axum::{
 };
 
 use crate::app_state::AppState;
+use crate::services::image_proxy;
 
 pub async fn get_tmdb_image(
     State(state): State<AppState>,
@@ -12,24 +13,32 @@ pub async fn get_tmdb_image(
 ) -> Response {
     let url = format!("https://image.tmdb.org/t/p/w500/{}", path);
 
-    match state.http_client.get(&url).send().await {
-        Ok(resp) => {
-            let status = resp.status();
-
-            let mut headers = HeaderMap::new();
-            if let Some(content_type) = resp.headers().get(header::CONTENT_TYPE) {
-                headers.insert(header::CONTENT_TYPE, content_type.clone());
-            }
-
-            headers.insert(
-                header::CACHE_CONTROL,
-                HeaderValue::from_static("public, immutable, max-age=604800"),
-            );
-
-            let body = resp.bytes().await.unwrap_or_default();
-
-            (status, headers, body).into_response()
+    // The no-redirect client never follows a redirect by itself; only
+    // image.tmdb.org is accepted on every hop.
+    let response = match image_proxy::fetch_checked(&state.image_client, &url, |host| {
+        (host == "image.tmdb.org").then(Vec::new)
+    })
+    .await
+    {
+        image_proxy::ImageFetch::Response(response) => response,
+        _ => {
+            return (StatusCode::BAD_GATEWAY, "Failed to fetch image from TMDB").into_response();
         }
-        Err(_) => (StatusCode::BAD_GATEWAY, "Failed to fetch image from TMDB").into_response(),
+    };
+
+    let status = response.status();
+
+    let mut headers = HeaderMap::new();
+    if let Some(content_type) = response.headers().get(header::CONTENT_TYPE) {
+        headers.insert(header::CONTENT_TYPE, content_type.clone());
     }
+
+    headers.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("public, immutable, max-age=604800"),
+    );
+
+    let body = response.bytes().await.unwrap_or_default();
+
+    (status, headers, body).into_response()
 }

@@ -58,6 +58,9 @@ pub async fn build_pool(database_url: &str) -> Result<PgPool, sqlx::Error> {
 pub struct AppState {
     pub db: PgPool,
     pub http_client: Client,
+    /// No-redirect client for the image proxies (see
+    /// [`crate::services::image_proxy`]).
+    pub image_client: Client,
     pub auth: AuthService,
     pub shikimori: ShikimoriService,
     pub mal: MalService,
@@ -132,6 +135,7 @@ impl AppState {
     ) -> Result<Self, Box<dyn std::error::Error>> {
         sqlx::migrate!("./migrations").run(&db).await?;
         let http_client = crate::services::external::http_client();
+        let image_client = crate::services::external::image_client()?;
         let auth = AuthService::new(db.clone());
         let shikimori = ShikimoriService::new();
         let mal = MalService::new();
@@ -161,6 +165,7 @@ impl AppState {
         Ok(Self {
             db,
             http_client,
+            image_client,
             auth,
             shikimori,
             mal,

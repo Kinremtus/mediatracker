@@ -9,6 +9,7 @@ pub mod cleanup;
 pub mod email;
 pub mod episodes;
 pub mod external;
+pub mod image_proxy;
 pub mod notifications;
 pub mod official_resolve;
 pub mod official_search;

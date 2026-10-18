@@ -117,6 +117,10 @@ spec:
               - 10.0.0.0/8
               - 172.16.0.0/12
               - 192.168.0.0/16
+              # Cloud metadata and loopback must never be reachable: the
+              # image proxies fetch user-supplied URLs.
+              - 169.254.0.0/16
+              - 127.0.0.0/8
       ports:
         - protocol: TCP
           port: 443
@@ -144,6 +148,10 @@ spec:
               - 10.0.0.0/8
               - 172.16.0.0/12
               - 192.168.0.0/16
+              # Cloud metadata and loopback must never be reachable: the
+              # image proxies fetch user-supplied URLs.
+              - 169.254.0.0/16
+              - 127.0.0.0/8
       ports:
         - protocol: TCP
           port: 443

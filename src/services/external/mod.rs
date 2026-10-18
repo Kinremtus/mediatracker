@@ -67,6 +67,22 @@ pub fn http_client() -> reqwest::Client {
     }
 }
 
+/// Shared outbound HTTP client for the image proxies.
+///
+/// Same limits as [`http_client`], but redirects are never followed
+/// automatically: reqwest's default policy would walk up to ten hops without
+/// re-checking the allowlist. The proxies re-validate every hop themselves
+/// through [`crate::services::image_proxy::fetch_checked`], so a client that
+/// follows redirects must never be used for user-supplied URLs.
+pub fn image_client() -> Result<reqwest::Client, reqwest::Error> {
+    reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(20))
+        .redirect(reqwest::redirect::Policy::none())
+        .user_agent(concat!("mediatracker/", env!("CARGO_PKG_VERSION")))
+        .build()
+}
+
 /// Marker error: the provider explicitly reported the entity as missing
 /// (HTTP 404, or a structured "not found" payload). It carries the provider
 /// message so logs stay useful, but the card layer only needs to know the
