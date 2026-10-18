@@ -336,7 +336,7 @@ pub async fn post_refresh_details(
                         format_type = $8, details = $9,
                         chapters = CASE
                             WHEN chapters_manual THEN chapters
-                            ELSE $10
+                            ELSE COALESCE($10, chapters)
                         END,
                         chapters_source = CASE
                             WHEN chapters_manual THEN chapters_source

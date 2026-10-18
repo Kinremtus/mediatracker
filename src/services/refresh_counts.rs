@@ -283,11 +283,11 @@ pub async fn update_item(
             episodes = COALESCE($2, episodes),
             chapters = CASE
                 WHEN chapters_manual THEN chapters
-                ELSE COALESCE($3, chapters)
+                ELSE GREATEST($3, chapters)
             END,
             chapters_source = CASE
                 WHEN chapters_manual THEN chapters_source
-                WHEN $3 IS NOT NULL THEN $13
+                WHEN $3 IS NOT NULL AND $3 > COALESCE(chapters, 0) THEN $13
                 ELSE chapters_source
             END,
             volumes = COALESCE($4, volumes),
@@ -309,7 +309,7 @@ pub async fn update_item(
         WHERE id = $1
           AND (
             ($2 IS NOT NULL AND episodes IS DISTINCT FROM $2)
-            OR (NOT chapters_manual AND $3 IS NOT NULL AND chapters IS DISTINCT FROM $3)
+            OR (NOT chapters_manual AND $3 IS NOT NULL AND (chapters IS NULL OR $3 > chapters))
             OR ($4 IS NOT NULL AND volumes IS DISTINCT FROM $4)
             OR ($5 IS NOT NULL AND pages IS DISTINCT FROM $5)
             OR ($6 IS NOT NULL AND runtime_minutes IS DISTINCT FROM $6)

@@ -48,6 +48,7 @@ pub async fn fetch_meta(
     let mut chapters: Vec<ChapterMeta> = Vec::new();
     let mut offset = 0usize;
     // 30 rows per page; 20 pages cap (600 episodes) — stop on first empty page.
+    let mut complete = false;
     for _ in 0..20 {
         let url = format!(
             "https://gateway-kw.kakao.com/episode/v1/views/content-home/contents/{content_id}\
@@ -62,12 +63,20 @@ pub async fn fetch_meta(
             .error_for_status()?
             .text()
             .await?;
-        let page = parse_episodes(&json, offset);
+        // A malformed page mid-walk must not be mistaken for the end of the
+        // list: `apply_meta`'s orphan cleanup would drop the unseen rows.
+        let Some(page) = parse_episodes(&json, offset) else {
+            anyhow::bail!("daum: episode page unreadable, refusing a truncated list");
+        };
         if page.is_empty() {
+            complete = true;
             break;
         }
         offset += page.len();
         chapters.extend(page);
+    }
+    if !complete {
+        anyhow::bail!("daum: episode walk hit the page cap, refusing a truncated list");
     }
 
     Ok(OfficialMeta {
@@ -81,34 +90,34 @@ pub async fn fetch_meta(
 
 /// `data.episodes[]` each carry `title` and `serialStartDateTime` (fallback
 /// `date`); the first 10 chars are the `YYYY-MM-DD` date. Numbering continues
-/// from `base` so pagination keeps a global sequence. Total: malformed body
-/// (including the capture error) -> `Vec::new()`.
-pub fn parse_episodes(json: &str, base: usize) -> Vec<ChapterMeta> {
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
-        return Vec::new();
-    };
-    let Some(list) = value.pointer("/data/episodes").and_then(|v| v.as_array()) else {
-        return Vec::new();
-    };
-    list.iter()
-        .enumerate()
-        .map(|(i, ep)| {
-            let title = ep.get("title").and_then(|v| v.as_str()).map(str::to_string);
-            let release_date = ep
-                .get("serialStartDateTime")
-                .or_else(|| ep.get("date"))
-                .and_then(|v| v.as_str())
-                .and_then(|s| s.get(..10))
-                .and_then(official_meta::parse_date);
-            ChapterMeta {
-                number_x100: ((base + i + 1) * 100) as i32,
-                title,
-                release_date,
-                is_bonus: false,
-                label: None,
-            }
-        })
-        .collect()
+/// from `base` so pagination keeps a global sequence. `None` means the body
+/// was not a usable answer (invalid JSON or a missing `data.episodes`);
+/// `Some(empty)` means the page parsed and carries no rows (the walk treats
+/// that as the end of the list).
+pub fn parse_episodes(json: &str, base: usize) -> Option<Vec<ChapterMeta>> {
+    let value = serde_json::from_str::<serde_json::Value>(json).ok()?;
+    let list = value.pointer("/data/episodes").and_then(|v| v.as_array())?;
+    Some(
+        list.iter()
+            .enumerate()
+            .map(|(i, ep)| {
+                let title = ep.get("title").and_then(|v| v.as_str()).map(str::to_string);
+                let release_date = ep
+                    .get("serialStartDateTime")
+                    .or_else(|| ep.get("date"))
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.get(..10))
+                    .and_then(official_meta::parse_date);
+                ChapterMeta {
+                    number_x100: ((base + i + 1) * 100) as i32,
+                    title,
+                    release_date,
+                    is_bonus: false,
+                    label: None,
+                }
+            })
+            .collect(),
+    )
 }
 
 /// GET the guest search endpoint (URL-encoded by `Url`; no Origin/cookies).
@@ -161,17 +170,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn episodes_fixture_degrades_to_empty() {
-        // Documented: the capture stored the gateway's error body, not data.
+    fn episodes_fixture_degrades_to_none() {
+        // Documented: the capture stored the gateway's error body, not data;
+        // an unusable page must be `None` (the walk bails) rather than an
+        // empty page (which the walk would read as the end of the list).
         let json = include_str!("../../../tests/fixtures/daum_episodes.json");
-        let rows = parse_episodes(json, 0);
-        assert!(
-            rows.is_empty(),
-            "error body must degrade to no rows, got {}",
-            rows.len()
-        );
-        assert!(parse_episodes("{}", 0).is_empty());
-        assert!(parse_episodes("{not json", 0).is_empty());
+        assert!(parse_episodes(json, 0).is_none());
+        assert!(parse_episodes("{}", 0).is_none());
+        assert!(parse_episodes("{not json", 0).is_none());
     }
 
     #[test]
@@ -180,7 +186,7 @@ mod tests {
             {"title":"1화","serialStartDateTime":"2026-01-05 00:00:00"},
             {"title":"2화","date":"2026-01-12"}
         ]}}"#;
-        let rows = parse_episodes(json, 30);
+        let rows = parse_episodes(json, 30).expect("payload parses");
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].number_x100, 3100);
         assert_eq!(rows[0].title.as_deref(), Some("1화"));

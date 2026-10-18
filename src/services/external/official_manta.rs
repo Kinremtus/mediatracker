@@ -229,6 +229,11 @@ pub async fn fetch_meta(client: &reqwest::Client, source_id: &str) -> anyhow::Re
     if rows.is_empty() {
         return Ok(empty_meta());
     }
+    if rows.len() >= EPISODE_CAP {
+        // The cap cut the list off; `apply_meta`'s orphan cleanup would drop
+        // rows the walk never saw, so refuse the truncated list.
+        anyhow::bail!("manta: episode row cap hit, refusing a truncated list");
+    }
     let chapters = chapters_from_rows(rows);
     let main = chapter_title::main_count(&chapters);
     Ok(OfficialMeta {

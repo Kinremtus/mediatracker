@@ -294,6 +294,7 @@ async fn fetch_meta_uncached(
     let mut rows: Vec<ProductRow> = Vec::new();
     let mut series_title: Option<String> = None;
     let mut cursor: Option<i64> = None;
+    let mut complete = false;
     for _ in 0..MAX_PRODUCT_PAGES {
         let mut url = url::Url::parse(KAKAO_PRODUCT_LIST)?;
         url.query_pairs_mut()
@@ -308,11 +309,11 @@ async fn fetch_meta_uncached(
         // A hostile or broken page must not be buffered whole.
         let Ok(body) = official_meta::body_capped(response, official_meta::MAX_DETAIL_BYTES).await
         else {
-            tracing::warn!(series_id, "kakao: product page too large, stopping");
-            break;
+            anyhow::bail!("kakao: product page unreadable, refusing a truncated list");
         };
         let page = parse_product_list(&body);
         if page.rows.is_empty() {
+            complete = true;
             break;
         }
         if series_title.is_none() {
@@ -321,11 +322,16 @@ async fn fetch_meta_uncached(
         cursor = advance(cursor, page.next_cursor);
         rows.extend(page.rows);
         if cursor.is_none() {
+            complete = true;
             break;
         }
     }
-    // A shortfall against the reported count means this window size dropped
-    // items; log it so a future endpoint change stays visible.
+    if !complete {
+        anyhow::bail!("kakao: product walk hit the page cap, refusing a truncated list");
+    }
+    // `apply_meta` deletes rows missing from the answer (orphan cleanup), so a
+    // list short of the reported count must never be applied: bail instead of
+    // warning (the old warn path handed the truncated list to the caller).
     if let Some(total) = total.filter(|t| *t > 0) {
         let unique = rows
             .iter()
@@ -333,12 +339,7 @@ async fn fetch_meta_uncached(
             .collect::<HashSet<_>>()
             .len();
         if unique < total as usize {
-            tracing::warn!(
-                series_id,
-                unique,
-                total,
-                "kakao: product walk short of the reported count"
-            );
+            anyhow::bail!("kakao: product walk incomplete ({unique} of {total})");
         }
     }
     Ok(build_meta(rows, series_title.as_deref(), novel))

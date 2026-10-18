@@ -122,35 +122,37 @@ pub struct ManmanChapter {
 
 /// Pure parser over one AJAX page: `data[]` rows with the chapter title (its
 /// leading digits are the number) and the publish date.
-pub fn parse_chapters(json: &str) -> Vec<ManmanChapter> {
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
-        return Vec::new();
-    };
-    let Some(items) = value.get("data").and_then(|v| v.as_array()) else {
-        return Vec::new();
-    };
-    items
-        .iter()
-        .filter_map(|item| {
-            let title = item
-                .get("title")
-                .and_then(|v| v.as_str())
-                .map(str::trim)
-                .filter(|t| !t.is_empty())?;
-            let digits: String = title.chars().take_while(char::is_ascii_digit).collect();
-            let number = digits.parse::<i32>().ok().filter(|n| *n >= 1);
-            let release_date = item
-                .get("publish_time")
-                .and_then(|v| v.as_str())
-                .and_then(|s| NaiveDate::parse_from_str(s.trim(), "%Y-%m-%d").ok());
-            Some(ManmanChapter {
-                number,
-                is_bonus: is_cn_bonus_title(title),
-                title: title.chars().take(MAX_TITLE_CHARS).collect(),
-                release_date,
+/// Parse one AJAX page: `data[]` rows with `title` and `publish_time`.
+/// `None` means the body was not a usable answer (invalid JSON or a missing
+/// `data` array); `Some(empty)` means the page parsed and carries no rows
+/// (the walk reads a short page as the end of the list).
+pub fn parse_chapters(json: &str) -> Option<Vec<ManmanChapter>> {
+    let value = serde_json::from_str::<serde_json::Value>(json).ok()?;
+    let items = value.get("data").and_then(|v| v.as_array())?;
+    Some(
+        items
+            .iter()
+            .filter_map(|item| {
+                let title = item
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .map(str::trim)
+                    .filter(|t| !t.is_empty())?;
+                let digits: String = title.chars().take_while(char::is_ascii_digit).collect();
+                let number = digits.parse::<i32>().ok().filter(|n| *n >= 1);
+                let release_date = item
+                    .get("publish_time")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| NaiveDate::parse_from_str(s.trim(), "%Y-%m-%d").ok());
+                Some(ManmanChapter {
+                    number,
+                    is_bonus: is_cn_bonus_title(title),
+                    title: title.chars().take(MAX_TITLE_CHARS).collect(),
+                    release_date,
+                })
             })
-        })
-        .collect()
+            .collect(),
+    )
 }
 
 /// Number the rows: the leading digits of the title; side content
@@ -182,14 +184,23 @@ pub async fn fetch_meta(client: &reqwest::Client, source_id: &str) -> anyhow::Re
         return Ok(empty_meta());
     }
     let mut rows: Vec<ManmanChapter> = Vec::new();
+    let mut complete = false;
     for page in 1..=MAX_PAGES {
         let body = post_chapters(client, source_id, page).await?;
-        let page_rows = parse_chapters(&body);
+        // A malformed page mid-walk must not be mistaken for the last page:
+        // `apply_meta`'s orphan cleanup would drop the unseen rows.
+        let Some(page_rows) = parse_chapters(&body) else {
+            anyhow::bail!("manmanapp: chapter page unreadable, refusing a truncated list");
+        };
         let short = page_rows.len() < PAGE_SIZE;
         rows.extend(page_rows);
         if short {
+            complete = true;
             break;
         }
+    }
+    if !complete {
+        anyhow::bail!("manmanapp: chapter walk hit the page cap, refusing a truncated list");
     }
     if rows.is_empty() {
         return Ok(empty_meta());
@@ -282,7 +293,7 @@ mod tests {
 
     #[test]
     fn chapters_fixture_numbers_and_dates() {
-        let rows = parse_chapters(CHAPTERS_FIXTURE);
+        let rows = parse_chapters(CHAPTERS_FIXTURE).expect("fixture parses");
         assert_eq!(rows.len(), 3);
         assert_eq!(rows[0].number, Some(2));
         assert_eq!(
@@ -292,9 +303,9 @@ mod tests {
         let preview = rows.last().expect("preview row");
         assert_eq!(preview.title, "01 预告");
         assert!(preview.is_bonus, "预告 is side content");
-        // Malformed answers are empty, never a panic.
-        assert!(parse_chapters("").is_empty());
-        assert!(parse_chapters("{}").is_empty());
+        // Malformed answers are `None` (the walk bails), never a panic.
+        assert!(parse_chapters("").is_none());
+        assert!(parse_chapters("{}").is_none());
     }
 
     #[test]

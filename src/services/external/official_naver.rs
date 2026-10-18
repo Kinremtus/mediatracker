@@ -191,6 +191,7 @@ pub async fn fetch_meta(
     } else {
         NAVER_VOLUME_LIST
     };
+    let mut complete = false;
     for page in 1..=NAVER_VOLUME_PAGES {
         let mut url = url::Url::parse(volume_base)?;
         url.query_pairs_mut()
@@ -204,14 +205,21 @@ pub async fn fetch_meta(
             .error_for_status()?;
         let Ok(body) = official_meta::body_capped(response, official_meta::MAX_DETAIL_BYTES).await
         else {
-            tracing::warn!(product_no, "naver: volume page too large, stopping");
-            break;
+            anyhow::bail!("naver: volume page unreadable, refusing a truncated list");
         };
-        let rows = parse_volume_list(&body, kind);
+        // A malformed page mid-walk must not be mistaken for the end of the
+        // list: `apply_meta`'s orphan cleanup would drop the unseen rows.
+        let Some(rows) = parse_volume_list(&body, kind) else {
+            anyhow::bail!("naver: volume page unusable, refusing a truncated list");
+        };
         if rows.is_empty() {
+            complete = true;
             break;
         }
         chapters.extend(rows);
+    }
+    if !complete {
+        anyhow::bail!("naver: volume walk hit the page cap, refusing a truncated list");
     }
 
     // Number the MAIN rows sequentially across pages; bonus rows (previews,
@@ -268,18 +276,20 @@ pub async fn fetch_meta(
 /// HTML: `{"resultData":[{"productName":..,"volumnNameText":"1화",..},..]}`.
 /// The title is the episode name ([`episode_title`]); the release date is the
 /// `YYYY-MM-DD` prefix of `lastVolumeUpdateDate`. Numbers are assigned
-/// globally in [`fetch_meta`] - rows here carry `number_x100 = 0`. At most
-/// `NAVER_ROWS_PER_PAGE` rows are read. Malformed or truncated input yields an
-/// empty vector - never a panic.
-pub fn parse_volume_list(json: &str, kind: &str) -> Vec<ChapterMeta> {
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
-        return Vec::new();
-    };
-    let Some(items) = value.get("resultData").and_then(|v| v.as_array()) else {
-        return Vec::new();
-    };
+/// globally in [`fetch_meta`] - rows here carry `number_x100 = 0`.
+///
+/// `None` means the body was not a usable answer (invalid JSON, a missing
+/// `resultData`, or a page carrying more rows than the expected page size —
+/// silently dropping the extra rows would truncate the walk); `Some(empty)`
+/// means the page parsed and carries no rows. Never a panic.
+pub fn parse_volume_list(json: &str, kind: &str) -> Option<Vec<ChapterMeta>> {
+    let value = serde_json::from_str::<serde_json::Value>(json).ok()?;
+    let items = value.get("resultData").and_then(|v| v.as_array())?;
+    if items.len() > NAVER_ROWS_PER_PAGE {
+        return None;
+    }
     let mut rows = Vec::new();
-    for item in items.iter().take(NAVER_ROWS_PER_PAGE) {
+    for item in items {
         let Some(title) = episode_title(item, kind) else {
             continue;
         };
@@ -296,7 +306,7 @@ pub fn parse_volume_list(json: &str, kind: &str) -> Vec<ChapterMeta> {
             label: None,
         });
     }
-    rows
+    Some(rows)
 }
 
 /// Episode name from a volumeList JSON row: the first non-empty of
@@ -451,7 +461,7 @@ mod tests {
     #[test]
     fn parse_volume_list_fixture() {
         let html = include_str!("../../../tests/fixtures/naver_volume_list.html");
-        let rows = parse_volume_list(html, "comic");
+        let rows = parse_volume_list(html, "comic").expect("fixture parses");
         assert!(!rows.is_empty());
         // Numbers are assigned in `fetch_meta`; rows carry the episode name.
         assert!(rows.iter().all(|r| r.number_x100 == 0));
@@ -489,28 +499,46 @@ mod tests {
 
     #[test]
     fn truncated_volume_list_no_panic() {
-        assert!(parse_volume_list("<li><a>hi", "comic").is_empty());
+        assert!(parse_volume_list("<li><a>hi", "comic").is_none());
     }
 
     #[test]
     fn empty_volume_name_falls_back() {
         let body = r#"{"resultData":[{"volumnNameText":"","volumeName":"1화",
             "productName":"제목","lastVolumeUpdateDate":"2024-01-02 00:00:00"}]}"#;
-        let rows = parse_volume_list(body, "comic");
+        let rows = parse_volume_list(body, "comic").expect("page parses");
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].title.as_deref(), Some("1화"));
         // An all-empty name chain drops the row.
         let body = r#"{"resultData":[{"volumnNameText":" ","volumeName":"","productName":""}]}"#;
-        assert!(parse_volume_list(body, "comic").is_empty());
+        assert!(
+            parse_volume_list(body, "comic")
+                .expect("page parses")
+                .is_empty()
+        );
     }
 
     #[test]
-    fn volume_page_caps_rows() {
+    fn volume_page_over_the_limit_is_refused_not_truncated() {
+        // A page carrying more rows than the expected page size means the
+        // pagination assumption broke; silently dropping the extra rows would
+        // truncate the walk, so the parser refuses the page instead.
         let items: Vec<String> = (0..(NAVER_ROWS_PER_PAGE + 10))
             .map(|i| format!(r#"{{"volumnNameText":"{i}화","productName":"제목"}}"#))
             .collect();
         let body = format!(r#"{{"resultData":[{}]}}"#, items.join(","));
-        assert_eq!(parse_volume_list(&body, "comic").len(), NAVER_ROWS_PER_PAGE);
+        assert!(parse_volume_list(&body, "comic").is_none());
+        // Exactly the expected page size parses fine.
+        let items: Vec<String> = (0..NAVER_ROWS_PER_PAGE)
+            .map(|i| format!(r#"{{"volumnNameText":"{i}화","productName":"제목"}}"#))
+            .collect();
+        let body = format!(r#"{{"resultData":[{}]}}"#, items.join(","));
+        assert_eq!(
+            parse_volume_list(&body, "comic")
+                .expect("full page parses")
+                .len(),
+            NAVER_ROWS_PER_PAGE
+        );
     }
 
     #[test]
@@ -519,12 +547,12 @@ mod tests {
         // name in `subProductName`; comics keep `volumnNameText` first.
         let body = r#"{"resultData":[{"volumnNameText":"1화",
             "subProductName":"Episode 1. 유료 서비스 시작","productName":"제목"}]}"#;
-        let novel = parse_volume_list(body, "novel");
+        let novel = parse_volume_list(body, "novel").expect("page parses");
         assert_eq!(
             novel[0].title.as_deref(),
             Some("Episode 1. 유료 서비스 시작")
         );
-        let comic = parse_volume_list(body, "comic");
+        let comic = parse_volume_list(body, "comic").expect("page parses");
         assert_eq!(comic[0].title.as_deref(), Some("1화"));
     }
 
