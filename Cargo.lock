@@ -3,18 +3,6 @@
 version = 4
 
 [[package]]
-name = "ahash"
-version = "0.8.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a15f179cd60c4584b8a8c596927aadc462e27f2ca70c04e0071964a73ba7a75"
-dependencies = [
- "cfg-if",
- "once_cell",
- "version_check",
- "zerocopy",
-]
-
-[[package]]
 name = "aho-corasick"
 version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1735,7 +1723,7 @@ dependencies = [
  "encoding_rs",
  "envy",
  "hex",
- "metrics 0.23.1",
+ "metrics",
  "metrics-exporter-prometheus",
  "regex",
  "reqwest",
@@ -1766,16 +1754,6 @@ checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 
 [[package]]
 name = "metrics"
-version = "0.23.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3045b4193fbdc5b5681f32f11070da9be3609f189a79f3390706d42587f46bb5"
-dependencies = [
- "ahash",
- "portable-atomic",
-]
-
-[[package]]
-name = "metrics"
 version = "0.24.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "89550ee9f79e88fef3119de263694973a8adb26c21d75322164fb8c493039fe2"
@@ -1797,7 +1775,7 @@ dependencies = [
  "hyper-util",
  "indexmap 2.14.0",
  "ipnet",
- "metrics 0.24.6",
+ "metrics",
  "metrics-util",
  "quanta",
  "thiserror 1.0.69",
@@ -1814,7 +1792,7 @@ dependencies = [
  "crossbeam-epoch",
  "crossbeam-utils",
  "hashbrown 0.15.5",
- "metrics 0.24.6",
+ "metrics",
  "quanta",
  "rand 0.9.4",
  "rand_xoshiro",

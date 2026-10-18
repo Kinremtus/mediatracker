@@ -1,4 +1,5 @@
 use axum::{
+    extract::MatchedPath,
     extract::Request,
     extract::State,
     http::{HeaderValue, StatusCode},
@@ -48,7 +49,14 @@ pub async fn metrics_middleware(
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
     let start = Instant::now();
     let method = req.method().to_string();
-    let path = req.uri().path().to_string();
+    // The route template (`/tmdb-image/{*path}`), never the raw path: a raw
+    // path label would grow the Prometheus registry without bound through a
+    // public endpoint (every unique URL = a new series) until the pod OOMs.
+    let path = req
+        .extensions()
+        .get::<MatchedPath>()
+        .map(|matched| matched.as_str().to_string())
+        .unwrap_or_else(|| "unmatched".to_string());
 
     let response = next.run(req).await;
 
@@ -62,4 +70,25 @@ pub async fn metrics_middleware(
         .record(duration.as_secs_f64());
 
     Ok(response)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The recorder and the `counter!` macros must come from the same
+    /// `metrics` crate. A semver split (0.23 in the app vs 0.24 inside the
+    /// exporter) leaves the macros writing into an unset recorder of the
+    /// other crate and `/metrics` silently empty — nothing fails, nothing
+    /// logs. This smoke test pins the versions together.
+    #[test]
+    fn counters_reach_the_exporter_registry() {
+        let handle = init_metrics();
+        counter!("audit_smoke_total", "path" => "/audit-smoke").increment(1);
+        let rendered = handle.render();
+        assert!(
+            rendered.contains("audit_smoke_total"),
+            "the counter is missing from the exporter registry:\n{rendered}"
+        );
+    }
 }
