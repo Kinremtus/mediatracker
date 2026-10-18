@@ -3,6 +3,7 @@ use serde::Deserialize;
 use url::Url;
 
 use crate::models::media_item::CreateMediaItem;
+use crate::services::external::url_free;
 
 const BASE_URL: &str = "https://api.themoviedb.org/3";
 
@@ -315,7 +316,12 @@ impl TmdbService {
             .append_pair("query", query)
             .append_pair("language", "ru-RU");
 
-        let response = self.client.get(url.as_str()).send().await?;
+        let response = self
+            .client
+            .get(url.as_str())
+            .send()
+            .await
+            .map_err(url_free)?;
         let results: serde_json::Value = response.json().await?;
 
         let items: Vec<CreateMediaItem> = results["results"]
@@ -357,7 +363,12 @@ impl TmdbService {
                 .append_pair("with_genres", &gid.to_string());
         }
 
-        let response = self.client.get(url.as_str()).send().await?;
+        let response = self
+            .client
+            .get(url.as_str())
+            .send()
+            .await
+            .map_err(url_free)?;
         let results: serde_json::Value = response.json().await?;
 
         let items: Vec<CreateMediaItem> = results["results"]
@@ -394,7 +405,12 @@ impl TmdbService {
                 .append_pair("with_genres", &gid.to_string());
         }
 
-        let response = self.client.get(url.as_str()).send().await?;
+        let response = self
+            .client
+            .get(url.as_str())
+            .send()
+            .await
+            .map_err(url_free)?;
         let results: serde_json::Value = response.json().await?;
 
         let items: Vec<CreateMediaItem> = results["results"]
@@ -429,7 +445,12 @@ impl TmdbService {
             .append_pair("api_key", &self.api_key)
             .append_pair("language", "ru-RU");
 
-        let response = self.client.get(url.as_str()).send().await?;
+        let response = self
+            .client
+            .get(url.as_str())
+            .send()
+            .await
+            .map_err(url_free)?;
         if response.status() == reqwest::StatusCode::NOT_FOUND {
             return Err(
                 crate::services::external::NotFoundError(format!("tmdb {tmdb_type} {id}")).into(),
@@ -445,7 +466,12 @@ impl TmdbService {
             .append_pair("api_key", &self.api_key)
             .append_pair("language", "ru-RU");
 
-        let response = self.client.get(url.as_str()).send().await?;
+        let response = self
+            .client
+            .get(url.as_str())
+            .send()
+            .await
+            .map_err(url_free)?;
         let details: TmdbDetails = response.json().await?;
         Ok(details.seasons)
     }
@@ -461,7 +487,12 @@ impl TmdbService {
             .append_pair("api_key", &self.api_key)
             .append_pair("language", "ru-RU");
 
-        let response = self.client.get(url.as_str()).send().await?;
+        let response = self
+            .client
+            .get(url.as_str())
+            .send()
+            .await
+            .map_err(url_free)?;
         if response.status() == reqwest::StatusCode::NOT_FOUND {
             return Err(crate::services::external::NotFoundError(format!("tmdb tv {id}")).into());
         }
@@ -482,7 +513,12 @@ impl TmdbService {
             .append_pair("api_key", &self.api_key)
             .append_pair("language", "ru-RU");
 
-        let response = self.client.get(url.as_str()).send().await?;
+        let response = self
+            .client
+            .get(url.as_str())
+            .send()
+            .await
+            .map_err(url_free)?;
         let detail: TmdbSeasonDetail = response.json().await?;
         Ok(detail)
     }

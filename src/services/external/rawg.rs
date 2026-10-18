@@ -3,7 +3,7 @@ use serde::Deserialize;
 use url::Url;
 
 use crate::models::media_item::CreateMediaItem;
-use crate::services::external::AdditionRow;
+use crate::services::external::{AdditionRow, url_free};
 
 const BASE_URL: &str = "https://api.rawg.io/api";
 
@@ -234,7 +234,12 @@ impl RawgService {
             .append_pair("search", query)
             .append_pair("page_size", "20");
 
-        let response = self.client.get(url.as_str()).send().await?;
+        let response = self
+            .client
+            .get(url.as_str())
+            .send()
+            .await
+            .map_err(url_free)?;
         let results: serde_json::Value = response.json().await?;
 
         let items: Vec<CreateMediaItem> = results["results"]
@@ -262,7 +267,12 @@ impl RawgService {
         let mut url = Url::parse(&format!("{}/games/{}", BASE_URL, id))?;
         url.query_pairs_mut().append_pair("key", &self.api_key);
 
-        let response = self.client.get(url.as_str()).send().await?;
+        let response = self
+            .client
+            .get(url.as_str())
+            .send()
+            .await
+            .map_err(url_free)?;
         if response.status() == reqwest::StatusCode::NOT_FOUND {
             return Err(crate::services::external::NotFoundError(format!("rawg {id}")).into());
         }
@@ -278,7 +288,12 @@ impl RawgService {
             .append_pair("key", &self.api_key)
             .append_pair("page_size", "40");
 
-        let response = self.client.get(url.as_str()).send().await?;
+        let response = self
+            .client
+            .get(url.as_str())
+            .send()
+            .await
+            .map_err(url_free)?;
         let results: serde_json::Value = response.json().await?;
         let items: Vec<RawgAddition> =
             serde_json::from_value(results["results"].clone()).unwrap_or_default();

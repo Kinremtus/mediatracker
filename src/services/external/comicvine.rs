@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 
 use crate::models::media_item::CreateMediaItem;
+use crate::services::external::url_free;
 
 const BASE_URL: &str = "https://comicvine.gamespot.com/api";
 const MIN_INTERVAL: Duration = Duration::from_secs(1);
@@ -127,7 +128,7 @@ impl ComicVineService {
             .append_pair("query", query)
             .append_pair("format", "json");
 
-        let resp = self.client.get(url).send().await?;
+        let resp = self.client.get(url).send().await.map_err(url_free)?;
         if resp.status() == reqwest::StatusCode::NOT_FOUND {
             return Err(
                 crate::services::external::NotFoundError(format!("comicvine {query}")).into(),
@@ -148,7 +149,7 @@ impl ComicVineService {
             .append_pair("api_key", &self.api_key)
             .append_pair("format", "json");
 
-        let resp = self.client.get(url).send().await?;
+        let resp = self.client.get(url).send().await.map_err(url_free)?;
         if resp.status() == reqwest::StatusCode::NOT_FOUND {
             return Err(crate::services::external::NotFoundError(format!("comicvine {id}")).into());
         }

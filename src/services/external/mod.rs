@@ -83,6 +83,14 @@ pub fn image_client() -> Result<reqwest::Client, reqwest::Error> {
         .build()
 }
 
+/// Strip the URL from a reqwest error before it can reach a log line or the
+/// UI: provider URLs carry API keys in the query (TMDB/RAWG/ComicVine/IGDB)
+/// and the Telegram bot token in the path, and reqwest's `Display` prints the
+/// full URL on any transport failure.
+pub fn url_free(error: reqwest::Error) -> reqwest::Error {
+    error.without_url()
+}
+
 /// Marker error: the provider explicitly reported the entity as missing
 /// (HTTP 404, or a structured "not found" payload). It carries the provider
 /// message so logs stay useful, but the card layer only needs to know the

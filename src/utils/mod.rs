@@ -14,6 +14,15 @@ pub fn sha256_hex(input: &str) -> String {
     hex::encode(hasher.finalize())
 }
 
+/// Escape the three characters Telegram's `parse_mode=HTML` treats as markup
+/// (`&`, `<`, `>`). Titles and other third-party strings must pass through
+/// this before they are interpolated into a message.
+pub fn escape_html(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
 pub fn clean_description(text: Option<String>) -> Option<String> {
     let raw = text?;
     let trimmed = raw.trim();
@@ -294,6 +303,15 @@ mod tests {
             clean_description(input).as_deref(),
             Some("Line 1.\n\nLine 2.")
         );
+    }
+
+    #[test]
+    fn escape_html_covers_telegram_markup_chars() {
+        assert_eq!(escape_html("a & b"), "a &amp; b");
+        assert_eq!(escape_html("<b>x</b>"), "&lt;b&gt;x&lt;/b&gt;");
+        assert_eq!(escape_html("plain"), "plain");
+        // Ampersands must not double-escape into invalid entities.
+        assert_eq!(escape_html("&lt;"), "&amp;lt;");
     }
 
     #[test]

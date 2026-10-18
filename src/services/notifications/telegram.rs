@@ -44,7 +44,8 @@ impl TelegramNotifier {
                 "parse_mode": "HTML",
             }))
             .send()
-            .await?;
+            .await
+            .map_err(crate::services::external::url_free)?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -67,7 +68,13 @@ impl TelegramNotifier {
         } else {
             format!("серия {episode}")
         };
-        let text = format!("🎬 <b>Новая серия!</b>\n\n{} — {}", title, label);
+        // The title is third-party data and this message goes out with
+        // `parse_mode=HTML`: escape it so a title cannot inject markup.
+        let text = format!(
+            "🎬 <b>Новая серия!</b>\n\n{} — {}",
+            crate::utils::escape_html(title),
+            label
+        );
         self.send_message(chat_id, &text).await
     }
 

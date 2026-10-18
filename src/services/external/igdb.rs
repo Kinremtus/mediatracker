@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 
 use crate::models::media_item::CreateMediaItem;
-use crate::services::external::AdditionRow;
+use crate::services::external::{AdditionRow, url_free};
 
 const BASE_URL: &str = "https://api.igdb.com/v4";
 const TOKEN_URL: &str = "https://id.twitch.tv/oauth2/token";
@@ -306,7 +306,8 @@ impl IgdbService {
             .client
             .post(url.as_str())
             .send()
-            .await?
+            .await
+            .map_err(url_free)?
             .json::<TwitchTokenResponse>()
             .await?;
 
