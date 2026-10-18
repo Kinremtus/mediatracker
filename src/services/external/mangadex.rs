@@ -18,11 +18,12 @@ impl Default for MangaDexService {
 
 impl MangaDexService {
     pub fn new() -> Self {
-        let client = Client::builder()
-            .user_agent("MediaTracker/1.0 (+https://github.com/Kinremtus/mediatracker)")
-            .build()
-            .unwrap_or_else(|_| Client::new());
-        Self { client }
+        // Shared client with connect/request timeouts: a hung MangaDex
+        // connection must not pin a request-path worker (or the refresh
+        // cycle) forever.
+        Self {
+            client: crate::services::external::http_client(),
+        }
     }
 
     /// Search manga by title to find MangaDex UUID.

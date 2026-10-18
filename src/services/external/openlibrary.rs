@@ -241,12 +241,11 @@ impl Default for OpenLibraryService {
 
 impl OpenLibraryService {
     pub fn new() -> Self {
-        let client = Client::builder()
-            .user_agent("MediaTracker/0.1 (https://github.com/Kinremtus/mediatracker)")
-            .build()
-            .expect("Failed to create HTTP client");
-
-        Self { client }
+        // Shared client with connect/request timeouts (the old builder had
+        // none, so a hung upstream could pin the caller forever).
+        Self {
+            client: crate::services::external::http_client(),
+        }
     }
 
     pub async fn search(&self, query: &str) -> Result<Vec<CreateMediaItem>, anyhow::Error> {

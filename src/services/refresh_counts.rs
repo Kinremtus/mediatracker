@@ -25,6 +25,11 @@ use crate::services::external::tmdb::TmdbService;
 
 const REFRESH_INTERVAL: Duration = Duration::from_secs(6 * 3600);
 const LOCK_ID: i64 = 42;
+/// Hard ceiling on one refresh cycle. A provider that accepts the connection
+/// and never answers must not hold the advisory lock forever: while the lock
+/// is held, the release-schedule/notification cycles of every replica skip
+/// their passes.
+const CYCLE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct MediaItemRow {
@@ -99,7 +104,13 @@ async fn try_refresh(ctx: &RefreshCtx) -> Result<(), anyhow::Error> {
         return Ok(());
     }
 
-    let result = do_refresh(ctx).await;
+    let result = match tokio::time::timeout(CYCLE_TIMEOUT, do_refresh(ctx)).await {
+        Ok(result) => result,
+        Err(_) => {
+            warn!("refresh_counts: cycle timed out, releasing the lock");
+            Ok(())
+        }
+    };
 
     if let Err(e) = sqlx::query("SELECT pg_advisory_unlock($1)")
         .bind(LOCK_ID)

@@ -16,7 +16,7 @@ pub struct KakaoProvider {
 impl KakaoProvider {
     pub fn new() -> Self {
         Self {
-            client: reqwest::Client::new(),
+            client: crate::services::external::http_client(),
         }
     }
 }
