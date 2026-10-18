@@ -174,11 +174,31 @@ fn parse_mu_status(raw: Option<String>) -> (Option<String>, Option<i32>) {
 fn extract_first_volume_count(s: &str) -> Option<i32> {
     let idx = s.find("Volume")?;
     let before = s[..idx].trim_end();
-    let num_start = before
-        .rfind(|c: char| !c.is_ascii_digit())
-        .map(|i| i + 1)
-        .unwrap_or(0);
-    before[num_start..].parse().ok()
+    // Take the trailing run of digits. `trim_end_matches` walks characters,
+    // so a multibyte char before the digits (`第3巻`) can no longer land the
+    // slice inside a char boundary — the old `rfind(..).map(|i| i + 1)` did
+    // exactly that and panicked in release builds.
+    let digits = &before[before
+        .trim_end_matches(|c: char| digit_value(c).is_some())
+        .len()..];
+    if digits.is_empty() {
+        return None;
+    }
+    let mut value: i32 = 0;
+    for c in digits.chars() {
+        value = value.checked_mul(10)?.checked_add(digit_value(c)?)?;
+    }
+    Some(value)
+}
+
+/// Decimal digit value: ASCII and full-width digits (the forms a status can
+/// realistically use); everything else is not a digit.
+fn digit_value(c: char) -> Option<i32> {
+    match c {
+        '0'..='9' => Some(c as i32 - '0' as i32),
+        '０'..='９' => Some(c as i32 - '０' as i32),
+        _ => None,
+    }
 }
 
 fn extract_parenthesized_after_volumes(s: &str) -> Option<String> {
@@ -505,6 +525,18 @@ mod tests {
         let (s, v) = parse_mu_status(Some("4 Volumes (Complete)".to_string()));
         assert_eq!(s.as_deref(), Some("Complete"));
         assert_eq!(v, Some(4));
+    }
+
+    #[test]
+    fn volume_count_survives_multibyte_prefixes() {
+        // Regression: `rfind(..).map(|i| i + 1)` walked one byte into the
+        // multibyte char before the digits and panicked in release builds.
+        assert_eq!(extract_first_volume_count("第3巻 Volume (Ongoing)"), None);
+        // Full-width digits go through `char::to_digit`.
+        assert_eq!(extract_first_volume_count("３ Volume (Ongoing)"), Some(3));
+        assert_eq!(extract_first_volume_count("5 Volumes (Ongoing)"), Some(5));
+        assert_eq!(extract_first_volume_count("Volume (Ongoing)"), None);
+        assert_eq!(extract_first_volume_count(""), None);
     }
 
     #[test]

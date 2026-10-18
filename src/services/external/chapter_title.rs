@@ -450,7 +450,9 @@ fn parse_word_number(s: &str) -> Option<ShortTitle> {
         };
         return (1..=99)
             .contains(&frac)
-            .then_some(ShortTitle::Fractional(value * 100 + frac));
+            // `then`, not `then_some`: the sum must not be computed when the
+            // fraction is out of range (it overflows on a hostile title).
+            .then(|| ShortTitle::Fractional(value * 100 + frac));
     }
     if after
         .chars()
@@ -806,6 +808,15 @@ mod tests {
         assert_eq!(circled_number("第１話"), None);
         assert_eq!(circled_number("①"), Some(1));
         assert_eq!(circled_number("x②"), Some(2));
+    }
+
+    #[test]
+    fn fractional_word_number_rejects_out_of_range_fraction_without_overflow() {
+        // Regression (same shape as `circled_number`): `then_some` evaluated
+        // `value * 100 + frac` eagerly and overflowed in debug builds on a
+        // hostile fraction; out-of-range fractions must be rejected, not
+        // computed.
+        assert_eq!(parse_word_number("RIDE.9999.2147483647"), None);
     }
 
     #[test]
