@@ -14,15 +14,13 @@
 //! as "no official match".
 
 use crate::services::external::chapter_title::{self, EpisodeRow};
-use crate::services::external::official_meta::{self, ChapterMeta, OfficialMeta};
+use crate::services::external::official_meta::{self, ChapterMeta, OfficialMeta, get_text};
 use crate::services::official_types::{HitExtra, OfficialHit};
 
 const CATALOG_BASE: &str = "https://www.kanman.com/api/getComicList/";
 const SERIES_BASE: &str = "https://www.kanman.com";
 
-/// Browser-like User-Agent; the site rejects obvious bot clients.
-const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
-                  (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+const UA: &str = official_meta::BROWSER_UA;
 
 /// Rows read from one series page (a hostile answer must not blow up memory).
 const CHAPTER_CAP: usize = 5000;
@@ -211,17 +209,6 @@ async fn get_catalog(client: &reqwest::Client) -> anyhow::Result<String> {
         .header(reqwest::header::REFERER, "https://www.kanman.com/sort/")
         .header("X-Requested-With", "XMLHttpRequest")
         .header(reqwest::header::ACCEPT, "application/json")
-        .send()
-        .await?
-        .error_for_status()?;
-    official_meta::body_capped(response, official_meta::MAX_DETAIL_BYTES).await
-}
-
-/// GET a page and read the body with a hard size cap.
-async fn get_text(client: &reqwest::Client, url: url::Url) -> anyhow::Result<String> {
-    let response = client
-        .get(url)
-        .header(reqwest::header::USER_AGENT, UA)
         .send()
         .await?
         .error_for_status()?;

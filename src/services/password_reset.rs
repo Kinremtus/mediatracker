@@ -118,11 +118,17 @@ impl PasswordResetService {
             return Err(ResetError::PasswordMismatch);
         }
 
-        let salt = SaltString::generate(&mut OsRng);
-        let password_hash = Argon2::default()
-            .hash_password(new_password.as_bytes(), &salt)
-            .map_err(|_| ResetError::HashError)?
-            .to_string();
+        // Argon2 is CPU-bound: hash on the blocking pool.
+        let password = new_password.to_string();
+        let password_hash = tokio::task::spawn_blocking(move || {
+            let salt = SaltString::generate(&mut OsRng);
+            Argon2::default()
+                .hash_password(password.as_bytes(), &salt)
+                .map(|hash| hash.to_string())
+        })
+        .await
+        .map_err(|_| ResetError::HashError)?
+        .map_err(|_| ResetError::HashError)?;
 
         let mut tx = self.db.begin().await?;
         sqlx::query("UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2")

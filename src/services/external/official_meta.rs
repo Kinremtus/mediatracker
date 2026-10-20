@@ -182,6 +182,25 @@ pub fn is_safe_path_id(id: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
 
+/// Browser-like User-Agent used by every official-source fetcher: several
+/// sites reject obvious bot clients.
+pub const BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
+                             (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+
+/// GET a JSON/HTML page with the shared browser UA and a hard body cap
+/// ([`MAX_DETAIL_BYTES`]). The single copy of what used to be seven identical
+/// per-parser helpers.
+pub async fn get_text(client: &reqwest::Client, url: url::Url) -> anyhow::Result<String> {
+    let response = client
+        .get(url)
+        .header(reqwest::header::USER_AGENT, BROWSER_UA)
+        .header(reqwest::header::ACCEPT, "application/json, text/html")
+        .send()
+        .await?
+        .error_for_status()?;
+    body_capped(response, MAX_DETAIL_BYTES).await
+}
+
 /// Read a response body with a hard size cap. `content_length` is checked
 /// before buffering, then every chunk is counted as it arrives — a chunked
 /// response (no `content_length`) is cut off mid-stream instead of being

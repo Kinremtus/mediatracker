@@ -46,11 +46,6 @@ pub fn is_known_source(source: &str) -> bool {
     KNOWN_SOURCES.contains(&source)
 }
 
-/// All whitelisted sources, as owned static strs.
-pub fn known_sources() -> Vec<&'static str> {
-    KNOWN_SOURCES.to_vec()
-}
-
 /// One binding row, as rendered in the drawer panel.
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
 pub struct SourceId {

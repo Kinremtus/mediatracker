@@ -380,57 +380,97 @@ fn strip_label<'a>(line: &'a str, label: &str) -> Option<&'a str> {
     Some(value)
 }
 
+/// Shared display helpers: `MediaItem`, `MediaItemSlim` and `CreateMediaItem`
+/// carry the same fields, so the label/score/count logic lives once here and
+/// the three impls delegate to it.
+fn media_type_display_value(media_type: &str) -> &'static str {
+    match media_type {
+        "anime" => "Anime",
+        "manga" => "Manga",
+        "manhwa" => "Manhwa",
+        "manhua" => "Manhua",
+        "novel" => "Novel",
+        "movie" => "Movie",
+        "series" => "TV Series",
+        "dramas" => "Drama",
+        "cartoons" => "Cartoon",
+        "animated-movies" => "Animated Movie",
+        "game" => "Game",
+        "book" => "Book",
+        "other-comics" => "Other Comics",
+        "comic" => "Comic",
+        _ => "Other",
+    }
+}
+
+fn primary_label_value<'a>(format_type: Option<&'a str>, media_type: &str) -> &'a str {
+    format_type.unwrap_or_else(|| media_type_display_value(media_type))
+}
+
+fn score_class_value(score: Option<f64>) -> &'static str {
+    match score {
+        Some(s) if s <= 3.0 => "score-1",
+        Some(s) if s <= 5.0 => "score-4",
+        Some(s) if s <= 7.0 => "score-6",
+        Some(s) if s <= 9.0 => "score-8",
+        Some(_) => "score-10",
+        None => "",
+    }
+}
+
+fn total_count_value(
+    media_type: &str,
+    episodes: Option<i32>,
+    chapters: Option<i32>,
+    pages: Option<i32>,
+    playtime_hours: Option<i32>,
+    runtime_minutes: Option<i32>,
+) -> Option<i32> {
+    match media_type {
+        "manga" | "manhwa" | "manhua" | "novel" | "other-comics" | "comic" => chapters,
+        "anime" | "series" | "cartoons" | "animated-movies" => episodes,
+        "book" => pages,
+        "game" => playtime_hours,
+        "movie" | "dramas" => runtime_minutes,
+        _ => episodes.or(chapters),
+    }
+}
+
+fn progress_unit_ru_value(media_type: &str) -> &'static str {
+    match media_type {
+        "manga" | "manhwa" | "manhua" | "novel" | "other-comics" => "гл.",
+        "comic" => "вып.",
+        "anime" | "series" | "cartoons" | "animated-movies" => "эп.",
+        "book" => "стр.",
+        "game" => "ч.",
+        "movie" | "dramas" => "мин.",
+        _ => "ед.",
+    }
+}
+
+fn display_year_value(year: Option<i16>, aired_from: Option<chrono::NaiveDate>) -> Option<i16> {
+    year.or_else(|| aired_from.and_then(|d| d.format("%Y").to_string().parse::<i16>().ok()))
+}
+
 impl MediaItem {
     pub fn score_class(&self) -> &'static str {
-        match self.score {
-            Some(s) if s <= 3.0 => "score-1",
-            Some(s) if s <= 5.0 => "score-4",
-            Some(s) if s <= 7.0 => "score-6",
-            Some(s) if s <= 9.0 => "score-8",
-            Some(_) => "score-10",
-            None => "",
-        }
-    }
-
-    pub fn status_class(&self) -> &'static str {
-        status_release_class(self.status.as_deref())
+        score_class_value(self.score)
     }
 
     /// Human-readable label для `media_type` (slug) — fallback когда `format_type` пуст.
     pub fn media_type_display(&self) -> &'static str {
-        match self.media_type.as_str() {
-            "anime" => "Anime",
-            "manga" => "Manga",
-            "manhwa" => "Manhwa",
-            "manhua" => "Manhua",
-            "novel" => "Novel",
-            "movie" => "Movie",
-            "series" => "TV Series",
-            "dramas" => "Drama",
-            "cartoons" => "Cartoon",
-            "animated-movies" => "Animated Movie",
-            "game" => "Game",
-            "book" => "Book",
-            "other-comics" => "Other Comics",
-            "comic" => "Comic",
-            _ => "Other",
-        }
+        media_type_display_value(&self.media_type)
     }
 
     /// Лейбл для UI: `format_type` (от провайдера) → fallback на `media_type_display()`.
     pub fn primary_label(&self) -> &str {
-        self.format_type
-            .as_deref()
-            .unwrap_or_else(|| self.media_type_display())
+        primary_label_value(self.format_type.as_deref(), &self.media_type)
     }
 
     /// Год для UI: `year` от API → fallback на `aired_from.year` (для Movie,
     /// где MAL/Shikimori не возвращают `year`).
     pub fn display_year(&self) -> Option<i16> {
-        self.year.or_else(|| {
-            self.aired_from
-                .and_then(|d| d.format("%Y").to_string().parse::<i16>().ok())
-        })
+        display_year_value(self.year, self.aired_from)
     }
 
     pub fn derived_status_label(&self) -> Option<&'static str> {
@@ -509,58 +549,29 @@ impl From<MediaItem> for CreateMediaItem {
 
 impl MediaItemSlim {
     pub fn score_class(&self) -> &'static str {
-        match self.score {
-            Some(s) if s <= 3.0 => "score-1",
-            Some(s) if s <= 5.0 => "score-4",
-            Some(s) if s <= 7.0 => "score-6",
-            Some(s) if s <= 9.0 => "score-8",
-            Some(_) => "score-10",
-            None => "",
-        }
-    }
-
-    pub fn status_class(&self) -> &'static str {
-        status_release_class(self.status.as_deref())
+        score_class_value(self.score)
     }
 
     /// Возвращает "total count" для прогресса в зависимости от media_type.
     /// Используется в UI для подписи "X / Y (эпизодов/глав/страниц/часов)".
     pub fn total_count(&self) -> Option<i32> {
-        match self.media_type.as_str() {
-            "manga" | "manhwa" | "manhua" | "novel" | "other-comics" | "comic" => self.chapters,
-            "anime" | "series" | "cartoons" | "animated-movies" => self.episodes,
-            "book" => self.pages,
-            "game" => self.playtime_hours,
-            "movie" | "dramas" => self.runtime_minutes,
-            _ => self.episodes.or(self.chapters),
-        }
+        total_count_value(
+            &self.media_type,
+            self.episodes,
+            self.chapters,
+            self.pages,
+            self.playtime_hours,
+            self.runtime_minutes,
+        )
     }
 
     /// Подпись единицы прогресса (для UI на русском).
     pub fn progress_unit_ru(&self) -> &'static str {
-        match self.media_type.as_str() {
-            "manga" | "manhwa" | "manhua" | "novel" | "other-comics" => "гл.",
-            "comic" => "вып.",
-            "anime" | "series" | "cartoons" | "animated-movies" => "эп.",
-            "book" => "стр.",
-            "game" => "ч.",
-            "movie" | "dramas" => "мин.",
-            _ => "ед.",
-        }
-    }
-
-    /// true если progress достиг total.
-    pub fn progress_complete(&self, progress: i32) -> bool {
-        self.total_count().map(|t| progress >= t).unwrap_or(false)
+        progress_unit_ru_value(&self.media_type)
     }
 }
 
-impl CreateMediaItem {
-    /// true если progress достиг total (по ссылке).
-    pub fn progress_complete_ref(&self, progress: &i32) -> bool {
-        self.total_count().map(|t| *progress >= t).unwrap_or(false)
-    }
-}
+impl CreateMediaItem {}
 
 impl MediaItemSlim {
     /// true если progress достиг total (по ссылке).
@@ -570,134 +581,53 @@ impl MediaItemSlim {
 
     /// Human-readable label для `media_type` (slug) — fallback когда `format_type` пуст.
     pub fn media_type_display(&self) -> &'static str {
-        match self.media_type.as_str() {
-            "anime" => "Anime",
-            "manga" => "Manga",
-            "manhwa" => "Manhwa",
-            "manhua" => "Manhua",
-            "novel" => "Novel",
-            "movie" => "Movie",
-            "series" => "TV Series",
-            "dramas" => "Drama",
-            "cartoons" => "Cartoon",
-            "animated-movies" => "Animated Movie",
-            "game" => "Game",
-            "book" => "Book",
-            "other-comics" => "Other Comics",
-            "comic" => "Comic",
-            _ => "Other",
-        }
+        media_type_display_value(&self.media_type)
     }
 
     /// Лейбл для UI: `format_type` (от провайдера) → fallback на `media_type_display()`.
     pub fn primary_label(&self) -> &str {
-        self.format_type
-            .as_deref()
-            .unwrap_or_else(|| self.media_type_display())
+        primary_label_value(self.format_type.as_deref(), &self.media_type)
     }
 }
 
-impl MediaItemSlim {
-    /// Форматирует длительность (runtime_minutes) в "Хч Хмин" / "Х мин".
-    pub fn runtime_human(&self) -> String {
-        match self.runtime_minutes {
-            Some(m) if m >= 60 => format!("{}ч {}мин", m / 60, m % 60),
-            Some(m) => format!("{} мин", m),
-            None => String::new(),
-        }
-    }
-}
+impl MediaItemSlim {}
 
 impl CreateMediaItem {
     /// Human-readable label для `media_type` (slug) — fallback когда `format_type` пуст.
     pub fn media_type_display(&self) -> &'static str {
-        match self.media_type.as_str() {
-            "anime" => "Anime",
-            "manga" => "Manga",
-            "manhwa" => "Manhwa",
-            "manhua" => "Manhua",
-            "novel" => "Novel",
-            "movie" => "Movie",
-            "series" => "TV Series",
-            "dramas" => "Drama",
-            "cartoons" => "Cartoon",
-            "animated-movies" => "Animated Movie",
-            "game" => "Game",
-            "book" => "Book",
-            "other-comics" => "Other Comics",
-            "comic" => "Comic",
-            _ => "Other",
-        }
+        media_type_display_value(&self.media_type)
     }
 
     /// Лейбл для UI: `format_type` (от провайдера) → fallback на `media_type_display()`.
     pub fn primary_label(&self) -> &str {
-        self.format_type
-            .as_deref()
-            .unwrap_or_else(|| self.media_type_display())
+        primary_label_value(self.format_type.as_deref(), &self.media_type)
     }
 
     /// Год для UI: `year` от API → fallback на `aired_from.year` (для Movie,
     /// где MAL/Shikimori не возвращают `year`).
     pub fn display_year(&self) -> Option<i16> {
-        self.year.or_else(|| {
-            self.aired_from
-                .and_then(|d| d.format("%Y").to_string().parse::<i16>().ok())
-        })
+        display_year_value(self.year, self.aired_from)
     }
 
     pub fn score_class(&self) -> &'static str {
-        match self.score {
-            Some(s) if s <= 3.0 => "score-1",
-            Some(s) if s <= 5.0 => "score-4",
-            Some(s) if s <= 7.0 => "score-6",
-            Some(s) if s <= 9.0 => "score-8",
-            Some(_) => "score-10",
-            None => "",
-        }
+        score_class_value(self.score)
     }
 
     /// Возвращает "total count" — см. MediaItemSlim.
     pub fn total_count(&self) -> Option<i32> {
-        match self.media_type.as_str() {
-            "manga" | "manhwa" | "manhua" | "novel" | "other-comics" | "comic" => self.chapters,
-            "anime" | "series" | "cartoons" | "animated-movies" => self.episodes,
-            "book" => self.pages,
-            "game" => self.playtime_hours,
-            "movie" | "dramas" => self.runtime_minutes,
-            _ => self.episodes.or(self.chapters),
-        }
-    }
-
-    /// true если progress достиг total.
-    pub fn progress_complete(&self, progress: i32) -> bool {
-        self.total_count().map(|t| progress >= t).unwrap_or(false)
+        total_count_value(
+            &self.media_type,
+            self.episodes,
+            self.chapters,
+            self.pages,
+            self.playtime_hours,
+            self.runtime_minutes,
+        )
     }
 
     /// Подпись единицы прогресса (для UI на русском).
     pub fn progress_unit_ru(&self) -> &'static str {
-        match self.media_type.as_str() {
-            "manga" | "manhwa" | "manhua" | "novel" | "other-comics" => "гл.",
-            "comic" => "вып.",
-            "anime" | "series" | "cartoons" | "animated-movies" => "эп.",
-            "book" => "стр.",
-            "game" => "ч.",
-            "movie" | "dramas" => "мин.",
-            _ => "ед.",
-        }
-    }
-
-    /// Форматирует длительность (runtime_minutes) в "Хч Хмин" / "Х мин".
-    pub fn runtime_human(&self) -> String {
-        match self.runtime_minutes {
-            Some(m) if m >= 60 => format!("{}ч {}мин", m / 60, m % 60),
-            Some(m) => format!("{} мин", m),
-            None => String::new(),
-        }
-    }
-
-    pub fn status_class(&self) -> &'static str {
-        status_release_class(self.status.as_deref())
+        progress_unit_ru_value(&self.media_type)
     }
 
     pub fn derived_status_label(&self) -> Option<&'static str> {

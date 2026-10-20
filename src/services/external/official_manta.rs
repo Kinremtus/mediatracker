@@ -13,15 +13,11 @@
 use chrono::NaiveDate;
 
 use crate::services::external::chapter_title;
-use crate::services::external::official_meta::{self, ChapterMeta, OfficialMeta};
+use crate::services::external::official_meta::{self, ChapterMeta, OfficialMeta, get_text};
 use crate::services::official_types::{HitExtra, OfficialHit};
 
 const SEARCH_BASE: &str = "https://manta.net/manta/v1/search/series";
 const SERIES_BASE: &str = "https://manta.net/en/series";
-
-/// Browser-like User-Agent; the site rejects obvious bot clients.
-const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
-                  (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
 /// Defensive cap on one search answer.
 const SEARCH_MAX_HITS: usize = 50;
@@ -247,18 +243,6 @@ pub async fn fetch_meta(client: &reqwest::Client, source_id: &str) -> anyhow::Re
         chapters,
         ..OfficialMeta::default()
     })
-}
-
-/// GET a page and read the body with a hard size cap.
-async fn get_text(client: &reqwest::Client, url: url::Url) -> anyhow::Result<String> {
-    let response = client
-        .get(url)
-        .header(reqwest::header::USER_AGENT, UA)
-        .header(reqwest::header::ACCEPT, "application/json, text/html")
-        .send()
-        .await?
-        .error_for_status()?;
-    official_meta::body_capped(response, official_meta::MAX_DETAIL_BYTES).await
 }
 
 #[cfg(test)]

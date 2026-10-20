@@ -41,13 +41,18 @@ impl AuthService {
             return Err(anyhow::anyhow!("Username or email already exists"));
         }
 
-        // Hash password
-        let salt = SaltString::generate(&mut OsRng);
-        let argon2 = Argon2::default();
-        let password_hash = argon2
-            .hash_password(data.password.as_bytes(), &salt)
-            .map_err(|e| anyhow::anyhow!("Failed to hash password: {}", e))?
-            .to_string();
+        // Argon2 is CPU-bound (~100 ms): hash on the blocking pool instead of
+        // stalling the async executor under a login/registration burst.
+        let password = data.password.clone();
+        let password_hash = tokio::task::spawn_blocking(move || {
+            let salt = SaltString::generate(&mut OsRng);
+            Argon2::default()
+                .hash_password(password.as_bytes(), &salt)
+                .map(|hash| hash.to_string())
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("Password hashing task failed: {}", e))?
+        .map_err(|e| anyhow::anyhow!("Failed to hash password: {}", e))?;
 
         // Insert user
         let user = sqlx::query_as::<_, User>(
@@ -87,13 +92,18 @@ impl AuthService {
             None => return Err(anyhow::anyhow!("Invalid credentials")),
         };
 
-        // Verify password
-        let parsed_hash = PasswordHash::new(&user.password_hash)
-            .map_err(|e| anyhow::anyhow!("Failed to parse password hash: {}", e))?;
-
-        Argon2::default()
-            .verify_password(password.as_bytes(), &parsed_hash)
-            .map_err(|_| anyhow::anyhow!("Invalid credentials"))?;
+        // Verify password (Argon2 is CPU-bound: keep it off the executor).
+        let hash = user.password_hash.clone();
+        let password = password.to_string();
+        tokio::task::spawn_blocking(move || {
+            let parsed = PasswordHash::new(&hash)
+                .map_err(|e| anyhow::anyhow!("Failed to parse password hash: {}", e))?;
+            Argon2::default()
+                .verify_password(password.as_bytes(), &parsed)
+                .map_err(|_| anyhow::anyhow!("Invalid credentials"))
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("Password verify task failed: {}", e))??;
 
         // Create session
         let token = Uuid::new_v4().to_string();

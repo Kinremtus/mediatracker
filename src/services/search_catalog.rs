@@ -118,6 +118,13 @@ pub async fn find_item(
 }
 
 /// Persist one live answer: upsert every hit and record the query as fresh.
+///
+/// Row identity is `(provider, external_id)` (migration 030): a provider id
+/// denotes one work, so `media_type` is refreshed as display metadata on each
+/// upsert instead of being part of the key. A type-scoped lookup can therefore
+/// miss an item last seen under a different type — accepted: providers
+/// classify an id once in practice, and the next same-type search re-upserts
+/// the row.
 /// An empty answer is not recorded (see the module docs). A failed row is
 /// logged and skipped — the catalog must not lose the whole answer because one
 /// payload could not be serialized.
