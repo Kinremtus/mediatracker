@@ -1056,25 +1056,29 @@ pub async fn get_chapters(
     {
         (provider.clone(), external_id.clone())
     } else {
-        // Attempt to find the mangaupdates series_id via media_items.
-        let lookup: Option<(String, String)> = sqlx::query_as(
-            r#"
-                SELECT provider, external_id FROM media_items
-                WHERE id IN (
-                    SELECT mi2.id FROM media_items mi2
-                    WHERE mi2.provider = 'mangaupdates'
-                      AND mi2.title ILIKE (
-                          SELECT title FROM media_items WHERE provider = $1 AND external_id = $2
-                      )
-                    LIMIT 1
-                )
-                "#,
+        // Attempt to find the mangaupdates series_id via media_items. The
+        // title is matched case-insensitively, with LIKE metacharacters
+        // escaped: a title containing `%` or `_` must not match an unrelated
+        // series.
+        let twin_title: Option<String> = sqlx::query_scalar(
+            "SELECT title FROM media_items WHERE provider = $1 AND external_id = $2",
         )
         .bind(&provider)
         .bind(&external_id)
         .fetch_optional(&state.db)
         .await
         .unwrap_or(None);
+        let lookup: Option<(String, String)> = match twin_title {
+            Some(title) => sqlx::query_as(
+                "SELECT provider, external_id FROM media_items \
+                 WHERE provider = 'mangaupdates' AND title ILIKE $1 LIMIT 1",
+            )
+            .bind(crate::utils::escape_like(&title))
+            .fetch_optional(&state.db)
+            .await
+            .unwrap_or(None),
+            None => None,
+        };
         match lookup {
             Some((p, eid)) => (p, eid),
             None => ("mangaupdates".to_string(), external_id.clone()),

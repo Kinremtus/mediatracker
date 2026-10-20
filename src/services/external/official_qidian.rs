@@ -22,6 +22,10 @@ const UA: &str = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 \
 
 /// GET `https://m.qidian.com/book/{id}/catalog/` (mobile; PC → anti-bot).
 pub async fn fetch_meta(client: &reqwest::Client, book_id: &str) -> anyhow::Result<OfficialMeta> {
+    // The bound id lands in a URL path: digits only.
+    if !crate::services::external::official_meta::is_digit_id(book_id) {
+        return Ok(OfficialMeta::default());
+    }
     let url = format!("https://m.qidian.com/book/{book_id}/catalog/");
     let resp = client
         .get(&url)
@@ -243,5 +247,15 @@ mod tests {
         assert!(parse_search("").is_empty());
         let m = parse_detail("");
         assert!(m.chapters.is_empty() && m.count.is_none());
+    }
+    #[tokio::test]
+    async fn unsafe_source_ids_are_rejected_without_network() {
+        let client = crate::services::external::http_client();
+        for id in ["", "../12", "12/3", "mc12"] {
+            let meta = fetch_meta(&client, id)
+                .await
+                .expect("a bad id must not hit the network");
+            assert!(meta.chapters.is_empty(), "id {id:?} must be rejected");
+        }
     }
 }

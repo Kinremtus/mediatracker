@@ -1,5 +1,8 @@
 <article class="calendar-card{% if event.is_past() %} is-past{% endif %}"
-         onclick="openMediaDrawer('{{ event.provider }}', '{{ event.external_id }}', '{{ event.media_type }}')">
+         data-provider="{{ event.provider }}"
+         data-external-id="{{ event.external_id }}"
+         data-media-type="{{ event.media_type }}"
+         onclick="openMediaDrawer(this.dataset.provider, this.dataset.externalId, this.dataset.mediaType)">
   <img class="calendar-card-poster"
        src="{{ event.poster_or_placeholder() }}"
        alt=""

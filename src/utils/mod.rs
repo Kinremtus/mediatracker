@@ -14,6 +14,14 @@ pub fn sha256_hex(input: &str) -> String {
     hex::encode(hasher.finalize())
 }
 
+/// Escape the LIKE/ILIKE metacharacters (`%`, `_`, `\`) so a value is matched
+/// literally. Postgres uses backslash as the default LIKE escape character.
+pub fn escape_like(text: &str) -> String {
+    text.replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+}
+
 /// Escape the three characters Telegram's `parse_mode=HTML` treats as markup
 /// (`&`, `<`, `>`). Titles and other third-party strings must pass through
 /// this before they are interpolated into a message.
@@ -303,6 +311,13 @@ mod tests {
             clean_description(input).as_deref(),
             Some("Line 1.\n\nLine 2.")
         );
+    }
+
+    #[test]
+    fn escape_like_neutralizes_wildcards() {
+        assert_eq!(escape_like("100%_real\\"), "100\\%\\_real\\\\");
+        assert_eq!(escape_like("plain title"), "plain title");
+        assert_eq!(escape_like("a%b_c"), "a\\%b\\_c");
     }
 
     #[test]

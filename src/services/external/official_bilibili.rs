@@ -46,6 +46,10 @@ const GUEST_COOKIE: &str = "buvid3=infoc";
 
 /// GET `https://manga.bilibili.com/m/detail/mc<id>` and parse the SSR page.
 pub async fn fetch_meta(client: &reqwest::Client, comic_id: &str) -> anyhow::Result<OfficialMeta> {
+    // The bound id lands in a URL path: digits only.
+    if !crate::services::external::official_meta::is_digit_id(comic_id) {
+        return Ok(OfficialMeta::default());
+    }
     let url = format!("https://manga.bilibili.com/m/detail/mc{comic_id}");
     let html = client
         .get(&url)
@@ -643,5 +647,15 @@ mod tests {
             cache_lookup(&cache, "q", now + CACHE_TTL + Duration::from_secs(1)),
             None
         );
+    }
+    #[tokio::test]
+    async fn unsafe_source_ids_are_rejected_without_network() {
+        let client = crate::services::external::http_client();
+        for id in ["", "../12", "12/3", "mc12"] {
+            let meta = fetch_meta(&client, id)
+                .await
+                .expect("a bad id must not hit the network");
+            assert!(meta.chapters.is_empty(), "id {id:?} must be rejected");
+        }
     }
 }

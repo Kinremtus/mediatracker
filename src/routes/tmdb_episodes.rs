@@ -32,6 +32,16 @@ struct TmdbSeasonHeaderTemplate {
     external_id: String,
 }
 
+/// Out-of-band wrapper for the season header: the id carries `external_id`,
+/// so it must be rendered through Askama (HTML-escaped) rather than `format!`.
+#[derive(Template)]
+#[template(path = "partials/_tmdb_season_header_oob.html")]
+struct TmdbSeasonHeaderOobTemplate {
+    external_id: String,
+    season_number: i32,
+    header_html: String,
+}
+
 #[derive(Template)]
 #[template(path = "partials/_tmdb_episode_list.html")]
 struct TmdbEpisodeListTemplate {
@@ -230,10 +240,16 @@ pub async fn post_tmdb_season_watched(
         String::new()
     });
 
-    let oob_html = format!(
-        r#"<div id="season-header-{}-{}" hx-swap-oob="true">{}</div>"#,
-        external_id, season_number, header_html
-    );
+    let oob_html = TmdbSeasonHeaderOobTemplate {
+        external_id: external_id.clone(),
+        season_number,
+        header_html,
+    }
+    .render()
+    .unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "tmdb: season header OOB render failed");
+        String::new()
+    });
 
     let mut trigger = serde_json::json!({
         "progressUpdated": {
@@ -425,10 +441,16 @@ pub async fn set_tmdb_episode_watched(
         tracing::warn!(error = %e, "tmdb: season header render failed");
         String::new()
     });
-    let oob_html = format!(
-        r#"<div id="season-header-{}-{}" hx-swap-oob="true">{}</div>"#,
-        external_id, season_number, header_html
-    );
+    let oob_html = TmdbSeasonHeaderOobTemplate {
+        external_id: external_id.clone(),
+        season_number,
+        header_html,
+    }
+    .render()
+    .unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "tmdb: season header OOB render failed");
+        String::new()
+    });
 
     let states = crate::services::tmdb_episodes::get_episode_states(
         &state.db,

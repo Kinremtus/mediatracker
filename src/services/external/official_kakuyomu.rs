@@ -21,6 +21,10 @@ const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
 
 /// GET `https://kakuyomu.jp/works/<work_id>` and parse the SSR page.
 pub async fn fetch_meta(client: &reqwest::Client, work_id: &str) -> anyhow::Result<OfficialMeta> {
+    // The bound id lands in a URL path: digits only.
+    if !crate::services::external::official_meta::is_digit_id(work_id) {
+        return Ok(OfficialMeta::default());
+    }
     let url = format!("https://kakuyomu.jp/works/{work_id}");
     let resp = client
         .get(&url)
@@ -230,5 +234,15 @@ mod tests {
         assert_eq!(hits[0].title, "The Title");
         assert_eq!(hits[1].id, "16817330663976699999");
         assert_eq!(hits[1].title, "Second");
+    }
+    #[tokio::test]
+    async fn unsafe_source_ids_are_rejected_without_network() {
+        let client = crate::services::external::http_client();
+        for id in ["", "../12", "12/3", "mc12"] {
+            let meta = fetch_meta(&client, id)
+                .await
+                .expect("a bad id must not hit the network");
+            assert!(meta.chapters.is_empty(), "id {id:?} must be rejected");
+        }
     }
 }

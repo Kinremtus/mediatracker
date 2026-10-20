@@ -13,6 +13,11 @@ const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
 const MAX_ROWS: usize = 20_000;
 
 pub async fn fetch_meta(client: &reqwest::Client, ncode: &str) -> anyhow::Result<OfficialMeta> {
+    // The bound id lands in a URL path: only the ncode alphabet may pass, so a
+    // crafted binding cannot steer the request to another path.
+    if !crate::services::external::official_meta::is_safe_path_id(ncode) {
+        return Ok(OfficialMeta::default());
+    }
     // Rows are numbered once, after every page is collected: numbering each
     // page on its own would restart at 1 and collide across pages.
     let mut raw: Vec<RawRow> = Vec::new();
@@ -127,5 +132,15 @@ mod tests {
         assert_eq!(parse_status("<div>連載中</div>").as_deref(), Some("連載中"));
         assert_eq!(parse_status("<div>完結</div>").as_deref(), Some("完結"));
         assert_eq!(parse_status("<div>x</div>"), None);
+    }
+    #[tokio::test]
+    async fn unsafe_source_ids_are_rejected_without_network() {
+        let client = crate::services::external::http_client();
+        for id in ["", "../x", "a/b", "n1?x=1"] {
+            let meta = fetch_meta(&client, id)
+                .await
+                .expect("a bad id must not hit the network");
+            assert!(meta.chapters.is_empty(), "id {id:?} must be rejected");
+        }
     }
 }
