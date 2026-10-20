@@ -1053,17 +1053,17 @@ pub async fn htmx_tracking_partial(
         if let Some(ref status) = params.status
             && !status.is_empty()
         {
-            query_parts.push(format!("status={}", status));
+            query_parts.push(format!("status={}", urlencoding::encode(status)));
         }
         if let Some(ref media_type) = params.media_type
             && !media_type.is_empty()
         {
-            query_parts.push(format!("type={}", media_type));
+            query_parts.push(format!("type={}", urlencoding::encode(media_type)));
         }
         if let Some(ref q) = params.q
             && !q.is_empty()
         {
-            query_parts.push(format!("q={}", q));
+            query_parts.push(format!("q={}", urlencoding::encode(q)));
         }
         if !query_parts.is_empty() {
             url.push('?');

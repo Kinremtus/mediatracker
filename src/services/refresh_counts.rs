@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
+use sqlx::Connection;
 use sqlx::PgPool;
 use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
@@ -117,7 +118,11 @@ async fn try_refresh(ctx: &RefreshCtx) -> Result<(), anyhow::Error> {
         .execute(&mut *conn)
         .await
     {
-        warn!(error = %e, "refresh_counts: failed to release advisory lock");
+        warn!(error = %e, "refresh_counts: failed to release advisory lock; closing the connection");
+        // A session-level advisory lock dies with its session: never return a
+        // connection that still holds lock 42 to the pool (it would starve
+        // every later cycle).
+        let _ = conn.detach().close().await;
     }
 
     result

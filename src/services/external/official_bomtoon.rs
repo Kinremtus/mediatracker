@@ -181,7 +181,9 @@ pub fn chapters_from_rows(rows: Vec<BomtoonEpisode>) -> Vec<ChapterMeta> {
                 number_x100: if is_bonus {
                     0
                 } else {
-                    row.number.unwrap_or(0) * 100
+                    // A hostile episode number must not overflow the x100
+                    // encoding.
+                    row.number.unwrap_or(0).checked_mul(100).unwrap_or(0)
                 },
                 title: Some(row.title),
                 release_date: None,

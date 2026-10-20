@@ -186,7 +186,12 @@ pub fn chapters_from_rows(rows: Vec<MantaEpisode>) -> Vec<ChapterMeta> {
         .map(|row| {
             let is_bonus = is_bonus_title(&row.title);
             ChapterMeta {
-                number_x100: if is_bonus { 0 } else { row.ord * 100 },
+                number_x100: if is_bonus {
+                    0
+                } else {
+                    // A hostile `ord` must not overflow the x100 encoding.
+                    row.ord.checked_mul(100).unwrap_or(0)
+                },
                 title: Some(row.title),
                 release_date: row.release_date,
                 is_bonus,
