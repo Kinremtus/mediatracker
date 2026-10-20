@@ -135,15 +135,14 @@ jobs:
             sudo kubectl apply -f k8s/traefik-helm-config.yaml
             envsubst < k8s/ingress.yaml | sudo kubectl apply -f -
 
-            # Apply static k8s manifest directories only if they exist, so a
-            # removed/renamed dir never aborts the deploy under `set -euo pipefail`.
-            # Monitoring is NOT applied here: it lives in terraform/monitoring/.
-            for dir in k8s/cloudflared; do
-              [ -d "$dir" ] || continue
-              sudo kubectl apply -f "$dir"
-            done
-            # Templated manifests last: substitute $APP_HOST into the configmap.
+            # cloudflared: the configmap carries $APP_HOST (a GitHub Secret), so
+            # only the envsubst-rendered version may reach the cluster — and it
+            # must be applied BEFORE the deployment. Applying the raw file (or
+            # restarting the pod before the substitution lands) hands the edge
+            # an ingress with the literal placeholder and 404s the whole site
+            # until cloudflared is restarted again.
             envsubst < k8s/cloudflared/configmap.yaml | sudo kubectl apply -f -
+            sudo kubectl apply -f k8s/cloudflared/deployment.yaml
 
             # Apply SOPS/age-encrypted secrets BEFORE helm: on a clean cluster
             # envFrom.secretRef would otherwise reference a non-existent Secret.
