@@ -18,25 +18,43 @@ spec:
             app: postgres-backup
         spec:
           restartPolicy: OnFailure
+          initContainers:
+            # The backup PVC is a local-path hostPath volume: kubelet does not
+            # chown those for `fsGroup`, so a one-shot root init makes /backups
+            # writable for the nonroot backup user. Same image as the job (no
+            # extra pull); root only here, with the single CHOWN capability.
+            - name: fix-perms
+              image: ${BACKUP_IMAGE}
+              command: ["sh", "-c", "chown -R 65532:65532 /backups"]
+              securityContext:
+                runAsUser: 0
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+                  add:
+                    - CHOWN
+              volumeMounts:
+                - name: backup-data
+                  mountPath: /backups
           containers:
             - name: backup
-              # NOTE: alpine:3.21 (not 3.20) is required because Postgres 17
-              # clients (`postgresql17-client`) only exist from Alpine 3.21.
-              # alpine:3.20 ships pg16 clients, which refuse to dump a pg17 server.
-              image: alpine:3.21
-              command:
-                - /bin/sh
-                - -c
-                - |
-                  set -e
-                  apk add --no-cache postgresql17-client age rclone
-                  exec /bin/sh /scripts/backup.sh
+              # Prebuilt tooling image (Dockerfile.backup): postgres 17 clients,
+              # age and rclone are baked in — no `apk add` as root and no
+              # writable root filesystem in production. The deploy substitutes
+              # the commit-sha tag.
+              image: ${BACKUP_IMAGE}
+              command: ["/bin/sh", "/scripts/backup.sh"]
               envFrom:
-                # Provides PGUSER, PGDATABASE, PGHOST, PGPORT, PGPASSWORD
-                # (and POSTGRES_* which the script falls back to).
+                # Provides POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_DB; the
+                # script maps them onto PGUSER/PGPASSWORD/PGDATABASE.
                 - secretRef:
                     name: db-secret
               env:
+                # rclone resolves its cache dir through $HOME; /tmp is a tmpfs.
+                - name: HOME
+                  value: /tmp
                 # All backup-secret keys are optional: a missing key just
                 # disables that feature (unencrypted dump / no offsite copy).
                 - name: AGE_PUBLIC_KEY
@@ -79,23 +97,17 @@ spec:
                       name: backup-secret
                       key: RCLONE_CONFIG_R2_BUCKET
                       optional: true
-              volumeMounts:
-                - name: scripts
-                  mountPath: /scripts
-                  readOnly: true
-                - name: backup-data
-                  mountPath: /backups
               securityContext:
-                # `apk add` requires root. See k8s/backup/README.md for the
-                # hardened alternative (prebuilt image + runAsNonRoot: true).
-                runAsNonRoot: false
-                runAsUser: 0
+                runAsNonRoot: true
+                runAsUser: 65532
+                runAsGroup: 65532
+                readOnlyRootFilesystem: true
                 allowPrivilegeEscalation: false
                 capabilities:
                   drop:
                     - ALL
-                # Must stay writable: the container installs packages at start.
-                readOnlyRootFilesystem: false
+                seccompProfile:
+                  type: RuntimeDefault
               resources:
                 requests:
                   memory: 64Mi
@@ -103,6 +115,14 @@ spec:
                 limits:
                   memory: 256Mi
                   cpu: 500m
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+                - name: backup-data
+                  mountPath: /backups
+                - name: tmp
+                  mountPath: /tmp
           volumes:
             - name: scripts
               configMap:
@@ -111,3 +131,5 @@ spec:
             - name: backup-data
               persistentVolumeClaim:
                 claimName: backup-data
+            - name: tmp
+              emptyDir: {}

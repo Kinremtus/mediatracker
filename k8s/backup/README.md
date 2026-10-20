@@ -167,15 +167,15 @@ backup pipeline.
 - **Alpine 3.21, not 3.20.** `postgresql17-client` first appears in Alpine
   3.21. Alpine 3.20 only ships pg16 clients, and a pg16 `pg_dump` refuses to
   dump a PostgreSQL 17 server. The CronJob image is therefore `alpine:3.21`.
-- **`runAsNonRoot` is disabled here.** The container installs packages with
-  `apk add`, which requires root; `runAsNonRoot: true` would prevent the pod
-  from starting (the alpine image runs as root). To harden: build a small
-  image that already contains `postgresql17-client age rclone`, drop the
-  `apk add` step, then set `runAsNonRoot: true`. `allowPrivilegeEscalation:
-  false` and `capabilities.drop: [ALL]` are already set.
-- If `apk add` ever fails under `capabilities.drop: [ALL]`, add the minimal
-  caps it needs (`CHOWN`, `FOWNER`, `DAC_OVERRIDE`, `SETUID`, `SETGID`) back
-  to the drop list, or use the prebuilt-image approach above.
+- **Hardened tooling image.** The CronJob runs `Dockerfile.backup`
+  (alpine 3.21 + `postgresql17-client age rclone`, built and pushed by CI as
+  `ghcr.io/<repo>-backup:<commit-sha>`). Nothing is installed at start, the
+  container runs as UID 65532 with a read-only root filesystem, and a one-shot
+  init container chowns the local-path PVC to that UID (kubelet does not apply
+  `fsGroup` to hostPath-style volumes). Dumps are therefore owned by `65532`.
+- **`PGPASSWORD` mapping.** The in-cluster script maps `POSTGRES_PASSWORD` onto
+  `PGPASSWORD`; without it `pg_dump` cannot authenticate (db-secret carries
+  only the `POSTGRES_*` keys).
 - The PVC is `ReadWriteOnce` on `local-path`. With `concurrencyPolicy:
   Forbid` only one backup pod writes at a time; a restore pod must not run at
   the same moment as the CronJob.

@@ -82,6 +82,20 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.REPO_LOWER }}:${{ github.sha }}
             ${{ env.REGISTRY }}/${{ env.REPO_LOWER }}:latest
 
+      # Tooling image for the postgres-backup CronJob (postgres 17 clients,
+      # age, rclone; runs as nonroot). Built from Dockerfile.backup and tagged
+      # with the same commit sha the deploy substitutes into the CronJob.
+      - name: Build and push backup tooling image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          file: Dockerfile.backup
+          push: true
+          cache-from: type=gha,scope=backup
+          cache-to: type=gha,mode=max,scope=backup
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.REPO_LOWER }}-backup:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.REPO_LOWER }}-backup:latest
+
       # Advisory image scan: reports HIGH/CRITICAL CVEs but does not block the
       # pipeline (base-image CVEs would otherwise freeze every deploy).
       # Runs the scanner container directly instead of trivy-action: the action
@@ -143,6 +157,13 @@ jobs:
             # until cloudflared is restarted again.
             envsubst < k8s/cloudflared/configmap.yaml | sudo kubectl apply -f -
             sudo kubectl apply -f k8s/cloudflared/deployment.yaml
+
+            # Backup CronJob: its tooling image is built from Dockerfile.backup
+            # in this same run (tag = commit sha). PVC/configmap are idempotent;
+            # the cronjob is rendered because of ${BACKUP_IMAGE}.
+            export BACKUP_IMAGE="ghcr.io/${{ env.REPO_LOWER }}-backup:${{ github.sha }}"
+            sudo kubectl apply -f k8s/backup/pvc.yaml -f k8s/backup/configmap.yaml
+            envsubst '${BACKUP_IMAGE}' < k8s/backup/cronjob.yaml | sudo kubectl apply -f -
 
             # Apply SOPS/age-encrypted secrets BEFORE helm: on a clean cluster
             # envFrom.secretRef would otherwise reference a non-existent Secret.

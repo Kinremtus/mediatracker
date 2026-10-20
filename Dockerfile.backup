@@ -1,0 +1,14 @@
+# Tooling image for the postgres-backup CronJob.
+#
+# The job used to run plain alpine and `apk add` its tools at start, which
+# required root and a writable root filesystem on every run. This image ships
+# the tools (postgres 17 clients — pg_dump must match the server major —,
+# age and rclone) and runs as UID 65532, the same nonroot identity used by
+# the app image, so the CronJob can run read-only and without privileges.
+FROM alpine:3.21
+
+RUN apk add --no-cache postgresql17-client age rclone \
+    && addgroup -S -g 65532 backup \
+    && adduser -S -D -H -u 65532 -G backup backup
+
+USER 65532:65532
