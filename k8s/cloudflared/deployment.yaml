@@ -15,8 +15,45 @@ spec:
     spec:
       containers:
         - name: cloudflared
-          image: cloudflare/cloudflared:latest
-          command: ["cloudflared", "tunnel", "--config", "/etc/cloudflared/config.yml", "run"]
+          # Pinned release + digest: this pod is the entry point for all
+          # production traffic, so an unpinned :latest must not swap under us.
+          image: cloudflare/cloudflared:2026.10.2@sha256:0e56c13c7058fcef9c4f0e7d83372f82330548dbf8f8b366f3d8b506526d93b2
+          # --no-autoupdate is a global flag (the image's ENTRYPOINT carries
+          # it); overriding `command` replaces the ENTRYPOINT, so repeat it.
+          command: ["cloudflared", "--no-autoupdate", "tunnel", "--config", "/etc/cloudflared/config.yml", "run"]
+          ports:
+            - name: metrics
+              containerPort: 2000
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          # The metrics server (config.yml: metrics: 0.0.0.0:2000) exposes
+          # /ready; without the probes a wedged tunnel looked healthy.
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 2000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: 2000
+            initialDelaySeconds: 15
+            periodSeconds: 20
           volumeMounts:
             - name: config
               mountPath: /etc/cloudflared/config.yml
@@ -24,6 +61,8 @@ spec:
             - name: creds
               mountPath: /etc/cloudflared/credentials.json
               subPath: credentials.json
+            - name: tmp
+              mountPath: /tmp
       volumes:
         - name: config
           configMap:
@@ -31,3 +70,5 @@ spec:
         - name: creds
           secret:
             secretName: cloudflared-creds
+        - name: tmp
+          emptyDir: {}

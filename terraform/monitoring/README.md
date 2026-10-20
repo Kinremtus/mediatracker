@@ -88,6 +88,7 @@ ssh -L 16443:127.0.0.1:6443 user@vps
 
 # Apply monitoring stack:
 cd terraform/monitoring
+terraform init -backend-config=backend.r2.example.hcl   # state lives in R2
 terraform plan
 terraform apply
 ```
@@ -126,25 +127,24 @@ terraform/monitoring/
   backend.r2.example.hcl -- partial S3/R2 backend config (state offsite)
 ```
 
-## Terraform state on R2 (recommended)
+## Terraform state on R2
 
-The state file is **not** in git (`.gitignore` covers `terraform/**/*.tfstate`)
-and currently lives only on the workstation that ran `apply`. Losing it means
-drift plus manual `terraform import` of every object, and the file contains
-secrets. `backend.r2.example.hcl` moves it into Cloudflare R2 (same bucket as
-the DB dumps, different prefix):
+The state file is **not** in git (`.gitignore` covers `terraform/**/*.tfstate`).
+`providers.tf` declares the empty S3 backend and every real parameter lives in
+`backend.r2.example.hcl`, so nothing sensitive is committed. The one-time
+migration (state = the single source of truth for this stack, keep a manual
+copy until it has run):
 
 ```bash
-# 1. add `backend "s3" {}` to the terraform block in providers.tf
-# 2. create the R2 bucket + an API token (Object Read & Write)
+# 1. create the R2 bucket + an API token (Object Read & Write)
 export AWS_ACCESS_KEY_ID=<token key>
 export AWS_SECRET_ACCESS_KEY=<token secret>
-# 3. fill in the endpoint in backend.r2.example.hcl, then:
+# 2. fill in the endpoint in backend.r2.example.hcl, then:
 terraform init -backend-config=backend.r2.example.hcl -migrate-state
 ```
 
-Until the backend is enabled, keep a manual copy of `terraform.tfstate`
-somewhere safe (it is the only source of truth for this stack).
+After the migration every `plan/apply` reads and writes state in R2 (same
+bucket as the DB dumps, different prefix).
 
 ## Troubleshooting
 

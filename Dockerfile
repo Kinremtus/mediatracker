@@ -1,6 +1,6 @@
 # Chef stage: installs cargo-chef (used in planner + builder)
 FROM rust:1.95-slim-bookworm AS chef
-RUN cargo install cargo-chef --locked
+RUN cargo install cargo-chef --locked --version 0.1.78
 WORKDIR /app
 
 # Planner stage: produces a recipe.json from Cargo.toml/Cargo.lock

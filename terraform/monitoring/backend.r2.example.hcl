@@ -8,18 +8,8 @@
 # the database dumps (different prefixes) in one bucket.
 #
 # Enable (once):
-#   1. In terraform/monitoring/providers.tf add an EMPTY backend to the
-#      existing terraform block:
-#
-#          terraform {
-#            required_version = ">= 1.5"
-#            backend "s3" {}
-#
-#            required_providers { ... }
-#          }
-#
-#      (all real parameters live in this file, so nothing sensitive is
-#      committed and the working copy keeps working until you opt in)
+#   1. The empty `backend "s3" {}` is already declared in providers.tf; every
+#      real parameter lives in this file, so nothing sensitive is committed.
 #   2. Create the R2 bucket + an API token with Object Read & Write on it.
 #   3. Export the token credentials:
 #          export AWS_ACCESS_KEY_ID=<token access key id>

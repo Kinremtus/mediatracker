@@ -1,7 +1,13 @@
 .env
+# Real .env variants (keep the tracked template): .env.local, .env.prod, ...
+.env.*
+!/.env.example
 __pycache__/
 *.pyc
 *.sql.gz
+# Database dumps (backup-db.sh honours a custom BACKUP_DIR outside backups/).
+*.dump
+*.dump.age
 backups/
 
 # Added by cargo

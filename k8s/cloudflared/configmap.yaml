@@ -7,6 +7,8 @@ data:
   config.yml: |
     tunnel: 0f6eebb2-ff0e-49fc-92da-3379ebc12cc1
     credentials-file: /etc/cloudflared/credentials.json
+    # Bound to the pod network only; the liveness/readiness probes hit /ready.
+    metrics: 0.0.0.0:2000
 
     ingress:
       - hostname: $APP_HOST
