@@ -1723,6 +1723,7 @@ dependencies = [
  "encoding_rs",
  "envy",
  "hex",
+ "libc",
  "metrics",
  "metrics-exporter-prometheus",
  "regex",
