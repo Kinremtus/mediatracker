@@ -38,7 +38,16 @@ pub async fn search(state: &AppState, media_type: &str, query: &str) -> Vec<Crea
         let client = state.http_client.clone();
         let query = query.to_string();
         set.spawn(async move {
-            let hits = official_resolve::search_source(&client, source, &query).await;
+            // Drop hits the source's own search returned for an unrelated query
+            // (a store's fuzzy or fallback listing). Without this a single
+            // source that ignores the query — e.g. ridibooks answering an
+            // English-book query for a manhwa search — produced a non-empty
+            // "official" answer that shadowed the provider chains (`live_search`
+            // only falls back on an empty official answer) and filled the
+            // catalog with filler.
+            let hits = official_resolve::search_source(&client, source, &query)
+                .await
+                .map(|hits| official_title::filter_hits_by_query(hits, &query));
             (source, hits)
         });
     }

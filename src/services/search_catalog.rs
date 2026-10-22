@@ -73,16 +73,18 @@ pub async fn lookup(
     if !fresh {
         return Ok(None);
     }
-    // The answer of the exact query — not a title substring: a live provider
-    // search returns fuzzy matches, and only some of their titles contain the
-    // whole query string (the old `title LIKE` returned 1 of 24 hits).
+    // The mapping is (query_norm, media_type) -> (provider, external_id). The
+    // row's own `media_type` is display metadata that a later search of ANOTHER
+    // type may have refreshed (the same webtoons id can answer a manhwa query
+    // after being stored for other-comics), so the join must not require the
+    // row to still carry this type. The items are re-stamped with the requested
+    // type below — the same contract as the live path's `normalize_media_type`.
     // Official hits first, then by score/name; a malformed payload row is
     // skipped instead of failing the whole answer.
     let rows: Vec<(serde_json::Value,)> = sqlx::query_as(
         "SELECT c.payload FROM search_catalog_queries m \
          JOIN search_catalog c \
            ON c.provider = m.provider AND c.external_id = m.external_id \
-          AND c.media_type = m.media_type \
          WHERE m.query_norm = $1 AND m.media_type = $2 \
          ORDER BY c.is_official DESC, c.score DESC NULLS LAST, c.title ASC \
          LIMIT $3",
@@ -94,8 +96,11 @@ pub async fn lookup(
     .await?;
     let items = rows
         .into_iter()
-        .filter_map(|(payload,)| match serde_json::from_value(payload) {
-            Ok(item) => Some(item),
+        .filter_map(|(payload,)| match serde_json::from_value::<CreateMediaItem>(payload) {
+            Ok(mut item) => {
+                item.media_type = media_type.to_string();
+                Some(item)
+            }
             Err(e) => {
                 tracing::warn!(media_type, error = %e, "search catalog: unreadable payload row skipped");
                 None

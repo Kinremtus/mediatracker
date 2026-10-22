@@ -164,6 +164,41 @@ async fn overlapping_queries_keep_their_own_answers() {
 }
 
 #[tokio::test]
+async fn cross_type_reupsert_keeps_the_other_query_answer() {
+    let ctx = common::TestContext::new().await;
+    let a = item(
+        "webtoons",
+        "7498",
+        "A Husband I Didn't Expect",
+        "other-comics",
+    );
+    let b = item("webtoons", "5515", "Surviving the Game", "other-comics");
+
+    search_catalog::store(&ctx.pool, "other-comics", "Husband", &[a, b.clone()])
+        .await
+        .expect("store other-comics");
+    // A manhwa search returns the same webtoons id: the upsert re-stamps the
+    // row's media_type, which used to break the other-comics lookup.
+    search_catalog::store(&ctx.pool, "manhwa", "Surviving the Game", &[b])
+        .await
+        .expect("store manhwa");
+
+    let got = search_catalog::lookup(&ctx.pool, "other-comics", "Husband")
+        .await
+        .expect("lookup")
+        .expect("fresh");
+    assert_eq!(
+        got.len(),
+        2,
+        "the other-comics answer survives the re-upsert"
+    );
+    assert!(
+        got.iter().all(|i| i.media_type == "other-comics"),
+        "items are re-stamped with the requested type"
+    );
+}
+
+#[tokio::test]
 async fn stale_query_goes_live_and_empty_answers_are_not_recorded() {
     let ctx = common::TestContext::new().await;
     let items = vec![item("webtoons", "1320", "Lore Olympus", "other-comics")];

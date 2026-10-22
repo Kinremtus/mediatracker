@@ -209,8 +209,14 @@ pub async fn manga(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
     manga_family_search(state, query, &["Manga"], "manga").await
 }
 
+/// MangaUpdates `type` values per family for the manhwa search. `OEL` is
+/// included on purpose: original English webcomics (e.g. "The Beginning After
+/// the End", MU type OEL) are what users mean by a manhwa webcomic — a strict
+/// `Manhwa` filter dropped the exact match and left only random Korean titles.
+const MANHWA_MU_TYPES: &[&str] = &["Manhwa", "OEL"];
+
 pub async fn manhwa(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
-    manga_family_search(state, query, &["Manhwa"], "manhwa").await
+    manga_family_search(state, query, MANHWA_MU_TYPES, "manhwa").await
 }
 
 pub async fn manhua(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
@@ -485,6 +491,14 @@ mod tests {
             0,
             "later providers must stay unpolled once a winner is found"
         );
+    }
+
+    #[test]
+    fn manhwa_search_includes_oel_webcomics() {
+        // Regression: "The Beginning After the End" is MU type OEL; a strict
+        // Manhwa filter dropped the exact match from the manhwa search.
+        assert!(MANHWA_MU_TYPES.contains(&"Manhwa"));
+        assert!(MANHWA_MU_TYPES.contains(&"OEL"));
     }
 
     #[test]
