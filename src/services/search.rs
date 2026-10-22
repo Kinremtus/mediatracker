@@ -209,11 +209,24 @@ pub async fn manga(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
     manga_family_search(state, query, &["Manga"], "manga").await
 }
 
-/// MangaUpdates `type` values per family for the manhwa search. `OEL` is
-/// included on purpose: original English webcomics (e.g. "The Beginning After
-/// the End", MU type OEL) are what users mean by a manhwa webcomic — a strict
-/// `Manhwa` filter dropped the exact match and left only random Korean titles.
-const MANHWA_MU_TYPES: &[&str] = &["Manhwa", "OEL"];
+/// MangaUpdates `type` values per family. `manhwa` is strictly Korean manhwa:
+/// OEL webcomics (e.g. "The Beginning After the End") are English-original and
+/// belong to `other_comics`, where `OEL` is listed — the type-scoped search
+/// must stay honest instead of pulling another family's titles in.
+const MANHWA_MU_TYPES: &[&str] = &["Manhwa"];
+
+/// `other_comics` covers everything that is neither manga/manhwa/manhua nor a
+/// western comic (ComicVine): OEL webcomics, doujinshi and the smaller
+/// regional categories.
+const OTHER_COMICS_MU_TYPES: &[&str] = &[
+    "OEL",
+    "Doujinshi",
+    "Filipino",
+    "Indonesian",
+    "Thai",
+    "Vietnamese",
+    "Malaysian",
+];
 
 pub async fn manhwa(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
     manga_family_search(state, query, MANHWA_MU_TYPES, "manhwa").await
@@ -228,21 +241,7 @@ pub async fn novel(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
 }
 
 pub async fn other_comics(state: &AppState, query: &str) -> Vec<CreateMediaItem> {
-    manga_family_search(
-        state,
-        query,
-        &[
-            "OEL",
-            "Doujinshi",
-            "Filipino",
-            "Indonesian",
-            "Thai",
-            "Vietnamese",
-            "Malaysian",
-        ],
-        "other-comics",
-    )
-    .await
+    manga_family_search(state, query, OTHER_COMICS_MU_TYPES, "other-comics").await
 }
 
 /// Комиксы (западные) → ComicVine. Без ключа warn + пусто.
@@ -494,11 +493,13 @@ mod tests {
     }
 
     #[test]
-    fn manhwa_search_includes_oel_webcomics() {
-        // Regression: "The Beginning After the End" is MU type OEL; a strict
-        // Manhwa filter dropped the exact match from the manhwa search.
-        assert!(MANHWA_MU_TYPES.contains(&"Manhwa"));
-        assert!(MANHWA_MU_TYPES.contains(&"OEL"));
+    fn manhwa_search_stays_strictly_manhwa_and_oel_lives_in_other_comics() {
+        // "The Beginning After the End" is MU type OEL — an English-original
+        // webcomic. It must NOT appear in the manhwa family; it belongs to
+        // other-comics (where OEL is listed).
+        assert_eq!(MANHWA_MU_TYPES, &["Manhwa"]);
+        assert!(OTHER_COMICS_MU_TYPES.contains(&"OEL"));
+        assert!(!MANHWA_MU_TYPES.contains(&"OEL"));
     }
 
     #[test]
