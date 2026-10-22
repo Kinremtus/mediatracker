@@ -339,23 +339,34 @@ function setTheme(t) {
 
 // --- Media Drawer (Alpine integration) ---
 function openMediaDrawer(provider, externalId, mediaType) {
+    const appShell = document.querySelector('.app-shell');
+    if (!appShell || typeof Alpine === 'undefined') return;
+    const data = Alpine.$data(appShell);
+    // Already open (or still loading): the overlay swallows clicks anyway, and
+    // re-entering would fire a duplicate request.
+    if (data.drawerOpen) return;
+    // Open immediately with a placeholder: a silent multi-second wait reads as
+    // "the click did nothing", so people click again.
+    data.drawerContent = '<div class="drawer-loading"><div class="drawer-spinner"></div><span>Загрузка...</span></div>';
+    data.drawerOpen = true;
+    document.body.style.overflow = 'hidden';
+
     let url = `/api/media/${provider}/${externalId}`;
     if (mediaType) url += `?media_type=${mediaType}`;
     fetch(url)
         .then(r => r.text())
         .then(html => {
-            const appShell = document.querySelector('.app-shell');
-            const data = Alpine.$data(appShell);
             data.drawerContent = html;
-            data.drawerOpen = true;
-            document.body.style.overflow = 'hidden';
             // x-html injects raw HTML — HTMX won't process it automatically
             setTimeout(() => {
                 const el = document.querySelector('.media-drawer-content');
                 if (el && typeof htmx !== 'undefined') htmx.process(el);
             }, 0);
         })
-        .catch(e => console.error('Failed to load media details', e));
+        .catch(e => {
+            console.error('Failed to load media details', e);
+            data.drawerContent = '<div class="drawer-loading drawer-error">Не удалось загрузить. Закрой и попробуй ещё раз.</div>';
+        });
 }
 
 // --- Drawer: HTMX callbacks after status/progress change ---

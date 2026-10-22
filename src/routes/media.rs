@@ -14,7 +14,6 @@ use crate::models::media_item::{
     CreateMediaItem, derived_status_class, derived_status_label, parse_description,
 };
 use crate::services::external::dispatch::{Provider, ProviderClients};
-use crate::services::external::is_not_found;
 
 use super::progress::ProgressRow;
 
@@ -141,7 +140,13 @@ pub struct ChaptersQuery {
 }
 
 /// Why a card is rendering from stored data (or not).
+///
+/// The drawer now serves a tracked item straight from its row (no provider
+/// round-trip), so only `Fresh` is produced today; the other variants are the
+/// extension point for a future stale-preview state (e.g. a background refresh
+/// reporting that the source is gone).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub(crate) enum Fallback {
     Fresh,
     /// Provider explicitly reported the entity as gone (404).
@@ -215,38 +220,26 @@ async fn resolve_card_data(
         return catalog.map(|item| (item, Fallback::Fresh));
     }
 
+    // A tracked item already has a complete row (written when it was added and
+    // refreshed every 6h): serve it directly. Fetching the provider again on
+    // every drawer open cost 0.5-2s for data we already have.
+    if let Some(local_item) = local {
+        return Some((local_item.into(), Fallback::Fresh));
+    }
+
     let clients = ProviderClients::from_state(state);
     match Provider::from_name(&clients, provider) {
-        None => local.map(|m| (m.into(), Fallback::Fresh)),
+        None => None,
         Some(p) => match p.fetch(external_id, media_type).await {
-            Ok(mut item) => {
-                // Chapter-based media: the stored count is authoritative. It may
-                // carry a manual override or an enriched value from a source the
-                // upstream provider does not know about (e.g. Kakao), while the
-                // upstream only reports its own chapter list (often stale/lower).
-                // Prefer the DB value so the drawer and detail page agree with
-                // the chapter list and progress bar.
-                if is_chapter_type(media_type)
-                    && let Some(db_chapters) = local.as_ref().and_then(|m| m.chapters)
-                    && db_chapters > 0
-                {
-                    item.chapters = Some(db_chapters);
-                }
-                Some((item, Fallback::Fresh))
-            }
+            Ok(item) => Some((item, Fallback::Fresh)),
             Err(e) => {
                 tracing::debug!(
                     provider,
                     external_id,
                     error = %e,
-                    "media: provider fetch failed, falling back to stored data"
+                    "media: provider fetch failed for an untracked preview"
                 );
-                let kind = if is_not_found(&e) {
-                    Fallback::ProviderGone
-                } else {
-                    Fallback::ProviderUnavailable
-                };
-                local.map(|m| (m.into(), kind))
+                None
             }
         },
     }

@@ -20,6 +20,14 @@ pub struct MediaItem {
     pub description: Option<String>,
     pub status: Option<String>,
     pub score: Option<f64>,
+    /// MAL/Shikimori ids for the drawer's episode list. Both are optional
+    /// columns; `#[sqlx(default)]` keeps queries that omit them valid.
+    #[serde(default)]
+    #[sqlx(default)]
+    pub mal_id: Option<i64>,
+    #[serde(default)]
+    #[sqlx(default)]
+    pub shikimori_id: Option<i64>,
     #[sqlx(rename = "media_created_at")]
     pub created_at: DateTime<Utc>,
     #[sqlx(rename = "media_updated_at")]
@@ -507,8 +515,8 @@ impl From<MediaItem> for CreateMediaItem {
             status: m.status,
             score: m.score,
             is_tracked: false,
-            mal_id: None,
-            shikimori_id: None,
+            mal_id: m.mal_id,
+            shikimori_id: m.shikimori_id,
             comparison_key: None,
             format_type: m.format_type,
             details: Some(m.details),
@@ -661,6 +669,8 @@ mod tests {
             description: Some("desc".to_string()),
             status: Some("Released".to_string()),
             score: Some(7.5),
+            mal_id: None,
+            shikimori_id: None,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
             format_type: Some("Movie".to_string()),

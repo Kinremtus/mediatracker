@@ -288,6 +288,19 @@ pub async fn resolve_and_bind(
         }
     }
 
+    // No binding: a recent fruitless bind search is cached exactly like a
+    // fruitless chapter walk (`official_meta_attempts`). Without this, every
+    // drawer open re-ran the whole official-search fan-out — seconds per open
+    // and provider-quota burn for a title that has no official source.
+    if crate::services::chapter_meta_enrich::attempt_is_recent(db, provider, external_id).await {
+        tracing::debug!(
+            provider,
+            external_id,
+            "official_resolve: recent fruitless search, skipping the fan-out"
+        );
+        return None;
+    }
+
     // Candidate list: title first, then associated titles, deduped in order.
     let mut all: Vec<String> = Vec::with_capacity(candidates.len() + 1);
     all.push(title.to_string());
@@ -302,14 +315,24 @@ pub async fn resolve_and_bind(
     // orphaned under the old key.
     let old_key = chapter_key(db, provider, external_id).await;
 
+    // Only a search that actually ran and answered "no match" may be cached:
+    // a transport failure must retry on the next open, not hide the title for
+    // the whole TTL.
+    let mut searched_ok = false;
+    let mut errored = false;
+
     // Walk the sources in priority order; a failed source only skips itself.
     for &source in sources {
         let Some(query) = official_title::pick_candidate(&all, source) else {
             continue;
         };
         let hits = match search.search(source, query).await {
-            Ok(hits) => hits,
+            Ok(hits) => {
+                searched_ok = true;
+                hits
+            }
             Err(e) => {
+                errored = true;
                 tracing::warn!(provider, external_id, source, error = %e, "official_resolve: search failed");
                 continue;
             }
@@ -354,6 +377,9 @@ pub async fn resolve_and_bind(
                 continue;
             }
         }
+    }
+    if searched_ok && !errored {
+        crate::services::chapter_meta_enrich::record_attempt(db, provider, external_id).await;
     }
     None
 }

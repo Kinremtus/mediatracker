@@ -215,6 +215,95 @@ async fn exact_match_binds_kakao() {
     assert_eq!(calls[0].0, "kakao");
 }
 
+/// A fruitless bind search is remembered: the next call inside the TTL must
+/// not re-run the official fan-out. Before the negative cache, a title with no
+/// official source cost the whole search chain on every drawer open.
+#[tokio::test]
+async fn fruitless_bind_search_is_cached() {
+    let ctx = setup().await;
+    let series = SERIES_ID.to_string();
+    // Every source answers "no match" (successfully).
+    let search = FixtureSearch::with_sources(&[]);
+    let calls = search.calls();
+
+    let first = resolve_and_bind(
+        &ctx.pool,
+        &search,
+        "mangaupdates",
+        &series,
+        "manhwa",
+        "없는제목",
+        &[],
+    )
+    .await;
+    assert!(first.is_none(), "no source carries this title");
+    let after_first = calls.lock().unwrap().len();
+    assert!(
+        after_first > 0,
+        "the first call must actually search the sources"
+    );
+
+    let second = resolve_and_bind(
+        &ctx.pool,
+        &search,
+        "mangaupdates",
+        &series,
+        "manhwa",
+        "없는제목",
+        &[],
+    )
+    .await;
+    assert!(second.is_none());
+    assert_eq!(
+        calls.lock().unwrap().len(),
+        after_first,
+        "a recent fruitless search must not be repeated inside the TTL"
+    );
+}
+
+/// A transport failure must not be cached as "no match": the next open retries
+/// instead of hiding the title for the whole TTL.
+#[tokio::test]
+async fn failed_bind_search_is_not_cached() {
+    let ctx = setup().await;
+    let series = SERIES_ID.to_string();
+    // A Hangul title only reaches the Korean sources; force both to error.
+    let search = FixtureSearch::with_sources(&[])
+        .failing("kakao")
+        .failing("naver");
+    let calls = search.calls();
+
+    let first = resolve_and_bind(
+        &ctx.pool,
+        &search,
+        "mangaupdates",
+        &series,
+        "manhwa",
+        "없는제목",
+        &[],
+    )
+    .await;
+    assert!(first.is_none());
+    let after_first = calls.lock().unwrap().len();
+    assert!(after_first > 0, "the sources were actually tried");
+
+    let second = resolve_and_bind(
+        &ctx.pool,
+        &search,
+        "mangaupdates",
+        &series,
+        "manhwa",
+        "없는제목",
+        &[],
+    )
+    .await;
+    assert!(second.is_none());
+    assert!(
+        calls.lock().unwrap().len() > after_first,
+        "an errored search must be retried, not cached"
+    );
+}
+
 #[tokio::test]
 async fn non_exact_hit_does_not_bind() {
     let ctx = setup().await;

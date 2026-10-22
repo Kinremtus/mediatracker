@@ -470,16 +470,7 @@ pub async fn enrich_official_meta_with(
     // callers skip the whole chain for the next TTL window instead of
     // re-walking up to nine sources on every drawer open. `apply_meta` (and
     // every force refresh) clears the marker on the next successful apply.
-    let (ch_provider, ch_id) = chapter_key(db, provider, external_id).await;
-    let _ = sqlx::query(
-        "INSERT INTO official_meta_attempts (provider, external_id, attempted_at) \
-         VALUES ($1, $2, NOW()) \
-         ON CONFLICT (provider, external_id) DO UPDATE SET attempted_at = NOW()",
-    )
-    .bind(&ch_provider)
-    .bind(&ch_id)
-    .execute(db)
-    .await;
+    record_attempt(db, provider, external_id).await;
     Ok(0)
 }
 
@@ -488,6 +479,44 @@ pub async fn enrich_official_meta_with(
 /// ([`enrich_official_meta_for_key_force`]), so a tracked title still re-walks
 /// at least twice a day while every drawer open inside the window is instant.
 pub const META_TTL_HOURS: i32 = 12;
+
+/// True when the last fruitless official walk for this key is recent. Shared
+/// by the bind search (`official_resolve::resolve_and_bind`) and the chapter
+/// walk below: both mean "the official pipeline for this title found nothing
+/// recently", so both honour the same marker and TTL.
+pub(crate) async fn attempt_is_recent(db: &PgPool, provider: &str, external_id: &str) -> bool {
+    let (ch_provider, ch_id) = chapter_key(db, provider, external_id).await;
+    sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM official_meta_attempts \
+         WHERE provider = $1 AND external_id = $2 \
+           AND attempted_at > NOW() - make_interval(hours => $3))",
+    )
+    .bind(&ch_provider)
+    .bind(&ch_id)
+    .bind(META_TTL_HOURS)
+    .fetch_one(db)
+    .await
+    .unwrap_or(false)
+}
+
+/// Remember a fruitless official walk for this key, so gated callers skip the
+/// chain/search for the next [`META_TTL_HOURS`].
+pub(crate) async fn record_attempt(db: &PgPool, provider: &str, external_id: &str) {
+    let (ch_provider, ch_id) = chapter_key(db, provider, external_id).await;
+    if let Err(e) = sqlx::query(
+        "INSERT INTO official_meta_attempts (provider, external_id, attempted_at) \
+         VALUES ($1, $2, NOW()) \
+         ON CONFLICT (provider, external_id) DO UPDATE SET attempted_at = NOW()",
+    )
+    .bind(&ch_provider)
+    .bind(&ch_id)
+    .execute(db)
+    .await
+    {
+        tracing::warn!(provider, external_id, error = %e,
+            "official_meta: failed to record a fruitless walk");
+    }
+}
 
 /// True when the resolved key already carries official rows applied recently
 /// (the drawer skips the whole chain walk for them), or when the last walk was
@@ -507,20 +536,7 @@ async fn official_meta_is_fresh(db: &PgPool, provider: &str, external_id: &str) 
     .fetch_one(db)
     .await
     .unwrap_or(false);
-    if applied {
-        return true;
-    }
-    sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM official_meta_attempts \
-         WHERE provider = $1 AND external_id = $2 \
-           AND attempted_at > NOW() - make_interval(hours => $3))",
-    )
-    .bind(&ch_provider)
-    .bind(&ch_id)
-    .bind(META_TTL_HOURS)
-    .fetch_one(db)
-    .await
-    .unwrap_or(false)
+    applied || attempt_is_recent(db, provider, external_id).await
 }
 
 /// Convenience wrapper for callers that only have a db + key. `media_type`

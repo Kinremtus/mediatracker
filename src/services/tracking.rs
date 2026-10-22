@@ -393,6 +393,7 @@ impl TrackingService {
                 title_english, title_native, title_russian, poster_url, color_hex,
                 episodes, description, status,
                 score::double precision AS score,
+                mal_id, shikimori_id,
                 created_at              AS media_created_at,
                 updated_at              AS media_updated_at,
                 format_type, details,

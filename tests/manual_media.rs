@@ -98,7 +98,11 @@ async fn manual_card_renders_from_db_without_network() {
 }
 
 #[tokio::test]
-async fn provider_failure_falls_back_to_stored_row() {
+/// A tracked row is served straight from the DB: the detail page and drawer
+/// must not do a provider round-trip on every open (that cost 0.5-2 s per
+/// click). Freshness comes from the 6-hour refresh worker, so the old
+/// "источник недоступен" cache badge is gone with the fetch.
+async fn tracked_row_renders_without_provider_roundtrip() {
     let ctx = common::TestContext::new().await;
     let user_id = seed_user(&ctx.pool, "manual_fallback_user").await;
 
@@ -132,7 +136,10 @@ async fn provider_failure_falls_back_to_stored_row() {
     assert_eq!(resp.status(), StatusCode::OK);
     let html = body_string(resp).await;
     assert!(html.contains("Cached Comic"), "stored row must render");
-    assert!(html.contains("источник"), "cache badge text");
+    assert!(
+        !html.contains("источник недоступен"),
+        "a stored row must not be labelled as a degraded provider fallback"
+    );
 }
 
 #[tokio::test]
