@@ -9,8 +9,8 @@
 //! The container lives in a process-wide `OnceCell` and is removed by
 //! testcontainers' reaper when the test process exits.
 
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use mediatracker::app_state::AppState;
 use sqlx::PgPool;
@@ -41,8 +41,11 @@ extern "C" fn remove_shared_container_at_exit() {
     let Some(id) = CONTAINER_ID.get() else {
         return;
     };
+    // `-v` also removes the container's anonymous data volume: without it every
+    // run leaked ~90 MB per test binary (907 volumes / 64 GB were found on the
+    // dev box).
     let _ = std::process::Command::new("docker")
-        .args(["rm", "-f", id.as_str()])
+        .args(["rm", "-f", "-v", id.as_str()])
         .output();
 }
 
@@ -76,7 +79,7 @@ fn prune_stale_test_containers() {
         };
         if now.signed_duration_since(parsed).num_minutes() > 30 {
             let _ = std::process::Command::new("docker")
-                .args(["rm", "-f", id])
+                .args(["rm", "-f", "-v", id])
                 .output();
         }
     }
