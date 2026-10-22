@@ -228,7 +228,6 @@
 <div class="drawer-section">
     <div class="drawer-section-label" style="margin-bottom: 0.5rem;">Добавить в список</div>
     <form hx-post="/tracking" hx-target="closest .drawer-add-tracking" hx-swap="outerHTML"
-          hx-on:htmx:after-request="if(event.detail.successful) afterAddToTracking(event, this)"
           class="drawer-add-tracking">
         <input type="hidden" name="provider" value="{{ item.provider }}">
         <input type="hidden" name="external_id" value="{{ item.external_id }}">

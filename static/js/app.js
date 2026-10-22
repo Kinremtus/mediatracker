@@ -22,6 +22,18 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
+    // Server-triggered refresh after the tracking state changed.
+    // `drawerAdded` (add-to-tracking) reloads an open drawer so its own state
+    // (status chips, progress, rating) appears without closing the panel;
+    // `trackingUpdated` (add/update/delete) refreshes the tracking grid, if the
+    // page has one.
+    document.body.addEventListener('drawerAdded', function() {
+        reloadMediaDrawer();
+    });
+    document.body.addEventListener('trackingUpdated', function() {
+        refreshTrackingList();
+    });
+
     // Глобальный fallback для delete-кнопки в drawer (на случай если
     // inline hx-on:htmx:after-request не сработает из-за очередности process/insert)
     document.body.addEventListener('htmx:afterRequest', function(e) {
@@ -338,6 +350,10 @@ function setTheme(t) {
 }
 
 // --- Media Drawer (Alpine integration) ---
+// The item the open drawer belongs to: drawer-level actions (add-to-tracking)
+// re-fetch the same content instead of asking the user to reopen it.
+let currentDrawer = null;
+
 function openMediaDrawer(provider, externalId, mediaType) {
     const appShell = document.querySelector('.app-shell');
     if (!appShell || typeof Alpine === 'undefined') return;
@@ -345,12 +361,28 @@ function openMediaDrawer(provider, externalId, mediaType) {
     // Already open (or still loading): the overlay swallows clicks anyway, and
     // re-entering would fire a duplicate request.
     if (data.drawerOpen) return;
+    currentDrawer = { provider: provider, externalId: externalId, mediaType: mediaType };
+    data.drawerOpen = true;
+    document.body.style.overflow = 'hidden';
+    loadDrawerContent(data);
+}
+
+// Re-fetch the content of the drawer that is already showing (e.g. after the
+// item was added to the tracking list). No-op when no drawer was opened.
+function reloadMediaDrawer() {
+    const appShell = document.querySelector('.app-shell');
+    if (!appShell || !currentDrawer || typeof Alpine === 'undefined') return;
+    loadDrawerContent(Alpine.$data(appShell));
+}
+
+function loadDrawerContent(data) {
+    if (!currentDrawer) return;
+    const provider = currentDrawer.provider;
+    const externalId = currentDrawer.externalId;
+    const mediaType = currentDrawer.mediaType;
     // Open immediately with a placeholder: a silent multi-second wait reads as
     // "the click did nothing", so people click again.
     data.drawerContent = '<div class="drawer-loading"><div class="drawer-spinner"></div><span>Загрузка...</span></div>';
-    data.drawerOpen = true;
-    document.body.style.overflow = 'hidden';
-
     let url = `/api/media/${provider}/${externalId}`;
     if (mediaType) url += `?media_type=${mediaType}`;
     fetch(url)
@@ -455,23 +487,6 @@ function resetRatingPreview() {
 }
 
 // --- Drawer: after add to tracking — refetch content to show controls ---
-function afterAddToTracking(event, form) {
-    const provider = form.querySelector('input[name="provider"]').value;
-    const externalId = form.querySelector('input[name="external_id"]').value;
-    fetch(`/api/media/${provider}/${externalId}`)
-        .then(r => r.text())
-        .then(html => {
-            const appShell = document.querySelector('.app-shell');
-            const data = Alpine.$data(appShell);
-            data.drawerContent = html;
-            setTimeout(() => {
-                const el = document.querySelector('.media-drawer-content');
-                if (el && typeof htmx !== 'undefined') htmx.process(el);
-            }, 0);
-        });
-    refreshTrackingList();
-}
-
 // --- Progress: update from inline input on card ---
 function updateProgress(entryId, progress, status, rating) {
     const vals = { progress: progress, status: status };

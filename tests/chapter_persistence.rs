@@ -65,6 +65,19 @@ async fn insert_chapter(ctx: &common::TestContext, chapter_number: i32) {
     .expect("insert chapter");
 }
 
+async fn insert_bonus(ctx: &common::TestContext, chapter_number: i32) {
+    sqlx::query(
+        "INSERT INTO series_chapters \
+             (provider, external_id, chapter_number, is_bonus) \
+         VALUES ('mangaupdates', $1, $2, TRUE)",
+    )
+    .bind(series_str())
+    .bind(chapter_number)
+    .execute(&ctx.pool)
+    .await
+    .expect("insert bonus chapter");
+}
+
 async fn fixture_tracking(ctx: &common::TestContext, user_id: Uuid, initial_progress: i32) -> Uuid {
     let (media_id,): (Uuid,) = sqlx::query_as(
         r#"
@@ -265,6 +278,50 @@ async fn set_read_bulk_fills_below_and_cascades_above() {
             read_progress_read(&ctx, user_id, n * 100).await,
             Some(true),
             "ch {n} must not be read (absent progress row)"
+        );
+    }
+}
+
+#[tokio::test]
+async fn bonus_read_cascades_within_the_bonus_list_only() {
+    let (ctx, user_id) = setup().await;
+    for n in 1..=3 {
+        insert_chapter(&ctx, n * 100).await;
+    }
+    // Bonus rows are keyed by negative numbers, oldest-first: -300, -200, -100.
+    // The list renders them ascending, so -300 is displayed above -200.
+    for n in 1..=3 {
+        insert_bonus(&ctx, -n * 100).await;
+    }
+
+    set_read(
+        &ctx.pool,
+        user_id,
+        "mangaupdates",
+        &series_str(),
+        -200,
+        true,
+    )
+    .await
+    .expect("mark bonus 2");
+
+    for n in [-300, -200] {
+        assert_eq!(
+            read_progress_read(&ctx, user_id, n).await,
+            Some(true),
+            "bonus {n} must be read (above or at the click)"
+        );
+    }
+    assert_ne!(
+        read_progress_read(&ctx, user_id, -100).await,
+        Some(true),
+        "the bonus below the clicked row must stay unread"
+    );
+    for n in 1..=3 {
+        assert_ne!(
+            read_progress_read(&ctx, user_id, n * 100).await,
+            Some(true),
+            "main chapter {n} must not be swept by a bonus click"
         );
     }
 }
@@ -480,12 +537,14 @@ async fn bonus_progress_counts_read_bonus_only() {
         .expect("insert bonus row");
     }
 
+    // Click the TOP bonus (-200, displayed first): the cascade covers only the
+    // rows above the click, so exactly this one becomes read.
     set_read(
         &ctx.pool,
         user_id,
         "mangaupdates",
         &series_str(),
-        -100,
+        -200,
         true,
     )
     .await

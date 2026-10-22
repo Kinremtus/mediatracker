@@ -760,7 +760,13 @@ pub async fn post_add_to_tracking(
 
             if is_htmx {
                 let mut resp = Html(ADDED_BADGE_HTML.to_string()).into_response();
-                crate::utils::set_hx_trigger(&mut resp, "trackingUpdated");
+                // `drawerAdded` reloads an open drawer (its own state changed:
+                // status chips, progress, rating); `trackingUpdated` refreshes
+                // the tracking grid on the page.
+                crate::utils::set_hx_trigger(
+                    &mut resp,
+                    r#"{"trackingUpdated": true, "drawerAdded": true}"#,
+                );
                 resp
             } else {
                 let url = add_flash_param(&redirect_url, "added");

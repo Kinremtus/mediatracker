@@ -451,8 +451,10 @@ pub async fn get_chapter(
 /// is only read as the source of real chapter numbers.
 ///
 /// Main chapters (chapter_number >= 0) cascade: read N fills 1..N, unread N
-/// clears N..max. Bonus chapters (chapter_number < 0, migration 029) are flipped
-/// individually and never join the main cascade.
+/// clears N..max. Bonus chapters (chapter_number < 0, migration 029) are a
+/// separate catalogue but cascade the same way INSIDE that catalogue: read N
+/// fills every bonus row displayed above N (display order is
+/// `chapter_number ASC` for both lists) and never touches main rows.
 ///
 /// Returns `true` if at least one progress row was inserted/updated.
 pub async fn set_read(
@@ -487,11 +489,33 @@ pub async fn set_read(
         false
     };
     let result = if read {
-        // Bulk-fill every MAIN skeleton chapter <= N. The inserted key comes
-        // from `sc.*`, i.e. the already-resolved one. Bonus rows are excluded:
-        // their progress is written one-by-one below.
+        // Bulk-fill every skeleton chapter <= N within the clicked catalogue:
+        // MAIN rows for a main click, BONUS rows for a bonus click (the two
+        // lists never mix). The inserted key comes from `sc.*`, i.e. the
+        // already-resolved one. Both lists render `chapter_number ASC`, so
+        // "everything displayed above the clicked row" is the same predicate.
         let bulk = if is_bonus {
-            Default::default()
+            sqlx::query(
+                r#"
+                INSERT INTO user_chapter_progress
+                    (user_id, provider, external_id, chapter_number, read, read_at)
+                SELECT $1, sc.provider, sc.external_id, sc.chapter_number, TRUE, NOW()
+                FROM series_chapters sc
+                WHERE sc.provider = $2
+                  AND sc.external_id = $3
+                  AND sc.chapter_number <= $4
+                  AND sc.is_bonus
+                ON CONFLICT (user_id, provider, external_id, chapter_number) DO UPDATE
+                SET read = TRUE,
+                    read_at = NOW()
+                "#,
+            )
+            .bind(user_id)
+            .bind(&key_provider)
+            .bind(&key_external_id)
+            .bind(chapter_number)
+            .execute(pool)
+            .await?
         } else {
             sqlx::query(
                 r#"
@@ -519,7 +543,8 @@ pub async fn set_read(
         // Direct write for the clicked row when the bulk-fill cannot cover it.
         // Two distinct cases:
         //  - a manual-override ceiling beyond the skeleton (existing behaviour);
-        //  - an individual bonus row (bulk-fill never touches bonuses).
+        //  - a bonus row that is not part of the skeleton catalogue (e.g. a
+        //    manual bonus keyed 0); the bulk covers skeleton bonuses above it.
         // `media_items` is keyed by the incoming identity, NOT the resolved key.
         let manual: bool = sqlx::query_scalar(
             "SELECT COALESCE(chapters_manual, FALSE) FROM media_items \
