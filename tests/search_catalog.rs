@@ -98,6 +98,72 @@ async fn lookup_matches_by_normalized_query_and_scope() {
 }
 
 #[tokio::test]
+async fn lookup_returns_the_whole_live_answer_not_only_title_matches() {
+    let ctx = common::TestContext::new().await;
+    // A live provider search returns fuzzy matches: most titles do NOT contain
+    // the whole query string (the old `title LIKE` lookup showed 1 of 24).
+    let items = vec![
+        item(
+            "mangaupdates",
+            "1",
+            "Tsuki ga Michibiku Isekai Douchuu",
+            "manga",
+        ),
+        item("mangaupdates", "2", "Jouou ga Michibiku Koi", "manga"),
+        item("mangaupdates", "3", "Muchuu Douchuu", "manga"),
+    ];
+    search_catalog::store(
+        &ctx.pool,
+        "manga",
+        "Tsuki ga Michibiku Isekai Douchuu",
+        &items,
+    )
+    .await
+    .expect("store");
+
+    let got = search_catalog::lookup(&ctx.pool, "manga", "Tsuki ga Michibiku Isekai Douchuu")
+        .await
+        .expect("lookup")
+        .expect("a fresh query answers from the catalog");
+    assert_eq!(got.len(), 3, "the stored answer set is replayed in full");
+}
+
+#[tokio::test]
+async fn overlapping_queries_keep_their_own_answers() {
+    let ctx = common::TestContext::new().await;
+    let a = item("mangaupdates", "1", "Lore Olympus", "other-comics");
+    let b = item("mangaupdates", "2", "Olympus Heights", "other-comics");
+    let c = item("mangaupdates", "3", "Lore Legends", "other-comics");
+
+    search_catalog::store(&ctx.pool, "other-comics", "Lore Olympus", &[a, b.clone()])
+        .await
+        .expect("store Q1");
+    // A second live search re-upserts `b`; with only `last_query` that row
+    // would leave Q1's answer.
+    search_catalog::store(&ctx.pool, "other-comics", "Olympus Heights", &[b, c])
+        .await
+        .expect("store Q2");
+
+    let q1 = search_catalog::lookup(&ctx.pool, "other-comics", "Lore Olympus")
+        .await
+        .expect("lookup Q1")
+        .expect("fresh");
+    assert_eq!(q1.len(), 2, "Q1 keeps its own answer");
+    assert!(q1.iter().any(|i| i.title == "Lore Olympus"));
+    assert!(q1.iter().any(|i| i.title == "Olympus Heights"));
+
+    let q2 = search_catalog::lookup(&ctx.pool, "other-comics", "Olympus Heights")
+        .await
+        .expect("lookup Q2")
+        .expect("fresh");
+    assert_eq!(q2.len(), 2);
+    assert!(
+        !q2.iter().any(|i| i.title == "Lore Olympus"),
+        "Q2 must not inherit Q1-only rows"
+    );
+}
+
+#[tokio::test]
 async fn stale_query_goes_live_and_empty_answers_are_not_recorded() {
     let ctx = common::TestContext::new().await;
     let items = vec![item("webtoons", "1320", "Lore Olympus", "other-comics")];

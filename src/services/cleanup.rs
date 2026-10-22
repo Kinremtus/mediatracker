@@ -43,6 +43,7 @@ pub struct CleanupStats {
     pub release_schedule: u64,
     pub official_attempts: u64,
     pub search_catalog: u64,
+    pub search_catalog_queries: u64,
     pub search_queries: u64,
 }
 
@@ -112,26 +113,10 @@ pub async fn run_cleanup_once(db: &PgPool) -> CleanupStats {
         Err(error) => warn!(error = %error, "cleanup: failed to delete official-meta attempts"),
     }
 
-    // Search retention, in order: first the catalog rows whose query is gone
-    // or itself idle, then the idle queries. `last_query` stores the
-    // normalized query; a row survives while ANY type still references the
-    // query inside the retention window (the catalog keeps last-known data
-    // for anything still being searched — see migration 030).
-    match sqlx::query(
-        "DELETE FROM search_catalog c \
-         WHERE c.fetched_at < NOW() - make_interval(days => $1) \
-           AND NOT EXISTS (SELECT 1 FROM search_queries q \
-                           WHERE q.query_norm = c.last_query \
-                             AND q.fetched_at >= NOW() - make_interval(days => $1))",
-    )
-    .bind(SEARCH_RETENTION_DAYS)
-    .execute(db)
-    .await
-    {
-        Ok(result) => stats.search_catalog = result.rows_affected(),
-        Err(error) => warn!(error = %error, "cleanup: failed to delete idle catalog rows"),
-    }
-
+    // Search retention, in order: idle queries first, then their answer
+    // mappings, then the catalog rows no remaining mapping references. The
+    // catalog keeps last-known data for anything still being searched (see
+    // migration 030); only the cold tail expires.
     match sqlx::query(
         "DELETE FROM search_queries WHERE fetched_at < NOW() - make_interval(days => $1)",
     )
@@ -141,6 +126,37 @@ pub async fn run_cleanup_once(db: &PgPool) -> CleanupStats {
     {
         Ok(result) => stats.search_queries = result.rows_affected(),
         Err(error) => warn!(error = %error, "cleanup: failed to delete idle search queries"),
+    }
+
+    match sqlx::query(
+        "DELETE FROM search_catalog_queries m \
+         WHERE NOT EXISTS (SELECT 1 FROM search_queries q \
+                           WHERE q.query_norm = m.query_norm \
+                             AND q.media_type = m.media_type)",
+    )
+    .execute(db)
+    .await
+    {
+        Ok(result) => stats.search_catalog_queries = result.rows_affected(),
+        Err(error) => warn!(error = %error, "cleanup: failed to delete idle catalog mappings"),
+    }
+
+    match sqlx::query(
+        "DELETE FROM search_catalog c \
+         WHERE c.fetched_at < NOW() - make_interval(days => $1) \
+           AND NOT EXISTS (SELECT 1 FROM search_catalog_queries m \
+                           WHERE m.provider = c.provider \
+                             AND m.external_id = c.external_id \
+                             AND m.media_type = c.media_type) \
+           AND NOT EXISTS (SELECT 1 FROM search_queries q \
+                           WHERE q.query_norm = c.last_query)",
+    )
+    .bind(SEARCH_RETENTION_DAYS)
+    .execute(db)
+    .await
+    {
+        Ok(result) => stats.search_catalog = result.rows_affected(),
+        Err(error) => warn!(error = %error, "cleanup: failed to delete idle catalog rows"),
     }
 
     stats
@@ -161,6 +177,7 @@ pub async fn run_cleanup_loop(db: PgPool, cancel: CancellationToken) {
             release_schedule = stats.release_schedule,
             official_attempts = stats.official_attempts,
             search_catalog = stats.search_catalog,
+            search_catalog_queries = stats.search_catalog_queries,
             search_queries = stats.search_queries,
             "cleanup pass finished"
         );

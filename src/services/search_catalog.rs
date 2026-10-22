@@ -73,16 +73,22 @@ pub async fn lookup(
     if !fresh {
         return Ok(None);
     }
+    // The answer of the exact query — not a title substring: a live provider
+    // search returns fuzzy matches, and only some of their titles contain the
+    // whole query string (the old `title LIKE` returned 1 of 24 hits).
     // Official hits first, then by score/name; a malformed payload row is
     // skipped instead of failing the whole answer.
     let rows: Vec<(serde_json::Value,)> = sqlx::query_as(
-        "SELECT payload FROM search_catalog \
-         WHERE media_type = $1 AND title_norm LIKE '%' || $2 || '%' \
-         ORDER BY is_official DESC, score DESC NULLS LAST, title ASC \
+        "SELECT c.payload FROM search_catalog_queries m \
+         JOIN search_catalog c \
+           ON c.provider = m.provider AND c.external_id = m.external_id \
+          AND c.media_type = m.media_type \
+         WHERE m.query_norm = $1 AND m.media_type = $2 \
+         ORDER BY c.is_official DESC, c.score DESC NULLS LAST, c.title ASC \
          LIMIT $3",
     )
-    .bind(media_type)
     .bind(&query_norm)
+    .bind(media_type)
     .bind(CATALOG_LIMIT)
     .fetch_all(db)
     .await?;
@@ -143,6 +149,14 @@ pub async fn store(
     }
     let officials = official_source_for_media_type(media_type);
     let mut tx = db.begin().await?;
+    // The answer set of THIS query replaces the previous one: a live search (or
+    // the refresh worker) returns the current truth, so stale members must not
+    // linger in the query's answer.
+    sqlx::query("DELETE FROM search_catalog_queries WHERE query_norm = $1 AND media_type = $2")
+        .bind(&query_norm)
+        .bind(media_type)
+        .execute(&mut *tx)
+        .await?;
     for item in items {
         let Ok(payload) = serde_json::to_value(item) else {
             tracing::warn!(
@@ -181,6 +195,17 @@ pub async fn store(
         .bind(is_official)
         .bind(&payload)
         .bind(&query_norm)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
+            "INSERT INTO search_catalog_queries \
+                (query_norm, media_type, provider, external_id) \
+             VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+        )
+        .bind(&query_norm)
+        .bind(media_type)
+        .bind(&item.provider)
+        .bind(&item.external_id)
         .execute(&mut *tx)
         .await?;
     }
@@ -321,8 +346,8 @@ mod tests {
 
     #[test]
     fn query_normalization_is_shared_with_the_title_index() {
-        // The lookup builds `title_norm LIKE %query_norm%`, so both sides must
-        // normalize the same way.
+        // `store` and `lookup` must normalize the same way: the answer is
+        // keyed by the normalized query.
         assert_eq!(normalize_title("Lore Olympus"), "loreolympus");
         assert_eq!(normalize_title("  Lore   Olympus! "), "loreolympus");
         assert_eq!(normalize_title("進撃の巨人"), "進撃の巨人");

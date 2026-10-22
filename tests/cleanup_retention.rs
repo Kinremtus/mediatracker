@@ -139,6 +139,15 @@ async fn cleanup_prunes_idle_search_rows_only() {
         .execute(&ctx.pool)
         .await
         .expect("insert catalog row");
+        sqlx::query(
+            "INSERT INTO search_catalog_queries \
+                 (query_norm, media_type, provider, external_id) \
+             VALUES ($1, 'manga', 'mangaupdates', $1)",
+        )
+        .bind(query)
+        .execute(&ctx.pool)
+        .await
+        .expect("insert catalog mapping");
     }
 
     let stats = run_cleanup_once(&ctx.pool).await;
@@ -147,12 +156,21 @@ async fn cleanup_prunes_idle_search_rows_only() {
         stats.search_catalog, 1,
         "only the idle catalog row is pruned"
     );
+    assert_eq!(
+        stats.search_catalog_queries, 1,
+        "only the idle query's answer mapping is pruned"
+    );
 
     let left: Vec<String> = sqlx::query_scalar("SELECT external_id FROM search_catalog")
         .fetch_all(&ctx.pool)
         .await
         .expect("read catalog");
     assert_eq!(left, vec!["fresh-query".to_string()]);
+    let mappings: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM search_catalog_queries")
+        .fetch_one(&ctx.pool)
+        .await
+        .expect("read mappings");
+    assert_eq!(mappings, 1, "the live query keeps its answer mapping");
 }
 
 #[tokio::test]
