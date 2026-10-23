@@ -28,9 +28,29 @@ pub fn init_metrics() -> MetricsHandle {
             let handle = builder
                 .install_recorder()
                 .expect("failed to install prometheus recorder");
+            install_process_metrics();
             MetricsHandle(Arc::new(handle))
         })
         .clone()
+}
+
+/// Process metrics (CPU, RSS, fds, threads) for the HighCPU alert. `collect()`
+/// reads /proc, so it runs in a background task instead of on the request path.
+fn install_process_metrics() {
+    let collector = metrics_process::Collector::new("");
+    collector.describe();
+    collector.collect();
+    // `init_metrics` is called from async startup; the guard keeps it usable
+    // from a plain #[test] too (no runtime -> no refresher).
+    if tokio::runtime::Handle::try_current().is_ok() {
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(15));
+            loop {
+                tick.tick().await;
+                collector.collect();
+            }
+        });
+    }
 }
 
 pub async fn metrics_handler(state: State<MetricsHandle>) -> Response {

@@ -95,10 +95,10 @@ groups:
         annotations:
           summary: "App is down"
       - alert: HighCPU
-        # The app exposes no process metrics (only HTTP counters/histograms),
-        # so node-level CPU saturation from node-exporter is the honest signal.
-        expr: 100 - (avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
-        for: 10m
+        # The app exports its own process metrics (metrics-process collector),
+        # so the alert measures the app process, not the node.
+        expr: rate(process_cpu_seconds_total{app="app"}[5m]) > 0.8
+        for: 2m
         labels:
           severity: warning
   - name: backup
