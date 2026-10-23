@@ -86,6 +86,12 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: kube-system
+        # Prometheus (namespace `monitoring`) scrapes /metrics from the app
+        # pods directly. Without this the targets stay down (connection
+        # refused) and AppDown fires forever while HighCPU never sees the app.
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
       ports:
         - protocol: TCP
           port: {{ .Values.app.port }}
