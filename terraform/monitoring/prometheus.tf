@@ -59,14 +59,21 @@ scrape_configs:
         regex: (.+):\d+
         replacement: $1:8080
         target_label: __address__
+      # The alert expressions select `app="app"`. The pod label is only a keep
+      # filter, so the label must also be attached to the scraped series.
+      - target_label: app
+        replacement: app
 
   - job_name: node-exporter
     kubernetes_sd_configs:
       - role: pod
     relabel_configs:
+      # The DaemonSet pod label is `node-exporter-server`, not `node-exporter`.
       - source_labels: [__meta_kubernetes_pod_label_app]
-        regex: node-exporter
+        regex: node-exporter-server
         action: keep
+      - target_label: app
+        replacement: node-exporter
 
   - job_name: kube-state-metrics
     kubernetes_sd_configs:
@@ -88,8 +95,10 @@ groups:
         annotations:
           summary: "App is down"
       - alert: HighCPU
-        expr: rate(process_cpu_seconds_total{app="app"}[5m]) > 0.8
-        for: 2m
+        # The app exposes no process metrics (only HTTP counters/histograms),
+        # so node-level CPU saturation from node-exporter is the honest signal.
+        expr: 100 - (avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 10m
         labels:
           severity: warning
   - name: backup
