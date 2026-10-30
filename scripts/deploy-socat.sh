@@ -24,7 +24,6 @@ fi
 # Format: listen_port:node_port:service_name
 SERVICES=(
     "9090:30909:prometheus"
-    "3000:30001:grafana"
     "3100:32310:loki"
     "9093:30903:alertmanager"
     "19000:31904:kube-state-metrics"
@@ -102,7 +101,7 @@ done
 
 echo ""
 echo "==> Status check:"
-systemctl is-active socat-{prometheus,grafana,kube-state-metrics,loki,alertmanager} 2>/dev/null || true
+systemctl is-active socat-{prometheus,kube-state-metrics,loki,alertmanager} 2>/dev/null || true
 
 echo ""
 echo "=== Done ==="
@@ -111,5 +110,5 @@ echo "  curl http://${WG_IP}:9090/metrics | head -5"
 echo "  curl http://${WG_IP}:3000"
 echo "  curl http://${WG_IP}:19000/metrics | head -5"
 echo ""
-echo "Stop all: sudo systemctl stop socat-{prometheus,grafana,kube-state-metrics,loki,alertmanager}"
-echo "Disable:  sudo systemctl disable socat-{prometheus,grafana,kube-state-metrics,loki,alertmanager}"
+echo "Stop all: sudo systemctl stop socat-{prometheus,kube-state-metrics,loki,alertmanager}"
+echo "Disable:  sudo systemctl disable socat-{prometheus,kube-state-metrics,loki,alertmanager}"
