@@ -10,7 +10,7 @@ Production monitoring stack deployed on a single-node K3s cluster via Terraform.
 | **Loki** | StatefulSet | `grafana/loki:3.7.3` | Log aggregation (TSDB schema v13) |
 | **Alertmanager** | Deployment | `prom/alertmanager` | Alert routing, Telegram notifications |
 | **kube-state-metrics** | Deployment | `registry.k8s.io/kube-state-metrics` | K8s object metrics |
-| **node-exporter** | DaemonSet | `prom/node-exporter` | Node-level metrics (CPU, RAM, disk, net) |
+| **node-exporter** | DaemonSet | `prom/node-exporter` | Node-level metrics (CPU, RAM, disk, net); needs a host-firewall rule, see below |
 | **Promtail** | DaemonSet | `grafana/promtail` | Log shipping, CRI pipeline for containerd |
 
 > **2026-10-30:** Grafana и Uptime Kuma вынесены с VPS (узел 1 vCPU / 2 GiB
@@ -125,6 +125,36 @@ terraform/monitoring/
   telegram-secret.tf     -- Telegram bot token (gitignored)
   backend.r2.example.hcl -- partial S3/R2 backend config (state offsite)
 ```
+
+## Host firewall: node-exporter on :9100
+
+node-exporter runs with `hostNetwork: true`, so its scrape address is the
+**node's own IP** (`<node-ip>:9100`), not a pod IP. Prometheus runs as a pod and
+connects from the pod CIDR, while the host nftables `input` chain is
+`policy drop` — those connections were rejected, and the target stayed `down`
+with `context deadline exceeded`.
+
+The fix is one rule, applied live and persisted in `/etc/nftables.conf`
+(nftables.service loads it at boot):
+
+```bash
+# On the VPS (idempotent; backs up the file and validates with `nft -c`):
+sudo ./scripts/vps-firewall-node-exporter.sh
+```
+
+Equivalent rule:
+
+```
+ip saddr 10.42.0.0/24 tcp dport 9100 accept
+```
+
+`10.42.0.0/24` is this node's podCIDR (k3s allocates a /24 out of the cluster
+CIDR `10.42.0.0/16`). Only the pod network may reach 9100 — the port is not
+exposed to the internet. Verify with `up{app="node-exporter"} == 1`.
+
+Note: do **not** reload `/etc/nftables.conf` wholesale on a running node — the
+file also contains k3s/docker rules that are dynamic, and a full reload can
+duplicate or drop them. The script only appends the single rule.
 
 ## Перенос Grafana и Uptime Kuma (2026-10-30)
 
