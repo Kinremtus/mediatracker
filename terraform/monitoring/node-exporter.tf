@@ -59,9 +59,17 @@ resource "kubernetes_daemon_set_v1" "node-exporter" {
             read_only  = true
           }
           resources {
+            # 20m/20Mi was far too tight: a full scrape took 3-6 s and under
+            # load exceeded Prometheus' 10 s timeout, piling up connections
+            # (Recv-Q 241) until the exporter looked hung. With 300m it takes
+            # ~0.1 s.
+            requests = {
+              cpu    = "50m"
+              memory = "32Mi"
+            }
             limits = {
-              memory = "20Mi"
-              cpu    = "20m"
+              memory = "96Mi"
+              cpu    = "300m"
             }
           }
         }
