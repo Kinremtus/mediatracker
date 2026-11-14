@@ -36,10 +36,13 @@ jobs:
         with:
           tool: cargo-audit
       - name: cargo audit
-        # RUSTSEC-2023-0071 (rsa 0.9.10, Marvin Attack): unfixed advisory in
-        # sqlx-mysql, an optional sqlx backend this project never builds
-        # (PostgreSQL only) - absent from the build graph (`cargo tree -i rsa`).
-        run: cargo audit --ignore RUSTSEC-2023-0071
+        # Ignored advisories, all in optional sqlx backends this project never
+        # builds (PostgreSQL only), so the code is absent from the binary
+        # (`cargo tree -i <crate>` prints nothing):
+        # - RUSTSEC-2023-0071: rsa 0.9.10, Marvin Attack (sqlx-mysql).
+        # - RUSTSEC-2026-0459: libsqlite3-sys 0.30 via sqlx-sqlite (bundled
+        #   SQLite CVE); sqlx 0.9 would bump it, but 0.8 has no patch.
+        run: cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0459
       - name: Validate K8s YAML
         run: python3 scripts/validate-k8s-yaml.py
       - name: Lint Helm chart
