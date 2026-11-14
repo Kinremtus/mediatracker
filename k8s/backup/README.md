@@ -207,6 +207,7 @@ Offsite выключен осознанно (см. «Open decisions» выше),
    kubectl -n mediatracker create secret generic backup-secret \
      --from-literal=AGE_PUBLIC_KEY='age1...' \
      --from-literal=RCLONE_CONFIG_R2_TYPE='s3' \
+  --from-literal=RCLONE_CONFIG_R2_PROVIDER='Cloudflare' \
      --from-literal=RCLONE_CONFIG_R2_ACCESS_KEY_ID='<token key>' \
      --from-literal=RCLONE_CONFIG_R2_SECRET_ACCESS_KEY='<token secret>' \
      --from-literal=RCLONE_CONFIG_R2_ENDPOINT='https://<account-id>.r2.cloudflarestorage.com' \

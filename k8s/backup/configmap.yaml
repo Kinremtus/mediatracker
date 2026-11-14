@@ -30,6 +30,20 @@ data:
     TIMESTAMP="$(date -u +%Y%m%d_%H%M%S)"
     DUMP_FILE="${BACKUP_DIR}/${TIMESTAMP}.dump"
 
+    # Wait for the server before dumping: right after the pod starts, the pod
+    # network can still be programming itself and pg_dump fails with a
+    # one-shot "connection refused" (seen in practice), which would burn the
+    # single retry and fail the job.
+    i=0
+    until pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" >/dev/null 2>&1; do
+      i=$((i + 1))
+      if [ "$i" -ge 30 ]; then
+        log "ERROR: ${PGHOST}:${PGPORT} not ready after 60s"
+        exit 1
+      fi
+      sleep 2
+    done
+
     log "Dumping db=${PGDATABASE} host=${PGHOST}:${PGPORT} user=${PGUSER}"
     pg_dump -Fc -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" > "$DUMP_FILE"
 
@@ -52,7 +66,10 @@ data:
     # Offsite upload (rclone -> Cloudflare R2 / any S3-compatible). Optional.
     if command -v rclone >/dev/null 2>&1 && [ -n "${RCLONE_CONFIG_R2_ACCESS_KEY_ID:-}" ]; then
       REMOTE="${BACKUP_RCLONE_REMOTE:-r2:${RCLONE_CONFIG_R2_BUCKET:-mediatracker-backups}}"
-      if rclone copy "$UPLOAD_FILE" "$REMOTE/"; then
+      # --s3-no-check-bucket: an R2 token scoped to one bucket is not allowed
+      # to HeadBucket/CreateBucket, and without this flag rclone reads that
+      # denial as "bucket missing" and tries to create it (403 AccessDenied).
+      if rclone copy --s3-no-check-bucket "$UPLOAD_FILE" "$REMOTE/"; then
         log "Offsite upload OK -> ${REMOTE}/"
         # Local retention is 7 days; offsite keeps a longer history. Without
         # this the bucket grows forever (one ~1 MB object per day is cheap,

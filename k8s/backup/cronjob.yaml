@@ -69,6 +69,15 @@ spec:
                       name: backup-secret
                       key: RCLONE_CONFIG_R2_TYPE
                       optional: true
+                # Without an explicit provider rclone warns "provider "" not
+                # known" and falls back to generic AWS behaviour; R2 wants its
+                # own provider id.
+                - name: RCLONE_CONFIG_R2_PROVIDER
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup-secret
+                      key: RCLONE_CONFIG_R2_PROVIDER
+                      optional: true
                 # rclone's s3 backend authenticates with access_key_id /
                 # secret_access_key (the R2 API token pair). The previous
                 # RCLONE_CONFIG_R2_ACCOUNT/KEY names set unrelated options, so
