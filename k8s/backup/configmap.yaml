@@ -54,6 +54,14 @@ data:
       REMOTE="${BACKUP_RCLONE_REMOTE:-r2:${RCLONE_CONFIG_R2_BUCKET:-mediatracker-backups}}"
       if rclone copy "$UPLOAD_FILE" "$REMOTE/"; then
         log "Offsite upload OK -> ${REMOTE}/"
+        # Local retention is 7 days; offsite keeps a longer history. Without
+        # this the bucket grows forever (one ~1 MB object per day is cheap,
+        # but unbounded growth is still a silent failure mode).
+        if rclone delete --min-age "${OFFSITE_RETENTION_DAYS:-30}d" "$REMOTE/" 2>/dev/null; then
+          log "Offsite retention: removed objects older than ${OFFSITE_RETENTION_DAYS:-30}d"
+        else
+          log "WARNING: offsite retention failed; upload itself is valid"
+        fi
       elif [ "${BACKUP_REQUIRE_OFFSITE:-0}" = "1" ]; then
         log "ERROR: offsite upload failed and BACKUP_REQUIRE_OFFSITE=1"
         exit 1

@@ -90,7 +90,7 @@ make a failed upload fail the whole job.
 | Metric | Value | Notes |
 |--------|-------|-------|
 | Local retention | 7 days | `RETENTION_DAYS` in `backup.sh`; PVC `backup-data` (5Gi) |
-| Offsite retention | 30 days (planned) | once R2 is on: set an R2 bucket lifecycle rule expiring objects after 30 days |
+| Offsite retention | 30 days | `OFFSITE_RETENTION_DAYS` in `backup.sh`; after each successful upload it runs `rclone delete --min-age 30d`. A bucket lifecycle rule would work too, but keeping it in the script means one place to reason about |
 | RPO | up to 24h | daily 03:00 schedule; tighten `spec.schedule` to reduce |
 | RTO | < 1h | restore dump + `helm` app rollout for the current data size |
 
