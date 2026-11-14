@@ -47,30 +47,35 @@ uses libpq-style variables:
 | `PGPORT` | defaults to `5432` |
 | `PGPASSWORD` | read directly by libpq / pg_dump |
 
-### backup-secret (create it yourself)
+### backup-secret (SOPS-managed)
 
 All keys are optional. A missing key disables a feature instead of failing
-the job. See `secret.example.yaml` for the full example and commands.
+the job.
 
+The secret lives in git encrypted as `k8s/secrets/backup-secret.enc.yaml` and
+the CI deploy applies it with the other SOPS secrets. Add or change a key with
+`sops set` (on a machine that holds the age private key):
+
+```bash
+sops --set k8s/secrets/backup-secret.enc.yaml \
+  '["stringData"]["AGE_PUBLIC_KEY"]' '"age1..."'
 ```
-kubectl create secret generic backup-secret -n mediatracker \
-  --from-literal=AGE_PUBLIC_KEY='age1...' \
-  --from-literal=RCLONE_CONFIG_R2_TYPE='s3' \
-  --from-literal=RCLONE_CONFIG_R2_ACCESS_KEY_ID='<account-id>' \
-  --from-literal=RCLONE_CONFIG_R2_SECRET_ACCESS_KEY='<secret-key>' \
-  --from-literal=RCLONE_CONFIG_R2_ENDPOINT='https://<account-id>.r2.cloudflarestorage.com' \
-  --from-literal=RCLONE_CONFIG_R2_BUCKET='mediatracker-backups'
-```
+
+[!] Do **not** add keys imperatively with `kubectl create secret`: the next
+deploy applies the SOPS file and replaces the whole `data` map, silently
+dropping anything that is not in git. `secret.example.yaml` documents the keys
+and the imperative variant for throwaway/test clusters only.
 
 Generate the age keypair once, on a trusted workstation:
 
 ```bash
 age-keygen -o age-key.txt      # private key -> keep OFFLINE, never in the cluster
-grep 'public key' age-key.txt  # public key -> AGE_PUBLIC_KEY in backup-secret
+age-keygen -y age-key.txt      # public key -> AGE_PUBLIC_KEY in backup-secret
 ```
 
 Only the public key is stored in the cluster; decryption needs the private
-key (`AGE_IDENTITY_FILE`) during a restore.
+key (`AGE_IDENTITY_FILE`) during a restore. Losing the private key makes every
+`.dump.age` unreadable — back it up in a password manager / on paper.
 
 ## Offsite upload (Cloudflare R2) -- PENDING
 
